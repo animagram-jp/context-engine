@@ -1,0 +1,81 @@
+services:
+  rust:
+    image: rust:1-alpine
+    build:
+      context: ./rust
+      dockerfile: Dockerfile
+    user: "1000:1000"
+    volumes:
+      - ./rust/library:/app
+      - ./app/manifest:/app/manifest
+      - ./rust/tmp:/compiled
+      - rust-build-cache:/usr/local/cargo
+    working_dir: /app
+    command: sh -c "cargo install cargo-watch && cargo watch -x 'build --release' -s 'mkdir -p /compiled && cp -f target/release/state-engine /compiled/state-engine 2>/dev/null || true'"
+    tty: true
+    stdin_open: true
+    networks:
+      - state-engine
+
+  node:
+    image: node:25-alpine
+    volumes:
+      - ./rust/tmp:/compiled
+      - ./app:/app
+    working_dir: /app
+    tty: true
+    stdin_open: true
+    depends_on:
+      - rust
+    networks:
+      - state-engine
+
+  postgres-common:
+    image: postgres:18-alpine
+    ports:
+      - "1000:5432"
+    volumes:
+      - postgres-common-volume:/var/lib/postgresql/data
+      - ./postgres/migrations:/migrations
+      - ./postgres/seeds:/seeds
+      - ./postgres/migrate.sh:/migrate.sh
+    environment:
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: common_db
+      POSTGRES_USER: postgres
+    networks:
+      - state-engine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-tenant-1:
+    image: postgres:18-alpine
+    ports:
+      - "1001:5432"
+    volumes:
+      - postgres-tenant-1-volume:/var/lib/postgresql/data
+      - ./postgres/migrations:/migrations
+      - ./postgres/seeds:/seeds
+    environment:
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: db_tenant1
+      POSTGRES_USER: postgres
+    networks:
+      - state-engine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  rust-build-cache:
+  postgres-common-volume:
+  postgres-tenant-1-volume:
+
+networks:
+  state-engine:
+    driver: bridge

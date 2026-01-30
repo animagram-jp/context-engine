@@ -1,0 +1,13 @@
+_readonly: true
+
+organizations:
+  model: "Organization"
+  connection: common
+
+tenants:
+  model: "Tenant"
+  connection: common
+
+users:
+  model: "User"
+  connection: tenant

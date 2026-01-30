@@ -1,0 +1,51 @@
+app:
+  _keyPrefix: "app:"
+  _ttl: null
+
+  org_tenant_map:
+    _key: "org_tenant_map"
+    _structure:
+      type: map
+      keys:
+        type: integer
+      values:
+        type: integer
+    _load:
+      source: DB
+      connection: common
+      table: "organizations"
+      map:
+        key: "org_id"
+        value: "id"
+
+user:
+  _key: "user:{sso_user_id}"
+  _load:
+    source: DB
+    connection: tenant
+    table: "users"
+    where: "sso_user_id={sso_user_id}"
+    map:
+      id: "id"
+      org_id: "org_id"
+
+  id:
+    _type: integer
+  org_id:
+    _type: integer
+  tenant_id:
+    _type: integer
+    _load:
+      source: EXPRESSION
+      expression: "scope('app')->get('org_tenant_map')[{org_id}]"
+
+tenant:
+  _key: "tenant:{tenant_id}"
+  _load:
+    source: DB
+    connection: common
+    table: "tenants"
+    map:
+      name: "tenant_name"
+  name:
+    _type: string

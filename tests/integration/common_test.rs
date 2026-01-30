@@ -1,0 +1,91 @@
+// Common module integration tests
+use conduct_engine::DotArrayAccessor;
+use serde_json::json;
+use std::collections::HashMap;
+
+#[test]
+fn test_dot_accessor_simple_key() {
+    let mut data = HashMap::new();
+    data.insert("name".to_string(), json!("Test User"));
+
+    let result = DotArrayAccessor::get(&data, "name");
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), &json!("Test User"));
+}
+
+#[test]
+fn test_dot_accessor_nested_key() {
+    let mut data = HashMap::new();
+    data.insert("user".to_string(), json!({
+        "profile": {
+            "name": "Test User",
+            "age": 30
+        }
+    }));
+
+    let result = DotArrayAccessor::get(&data, "user.profile.name");
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), &json!("Test User"));
+
+    let result_age = DotArrayAccessor::get(&data, "user.profile.age");
+    assert!(result_age.is_some());
+    assert_eq!(result_age.unwrap(), &json!(30));
+}
+
+#[test]
+fn test_dot_accessor_missing_key() {
+    let mut data = HashMap::new();
+    data.insert("user".to_string(), json!({
+        "profile": {
+            "name": "Test User"
+        }
+    }));
+
+    let result = DotArrayAccessor::get(&data, "user.profile.missing");
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_dot_accessor_array_access() {
+    let mut data = HashMap::new();
+    data.insert("items".to_string(), json!([
+        {"id": 1, "name": "Item 1"},
+        {"id": 2, "name": "Item 2"}
+    ]));
+
+    let result = DotArrayAccessor::get(&data, "items");
+    assert!(result.is_some());
+
+    if let Some(json_value) = result {
+        if let serde_json::Value::Array(arr) = json_value {
+            assert_eq!(arr.len(), 2);
+        } else {
+            panic!("Expected array");
+        }
+    }
+}
+
+#[test]
+fn test_dot_accessor_empty_path() {
+    let data = HashMap::new();
+    let result = DotArrayAccessor::get(&data, "");
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_dot_accessor_deep_nesting() {
+    let mut data = HashMap::new();
+    data.insert("level1".to_string(), json!({
+        "level2": {
+            "level3": {
+                "level4": {
+                    "value": "deep value"
+                }
+            }
+        }
+    }));
+
+    let result = DotArrayAccessor::get(&data, "level1.level2.level3.level4.value");
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), &json!("deep value"));
+}

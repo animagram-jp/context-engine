@@ -1,0 +1,57 @@
+app: # KVStore app scopeの定義ブロック
+
+  _keyPrefix: "app:"
+  _ttl: null
+
+  org_tenant_map:
+    _key: "org_tenant_map"
+    _structure:
+      type: map
+      keys:
+        type: integer
+      values:
+        type: integer
+    _load:
+      source: DB
+      connection: common
+      table: "tenants"
+      map:
+        key: "sso_org_id" # org_id
+        value: "id" # tenant_id
+
+user: # KVStore user scopeの定義ブロック
+
+  _key: "user:{sso_user_id}"
+  _ttl: 14400 # (second) = 4 (hour)
+  _load:
+    source: DB
+    connection: tenant
+    table: "users"
+    where: "sso_user_id={sso_user_id}"
+    map:
+      id: "id"
+      org_id: "sso_org_id"
+
+  id:
+    _type: integer
+  org_id:
+    _type: integer
+  tenant_id:
+    _type: integer
+    _load:
+      source: EXPRESSION
+      expression: "scope('app')->get('org_tenant_map')[{org_id}]"
+
+tenant: # KVStore tenant scopeの定義ブロック
+
+  _key: "tenant:{tenant_id}"
+  _ttl: null
+  _load:
+    source: DB
+    connection: common
+    table: "tenants"
+    where: "id={tenant_id}"
+    map:
+      name: "name"
+  name:
+    _type: string
