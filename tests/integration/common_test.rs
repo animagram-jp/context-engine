@@ -1,5 +1,5 @@
 // Common module integration tests
-use conduct_engine::DotArrayAccessor;
+use state_engine::DotArrayAccessor;
 use serde_json::json;
 use std::collections::HashMap;
 

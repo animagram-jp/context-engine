@@ -1,5 +1,5 @@
 // Manifest module integration tests
-use conduct_engine::Manifest;
+use state_engine::Manifest;
 use serde_json::json;
 
 fn get_fixtures_path() -> String {
@@ -75,7 +75,8 @@ fn test_manifest_get_meta() {
 
     if let Some(load) = meta.get("_load") {
         assert!(load.is_object());
-        assert_eq!(load.get("source"), Some(&json!("ENV")));
+        let expected_value = json!("ENV");
+        assert_eq!(load.get("source"), Some(&expected_value));
     }
 }
 

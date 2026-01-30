@@ -11,6 +11,10 @@ state-engine library
 
 - README.md
 
+# to do
+
+- intergration_tests.rsって何? 命名これで良いの?
+
 ## manifest/*.yml
 
 ```yaml
@@ -63,3 +67,17 @@ manifest/*.ymlの指定nodeが表すstate(_stateに記述)を参照し、value�
 state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.node')の_storeと_loadの記述内容に従って自動loadを行う。一次的な解決が出来ない場合、自己再帰する※
 
 ※ 無限再帰によるprocess errorについて、事前のyml静的解析の他、呼出回数のinstance var管理など議論の余地あり
+
+## tree
+
+src/        
+  ├── lib.rs                    # ライブラリルート
+  ├── common/
+  │   └── dot_array_accessor.rs # ドット記法アクセサ
+  ├── common.rs                 # commonモジュール
+  ├── manifest/ 
+  │   └── mod.rs                # Manifest実装 + Provided::Manifest trait実装
+  └── ports/
+    ├── mod.rs                # Portsモジュール
+    ├── provided.rs           # ライブラリが提供するインターフェース
+    └── required.rs           # アプリが実装すべきインターフェース   
