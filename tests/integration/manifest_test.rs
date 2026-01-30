@@ -75,8 +75,8 @@ fn test_manifest_get_meta() {
 
     if let Some(load) = meta.get("_load") {
         assert!(load.is_object());
-        let expected_value = json!("ENV");
-        assert_eq!(load.get("source"), Some(&expected_value));
+        let expected_value = json!("Env");
+        assert_eq!(load.get("client"), Some(&expected_value));
     }
 }
 

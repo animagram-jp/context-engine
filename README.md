@@ -1,6 +1,6 @@
 # state-engine 0.0.1
 
-"A library that automates data lifecycle management—synchronizing state between process memory, KVS, and databases based on a YAML-extended DSL." (YAML拡張DSLに基づき、プロセスメモリ・KVS・DB間の状態を同期し、データのライフサイクル管理を自動化するライブラリ)
+YAML拡張DSLに基づき、プロセスメモリ・KVS・DB間の状態を同期し、データのライフサイクル管理を自動化するライブラリです。(A library that automates data lifecycle management—synchronizing state between process memory, KVS, and databases based on a YAML-extended DSL.)
 
 このライブラリは、データのソースとストアを開発者が自由に記述するYAML拡張DSL(ドメイン特化言語)に従い自動制御します。
 例えば、ユーザー単位でプロセスメモリのデータやKVSデータを自動管理し、マルチテナントDBアプリを中間表無しに実現できます。これにより、システムの保守性を大きく向上させます。

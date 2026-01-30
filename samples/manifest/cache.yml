@@ -12,7 +12,7 @@ app: # KVStore app scopeの定義ブロック
       values:
         type: integer
     _load:
-      source: DB
+      client: DB
       connection: common
       table: "tenants"
       map:
@@ -24,7 +24,7 @@ user: # KVStore user scopeの定義ブロック
   _key: "user:{sso_user_id}"
   _ttl: 14400 # (second) = 4 (hour)
   _load:
-    source: DB
+    client: DB
     connection: tenant
     table: "users"
     where: "sso_user_id={sso_user_id}"
@@ -33,13 +33,16 @@ user: # KVStore user scopeの定義ブロック
       org_id: "sso_org_id"
 
   id:
-    _type: integer
+    _state:
+      type: integer
   org_id:
-    _type: integer
+    _state:
+      type: integer
   tenant_id:
-    _type: integer
+    _state:
+      type: integer
     _load:
-      source: EXPRESSION
+      client: EXPRESSION
       expression: "scope('app')->get('org_tenant_map')[{org_id}]"
 
 tenant: # KVStore tenant scopeの定義ブロック
@@ -47,11 +50,12 @@ tenant: # KVStore tenant scopeの定義ブロック
   _key: "tenant:{tenant_id}"
   _ttl: null
   _load:
-    source: DB
+    client: DB
     connection: common
     table: "tenants"
     where: "id={tenant_id}"
     map:
       name: "name"
   name:
-    _type: string
+    _state:
+      type: string

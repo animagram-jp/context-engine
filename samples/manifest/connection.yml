@@ -6,7 +6,7 @@ common:
   username: "testuser"
   password: "testpass"
   _load:
-    source: ENV
+    client: Env
     map:
       host: "DB_HOST"
       port: "DB_PORT"
@@ -22,7 +22,7 @@ tenant:
   username:
   password:
   _load:
-    source: DB
+    client: DB
     connection: common
     table: "tenants"
     where: "id={tenant_id}"

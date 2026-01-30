@@ -4,6 +4,7 @@ state-engine library
 - 指定dir以下の任意のyamlファイルを読み込み(manifest/*.yml, manifestクラス)
 - アプリソースの呼び出しに従いCRUDを提供する(stateクラス※)
 - ライブラリ独自の_prefixメタデータに従ったmulti store, multi source, multi stateを自動維持し(loadクラス※)
+- declare-engine(php旧版)に対して、stateはreadmeの通りarchitectureレベルで大きく前進している。
 
 ※命名は検討余地あり
 
@@ -13,7 +14,7 @@ state-engine library
 
 # to do
 
-- intergration_tests.rsって何? 命名これで良いの?
+- 
 
 ## manifest/*.yml
 
@@ -80,4 +81,21 @@ src/
   └── ports/
     ├── mod.rs                # Portsモジュール
     ├── provided.rs           # ライブラリが提供するインターフェース
-    └── required.rs           # アプリが実装すべきインターフェース   
+    └── required.rs           # アプリが実装すべきインターフェース  
+
+
+## note
+
+### declare-engine版yaml / state-engine版yaml 互換性について
+
+**メタデータキーの統一:**
+- `source` → `client` (InMemory/Env/KVS/DB/API)
+- `_type` → `_state.type` (integer/float/string/boolean/null/list/map)
+- `_state.type: map` は子要素がある場合省略可(自明)
+
+**client種別:**
+- `Env` - 起動時確定の読み取り専用設定(環境変数・設定ファイル等)
+- `InMemory` - 実行時の可変メモリ(request scope等、worker間非共有)
+- `KVS` - Key-Value Store(Redis等)
+- `DB` - Database
+- `API` - 外部API呼び出し
