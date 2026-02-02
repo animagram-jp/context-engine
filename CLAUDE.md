@@ -99,3 +99,94 @@ src/
 - `KVS` - Key-Value Store(Redis等)
 - `DB` - Database
 - `API` - 外部API呼び出し
+
+## placeholder規則
+
+**採用形式: `${variable}`**
+
+業界標準の `${variable}` 形式を採用する。
+
+**設計原則:**
+- `${}` は予約語として扱う（エスケープサポートは簡略化）
+- YAML DSLとして割り切る（通常の文字列としての `${}` 使用は想定外）
+- プレースホルダー解決は各clientの責務
+- 再帰置換は防止する（置換後の値が再度置換されない）
+
+**使用例:**
+```yaml
+user:
+  _key: "user:${sso_user_id}"
+  tenant_id:
+    _load:
+      client: DB
+      table: users
+      where: "id=${user_id}"
+```
+
+**実装方針:**
+- commonモジュールに純粋なロジックとしてPlaceholderResolver実装
+- 依存関係を持たない文字列処理ユーティリティ
+- 値の解決は呼び出し側の責務
+
+**PlaceholderResolver採用検討ポイント:**
+
+1. **API設計**
+   - `extractPlaceholders(template: &str) -> Vec<String>` - テンプレートから変数名を抽出
+   - `replace(template: &str, params: &HashMap<String, String>) -> String` - 値で置換
+   - `replace_in_map(values: HashMap, params: HashMap) -> HashMap` - マップ内再帰置換
+
+2. **置換アルゴリズム**
+   - PHP版は `strtr()` で再帰置換を防止（`${a}` → `${b}` → `${b}` で停止）
+   - Rust版でも同等の挙動を実装する必要あり
+   - 未定義のプレースホルダーは置換せずそのまま残す
+
+3. **エスケープ簡略化の判断**
+   - `${}` を予約語として扱う
+   - エスケープ記法（`\${var}`等）はサポートしない
+   - YAML DSL専用として割り切り、通常の文字列としての `${}` 使用は想定外
+   - `$` 単体や `{}`単体は問題なし（`${}`形式のみマッチ）
+
+4. **型保持**
+   - 配列内の文字列以外の型（integer/boolean/null）は保持
+   - 文字列のみ置換対象とする
+
+5. **責務分担**
+   - **PlaceholderResolver**: 純粋な文字列処理（依存なし）
+   - **ParameterBuilder**: 値の解決ロジック（UserKey, ProcessMemory等へのアクセス）
+   - **State/Load**: PlaceholderResolverを呼び出して実行時に置換
+
+6. **パフォーマンス考慮**
+   - 置換マップを事前構築（O(m), m=プレースホルダー数）
+   - 配列の再帰処理での効率的な実装（不要なcloneを避ける）
+
+## 責務分離の原則
+
+### 各層の責務
+
+| クラス | 責務 | 扱うもの |
+|--------|------|----------|
+| **Manifest** | YAMLメタデータ管理 | ファイル読み込み、メタデータ継承、ドット記法アクセス |
+| **State** | CRUD統一インターフェース | get/set/delete、自動ロード呼び出し、型変換 |
+| **Load** | 自動ロード専用 | _load設定に従った各種clientからのデータ取得 |
+
+### データフロー
+
+```
+state::get('filename.node')
+  ↓
+manifest::getMeta() で _state/_store/_load を取得
+  ↓
+_store から値を取得（hit: 返却, miss: 次へ）
+  ↓
+load::handle() で _load に従い自動ロード
+  ↓
+ロード成功 → _store に保存して返却
+```
+
+### 設計意図
+
+- **_state**: 「何を」保存するか（型定義）
+- **_load**: 「どこから」読むか（ソース定義）
+- **_store**: 「どこへ」書くか（保存先定義）
+
+この分離により、任意のソース→任意のストアの組み合わせを自由に記述可能。

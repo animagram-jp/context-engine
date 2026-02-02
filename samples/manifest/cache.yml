@@ -2,15 +2,21 @@ app: # KVStore app scopeの定義ブロック
 
   _keyPrefix: "app:"
   _ttl: null
+  _store:
+    client: KVS
+    key: "app:${key}"
 
   org_tenant_map:
     _key: "org_tenant_map"
-    _structure:
+    _state:
       type: map
       keys:
         type: integer
       values:
         type: integer
+    _store:
+      client: KVS
+      key: "app:org_tenant_map"
     _load:
       client: DB
       connection: common
@@ -23,6 +29,11 @@ user: # KVStore user scopeの定義ブロック
 
   _key: "user:${sso_user_id}"
   _ttl: 14400 # (second) = 4 (hour)
+  _state:
+    type: map
+  _store:
+    client: KVS
+    key: "user:${sso_user_id}"
   _load:
     client: DB
     connection: tenant
@@ -49,6 +60,11 @@ tenant: # KVStore tenant scopeの定義ブロック
 
   _key: "tenant:${tenant_id}"
   _ttl: null
+  _state:
+    type: map
+  _store:
+    client: KVS
+    key: "tenant:${tenant_id}"
   _load:
     client: DB
     connection: common

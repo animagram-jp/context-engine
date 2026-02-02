@@ -1,10 +1,10 @@
 common:
-  name: "test_common"
-  host: "localhost"
-  port: 5432
-  database: "common_db"
-  username: "testuser"
-  password: "testpass"
+  _key: "connection:common"
+  _state:
+    type: map
+  _store:
+    client: InMemory
+    key: "connection.common"
   _load:
     client: Env
     map:
@@ -14,13 +14,29 @@ common:
       username: "DB_USERNAME"
       password: "DB_PASSWORD"
 
-tenant:
-  name: "tenant_${tenant_id}"
   host:
+    _state:
+      type: string
   port:
-  database: "db_tenant${tenant_id}"
+    _state:
+      type: integer
+  database:
+    _state:
+      type: string
   username:
+    _state:
+      type: string
   password:
+    _state:
+      type: string
+
+tenant:
+  _key: "connection:tenant:${tenant_id}"
+  _state:
+    type: map
+  _store:
+    client: InMemory
+    key: "connection.tenant.${tenant_id}"
   _load:
     client: DB
     connection: common
@@ -29,5 +45,22 @@ tenant:
     map:
       host: "db_host"
       port: "db_port"
+      database: "db_database"
       username: "db_username"
       password: "db_password"
+
+  host:
+    _state:
+      type: string
+  port:
+    _state:
+      type: integer
+  database:
+    _state:
+      type: string
+  username:
+    _state:
+      type: string
+  password:
+    _state:
+      type: string
