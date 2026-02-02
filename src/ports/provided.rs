@@ -19,44 +19,48 @@ pub trait Manifest {
     fn clear_missing_keys(&mut self);
 }
 
-/// DB接続管理 - テーブル名から接続を自動解決
-pub trait DBConnection {
-    /// テーブル名から接続名を取得
-    fn get(&mut self, table_name: &str) -> Option<String>;
-
-    /// 接続キーをパラメータで解決し、実際の接続名を返す
-    fn resolve(&mut self, connection_key: &str, params: &HashMap<String, Value>) -> Option<String>;
-}
-
-/// KVStore - app/tenant/user スコープへのアクセス提供
-pub trait KVStore {
-    /// app スコープへのアクセス
-    fn app(&mut self) -> Box<dyn Scope + '_>;
-
-    /// tenant スコープへのアクセス
-    fn tenant(&mut self) -> Box<dyn Scope + '_>;
-
-    /// user スコープへのアクセス
-    fn user(&mut self) -> Box<dyn Scope + '_>;
-}
-
-/// Scope - スコープ内でのKVS操作（get/set/delete）
-pub trait Scope {
-    /// キーから値を取得（キャッシュミス時は自動ロード）
+/// State - 統一CRUD実装
+///
+/// manifest の _state/_store/_load に従って状態を管理する。
+/// state-engineの唯一の外部向けインターフェース。
+pub trait State {
+    /// 状態を取得
+    ///
+    /// 1. _store から値を取得
+    /// 2. miss時は _load に従い自動ロード
+    /// 3. ロード成功時は _store に保存して返却
+    ///
+    /// # Arguments
+    /// * `key` - manifest key ("filename.node.field")
+    ///
+    /// # Returns
+    /// * `Some(Value)` - 値が存在する場合
+    /// * `None` - 値が存在せず、ロードも失敗した場合
     fn get(&mut self, key: &str) -> Option<Value>;
 
-    /// キーに値を設定
+    /// 状態を設定
+    ///
+    /// _store に従って値を保存する。
+    ///
+    /// # Arguments
+    /// * `key` - manifest key ("filename.node.field")
+    /// * `value` - 保存する値
+    /// * `ttl` - TTL（秒）。KVS使用時のみ有効。Noneの場合はYAML定義に従う
+    ///
+    /// # Returns
+    /// * `true` - 保存成功
+    /// * `false` - 保存失敗
     fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool;
 
-    /// キーを削除
+    /// 状態を削除
+    ///
+    /// _store から該当の {key:value} レコードを削除する。
+    ///
+    /// # Arguments
+    /// * `key` - manifest key ("filename.node.field")
+    ///
+    /// # Returns
+    /// * `true` - 削除成功
+    /// * `false` - 削除失敗またはキーが存在しない
     fn delete(&mut self, key: &str) -> bool;
-}
-
-/// UserKey - ユーザーコンテキスト管理
-pub trait UserKey {
-    /// sso_user_id をプロセスメモリに設定
-    fn set(&mut self);
-
-    /// 現在のユーザーIDを取得
-    fn get(&self) -> Option<String>;
 }

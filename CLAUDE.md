@@ -18,22 +18,37 @@ state-engine library
 
 ## manifest/*.yml
 
+**libraryが感知するメタデータ:**
+- `_state` - 型定義（type, keys, values等）
+- `_store` - 保存先定義（client, key, ttl等）
+- `_load` - 読込元定義（client, connection, table, map等）
+
+**基本構造:**
 ```yaml
 node:
   _state:
-    type:
+    type: map  # integer/float/string/boolean/null/list/map
   _store:
-    client: {ENV, DB, KVS, Processmermory, API}
-    map:
+    client: KVS  # Env/InMemory/KVS/DB/API
+    key: "namespace.${variable}"
+    ttl: 3600  # KVS使用時のみ（optional）
   _load:
-    client: {ENV, DB, KVS, Processmermory, API}
+    client: DB  # Env/InMemory/KVS/DB/API/EXPRESSION
+    connection: common
+    table: "table_name"
+    where: "id=${variable}"
     map:
-  node:
+      field: "column"
+
+  child_node:
     _state:
-    _store:
-    _load:
-...
+      type: string
 ```
+
+**設計原則:**
+- すべてのlibrary制御メタデータは `_state/_store/_load` 内に格納
+- `_key`, `_keyPrefix`, `_ttl` 等をトップレベルに配置しない
+- app固有の補助メタデータが必要なら `_app` 以下に格納（library非感知）
 
 ## manifest::class
 
@@ -69,19 +84,47 @@ state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.
 
 ※ 無限再帰によるprocess errorについて、事前のyml静的解析の他、呼出回数のinstance var管理など議論の余地あり
 
+## Ports - インターフェース設計
+
+### Provided Ports (ライブラリが提供)
+
+1. **Manifest** - YAMLファイル管理
+   - `get(key, default)` - データ取得（メタデータ除外）
+   - `get_meta(key)` - メタデータ取得（継承あり）
+
+2. **State** - 統一CRUD実装（唯一の外部インターフェース）
+   - `get(key)` - 状態取得（miss時自動ロード）
+   - `set(key, value, ttl)` - 状態設定
+   - `delete(key)` - 状態削除
+
+### Required Ports (app側が実装)
+
+1. **ProcessMemoryClient** - プロセスメモリ操作
+2. **KVSClient** - KVS操作（Redis等）
+3. **DBClient** - DB操作
+4. **ENVClient** - 環境変数取得
+5. **APIClient** - 外部API呼び出し
+6. **ExpressionClient** - 式評価（app固有ロジック）
+7. **DBConnectionConfigConverter** - DB接続設定変換
+
 ## tree
 
-src/        
+src/
   ├── lib.rs                    # ライブラリルート
   ├── common/
-  │   └── dot_array_accessor.rs # ドット記法アクセサ
+  │   ├── dot_array_accessor.rs # ドット記法アクセサ
+  │   └── placeholder_resolver.rs # プレースホルダー処理
   ├── common.rs                 # commonモジュール
-  ├── manifest/ 
-  │   └── mod.rs                # Manifest実装 + Provided::Manifest trait実装
+  ├── manifest/
+  │   └── mod.rs                # Manifest実装
+  ├── state/
+  │   └── mod.rs                # State実装（TODO）
+  ├── load/
+  │   └── mod.rs                # Load実装（TODO）
   └── ports/
-    ├── mod.rs                # Portsモジュール
-    ├── provided.rs           # ライブラリが提供するインターフェース
-    └── required.rs           # アプリが実装すべきインターフェース  
+      ├── mod.rs                # Portsモジュール
+      ├── provided.rs           # Provided Ports (Manifest, State)
+      └── required.rs           # Required Ports (各種Client)  
 
 
 ## note

@@ -100,3 +100,25 @@ pub trait APIClient: Send + Sync {
         headers: Option<&HashMap<String, String>>,
     ) -> Result<Value, String>;
 }
+
+/// EXPRESSIONクライアント
+/// app側の式評価ロジック
+///
+/// YAMLでの使用例:
+/// ```yaml
+/// tenant_id:
+///   _load:
+///     client: EXPRESSION
+///     expression: "get_tenant_id_from_org(${org_id})"
+/// ```
+pub trait ExpressionClient: Send + Sync {
+    /// 式を評価して値を返す
+    ///
+    /// # Arguments
+    /// * `expression` - 評価する式（プレースホルダー置換済み）
+    ///
+    /// # Returns
+    /// * `Ok(Value)` - 評価成功
+    /// * `Err(String)` - 評価失敗（エラーメッセージ）
+    fn evaluate(&self, expression: &str) -> Result<Value, String>;
+}

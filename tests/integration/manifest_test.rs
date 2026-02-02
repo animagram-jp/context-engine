@@ -28,9 +28,10 @@ fn test_manifest_get_with_path() {
     let mut manifest = Manifest::new(&fixtures_path);
 
     // ドット記法でネストされた値を取得
-    let result = manifest.get("connection.common.name", None);
+    // YAMLにデータ値はなく、_state定義のみなので空オブジェクトが返る
+    let result = manifest.get("connection.common.host", None);
 
-    assert_eq!(result, json!("test_common"));
+    assert_eq!(result, json!({}));
 }
 
 #[test]
@@ -38,14 +39,15 @@ fn test_manifest_get_nested_value() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
+    // YAMLにはメタデータのみでデータ値はないため、空オブジェクトが返る
     let host = manifest.get("connection.common.host", None);
-    assert_eq!(host, json!("localhost"));
+    assert_eq!(host, json!({}));
 
     let port = manifest.get("connection.common.port", None);
-    assert_eq!(port, json!(5432));
+    assert_eq!(port, json!({}));
 
     let database = manifest.get("connection.common.database", None);
-    assert_eq!(database, json!("common_db"));
+    assert_eq!(database, json!({}));
 }
 
 #[test]
@@ -57,10 +59,14 @@ fn test_manifest_filter_meta() {
     let common = manifest.get("connection.common", None);
 
     assert!(common.is_object());
-    assert!(common.get("name").is_some());
+    // host, port等の子要素は存在する（空オブジェクトだが）
     assert!(common.get("host").is_some());
+    assert!(common.get("port").is_some());
     // _load は除外される
     assert!(common.get("_load").is_none());
+    assert!(common.get("_store").is_none());
+    assert!(common.get("_state").is_none());
+    assert!(common.get("_key").is_none());
 }
 
 #[test]
@@ -85,60 +91,75 @@ fn test_manifest_get_cache_scope() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    let app = manifest.get("cache.app", None);
+    let user = manifest.get("cache.user", None);
 
-    assert!(app.is_object());
-    // org_tenant_map は含まれる
-    assert!(app.get("org_tenant_map").is_some());
-    // _keyPrefix などのメタデータは除外される
-    assert!(app.get("_keyPrefix").is_none());
-    assert!(app.get("_ttl").is_none());
+    assert!(user.is_object());
+    // id, org_id, tenant_id は含まれる
+    assert!(user.get("id").is_some());
+    assert!(user.get("org_id").is_some());
+    assert!(user.get("tenant_id").is_some());
+    // メタデータは除外される
+    assert!(user.get("_state").is_none());
+    assert!(user.get("_store").is_none());
+    assert!(user.get("_load").is_none());
 }
 
 #[test]
-fn test_manifest_get_cache_app_meta() {
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-
-    let meta = manifest.get_meta("cache.app");
-
-    assert!(meta.contains_key("_keyPrefix"));
-    assert!(meta.contains_key("_ttl"));
-
-    assert_eq!(meta.get("_keyPrefix"), Some(&json!("app:")));
-    assert_eq!(meta.get("_ttl"), Some(&json!(null)));
-}
-
-#[test]
-fn test_manifest_get_cache_org_tenant_map_meta() {
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-
-    let meta = manifest.get_meta("cache.app.org_tenant_map");
-
-    // appレベルのメタデータ
-    assert!(meta.contains_key("_keyPrefix"));
-    // org_tenant_mapレベルのメタデータ
-    assert!(meta.contains_key("_key"));
-    assert!(meta.contains_key("_structure"));
-    assert!(meta.contains_key("_load"));
-
-    assert_eq!(meta.get("_key"), Some(&json!("org_tenant_map")));
-}
-
-#[test]
-fn test_manifest_get_cache_user_meta() {
+fn test_manifest_get_cache_user_root_meta() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
     let meta = manifest.get_meta("cache.user");
 
-    assert!(meta.contains_key("_key"));
-    assert!(meta.contains_key("_ttl"));
+    assert!(meta.contains_key("_state"));
+    assert!(meta.contains_key("_store"));
     assert!(meta.contains_key("_load"));
 
-    assert_eq!(meta.get("_key"), Some(&json!("user:{sso_user_id}")));
-    assert_eq!(meta.get("_ttl"), Some(&json!(14400)));
+    // _store内の設定確認
+    if let Some(store) = meta.get("_store") {
+        assert_eq!(store.get("client"), Some(&json!("KVS")));
+        assert_eq!(store.get("key"), Some(&json!("user:${sso_user_id}")));
+        assert_eq!(store.get("ttl"), Some(&json!(14400)));
+    }
+}
+
+#[test]
+fn test_manifest_get_cache_tenant_id_meta() {
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    let meta = manifest.get_meta("cache.user.tenant_id");
+
+    // userレベルのメタデータ（継承）
+    assert!(meta.contains_key("_state"));
+    assert!(meta.contains_key("_store"));
+
+    // tenant_id固有のメタデータ
+    assert!(meta.contains_key("_load"));
+
+    // EXPRESSION clientの確認
+    if let Some(load) = meta.get("_load") {
+        assert_eq!(load.get("client"), Some(&json!("EXPRESSION")));
+        assert!(load.get("expression").is_some());
+    }
+}
+
+#[test]
+fn test_manifest_get_cache_session_meta() {
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    let meta = manifest.get_meta("cache.session");
+
+    assert!(meta.contains_key("_state"));
+    assert!(meta.contains_key("_store"));
+    // sessionは_loadなし（set専用）
+    assert!(!meta.contains_key("_load"));
+
+    // _store内のttl確認
+    if let Some(store) = meta.get("_store") {
+        assert_eq!(store.get("ttl"), Some(&json!(1800)));  // 30 minutes
+    }
 }
 
 #[test]
@@ -186,34 +207,44 @@ fn test_manifest_clear_missing_keys() {
 }
 
 #[test]
-fn test_manifest_database_yml() {
+fn test_manifest_connection_common_meta() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    let tenants = manifest.get("database.tenants", None);
-    assert!(tenants.is_object());
-    // メタデータは除外される
-    assert!(tenants.get("_connection").is_none());
-    assert!(tenants.get("_table").is_none());
+    let meta = manifest.get_meta("connection.common");
 
-    // メタデータは get_meta で取得できる
-    let meta = manifest.get_meta("database.tenants");
-    assert_eq!(meta.get("_connection"), Some(&json!("common")));
-    assert_eq!(meta.get("_table"), Some(&json!("tenants")));
+    assert!(meta.contains_key("_state"));
+    assert!(meta.contains_key("_store"));
+    assert!(meta.contains_key("_load"));
+
+    // _store確認
+    if let Some(store) = meta.get("_store") {
+        assert_eq!(store.get("client"), Some(&json!("InMemory")));
+        assert_eq!(store.get("key"), Some(&json!("connection.common")));
+    }
+
+    // _load確認
+    if let Some(load) = meta.get("_load") {
+        assert_eq!(load.get("client"), Some(&json!("Env")));
+        assert!(load.get("map").is_some());
+    }
 }
 
 #[test]
-fn test_manifest_cache_structure() {
+fn test_manifest_cache_tenant_structure() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    // cache.app.org_tenant_map のデータ取得（メタデータなし）
-    let org_tenant_map = manifest.get("cache.app.org_tenant_map", None);
-    assert!(org_tenant_map.is_object());
-    // _key, _structure, _load は除外される
-    assert!(org_tenant_map.get("_key").is_none());
-    assert!(org_tenant_map.get("_structure").is_none());
-    assert!(org_tenant_map.get("_load").is_none());
+    // cache.tenant のデータ取得（メタデータなし）
+    let tenant = manifest.get("cache.tenant", None);
+    assert!(tenant.is_object());
+    // name, display_name は含まれる
+    assert!(tenant.get("name").is_some());
+    assert!(tenant.get("display_name").is_some());
+    // メタデータは除外される
+    assert!(tenant.get("_state").is_none());
+    assert!(tenant.get("_store").is_none());
+    assert!(tenant.get("_load").is_none());
 }
 
 #[test]
@@ -221,9 +252,10 @@ fn test_manifest_connection_tenant() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    let tenant_name = manifest.get("connection.tenant.name", None);
-    assert_eq!(tenant_name, json!("tenant_{tenant_id}"));
+    // YAMLにはデータ値がなくメタデータのみなので空オブジェクトが返る
+    let tenant_host = manifest.get("connection.tenant.host", None);
+    assert_eq!(tenant_host, json!({}));
 
     let tenant_db = manifest.get("connection.tenant.database", None);
-    assert_eq!(tenant_db, json!("db_tenant{tenant_id}"));
+    assert_eq!(tenant_db, json!({}));
 }

@@ -1,5 +1,4 @@
 common:
-  _key: "connection:common"
   _state:
     type: map
   _store:
@@ -31,7 +30,6 @@ common:
       type: string
 
 tenant:
-  _key: "connection:tenant:${tenant_id}"
   _state:
     type: map
   _store:

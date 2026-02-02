@@ -1,7 +1,0 @@
-tenants:
-  _connection: common
-  _table: "tenants"
-
-users:
-  _connection: tenant
-  _table: "users"
