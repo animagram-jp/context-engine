@@ -2,10 +2,13 @@
 //
 // manifest の _state/_store/_load に従って状態を管理する。
 
+mod parameter_builder;
+
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, ProcessMemoryClient};
 use crate::common::PlaceholderResolver;
+use parameter_builder::ParameterBuilder;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -145,15 +148,15 @@ impl<'a> StateManager<'a> {
     }
 
     /// manifest keyからパラメータを構築
-    ///
-    /// TODO: 現在はダミー実装。本来はUserKey等から取得
-    fn build_params(&self, _key: &str) -> HashMap<String, String> {
-        let mut params = HashMap::new();
-        // ダミーパラメータ
-        params.insert("sso_user_id".to_string(), "user001".to_string());
-        params.insert("tenant_id".to_string(), "1".to_string());
-        params.insert("org_id".to_string(), "100".to_string());
-        params
+    fn build_params(&mut self, key: &str) -> HashMap<String, String> {
+        // ParameterBuilderを使用してプレースホルダー値を解決
+        let mut builder = ParameterBuilder::new(self.manifest);
+
+        if let Some(pm) = self.process_memory.as_ref() {
+            builder = builder.with_process_memory(*pm);
+        }
+
+        builder.build(key, HashMap::new())
     }
 }
 
