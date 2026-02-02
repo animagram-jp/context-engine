@@ -1,0 +1,22 @@
+{
+  "name": "state-engine-sample-app",
+  "version": "0.1.0",
+  "description": "Sample application using state-engine (Rust library via FFI)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "state-engine",
+    "yaml",
+    "state-management"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "dotenv": "^16.0.3",
+    "pg": "^8.11.0",
+    "redis": "^4.6.0"
+  }
+}

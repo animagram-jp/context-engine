@@ -46,24 +46,63 @@ docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
   Cargo.toml          # Rust プロジェクト設定
   src/                # ライブラリソースコード
     common/           # 共通ユーティリティ
+      dot_array_accessor.rs
+      placeholder_resolver.rs
     manifest/         # YAML読み込み
+    load/             # 自動ロード
+    state/            # State CRUD実装
+      parameter_builder.rs
+    ports/            # インターフェース定義
+      provided.rs     # Manifest, State traits
+      required.rs     # Client traits
     lib.rs
   tests/              # テストコード
     mocks/            # モック実装
     integration/      # 統合テスト
-  samples/            # YAMLサンプル（テストで使用）
-    manifest/
-      connection.yml
-      cache.yml
-      database.yml
-  archive/            # Docker開発環境（unused）
+  samples/            # サンプルコード
+    manifest/         # YAML定義サンプル
+      connection.yml  # DB接続設定
+      cache.yml       # KVSキャッシュ設定
+    app/              # Node.js実装サンプル
+      index.js        # 使用例
+      package.json
+    adapters/         # Required Ports実装例
+      process_memory.js
+      env_client.js
+      README.md
 ```
 
 ## Architecture
 
-詳細は CLAUDE.md を参照
+詳細は [CLAUDE.md](./CLAUDE.md) を参照
 
 このライブラリは、YAMLベースの宣言的ステート管理を提供します：
-- manifest -  YAMLファイル読み込み・メタデータ管理
-- state - ステート操作インターフェース（CRUD）
-- load - 自動依存解決・マルチソース対応
+
+### Provided Ports（提供インターフェース）
+- **Manifest** - YAMLファイル読み込み・メタデータ管理
+- **State** - 統一CRUD実装（get/set/delete）
+
+### Required Ports（実装必須インターフェース）
+- **ProcessMemoryClient** - プロセスメモリ操作
+- **ENVClient** - 環境変数取得
+- **KVSClient** - KVS操作（Redis等）
+- **DBClient** - DB操作
+- **APIClient** - 外部API呼び出し
+- **ExpressionClient** - 式評価（app固有ロジック）
+
+### 内部実装
+- **Load** - 自動ロード（_load設定に従いデータ取得）
+- **ParameterBuilder** - プレースホルダー値解決
+- **PlaceholderResolver** - `${variable}` 形式の置換
+
+## Sample Application
+
+Node.jsサンプルアプリケーション:
+
+```bash
+cd samples/app
+npm install
+npm start
+```
+
+詳細は [samples/app/README.md](./samples/app/README.md) を参照
