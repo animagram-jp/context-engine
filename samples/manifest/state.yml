@@ -23,13 +23,13 @@ config:
 user:
   _store:
     client: KVS
-    key: "user:{user_id}"
+    key: "user:${user_id}"
     ttl: 3600
   _load:
     client: DB
     connection: common
     table: users
-    where: "id={user_id}"
+    where: "id=${user_id}"
     map:
       id: "id"
       name: "name"
@@ -49,7 +49,7 @@ user:
 session:
   _store:
     client: KVS
-    key: "session:{session_id}"
+    key: "session:${session_id}"
     ttl: 1800
 
   token:
@@ -63,10 +63,10 @@ session:
 external_data:
   _store:
     client: InMemory
-    key: "external:{id}"
+    key: "external:${id}"
   _load:
     client: API
-    url: "https://api.example.com/data/{id}"
+    url: "https://api.example.com/data/${id}"
     method: GET
     map:
       title: "title"
@@ -103,12 +103,12 @@ tags:
     type: list
   _store:
     client: KVS
-    key: "tags:{resource_id}"
+    key: "tags:${resource_id}"
     ttl: 7200
   _load:
     client: DB
     connection: common
     table: tags
-    where: "resource_id={resource_id}"
+    where: "resource_id=${resource_id}"
     map:
-      list: "tag_name"          
+      list: "tag_name"

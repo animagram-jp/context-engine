@@ -15,17 +15,17 @@ common:
       password: "DB_PASSWORD"
 
 tenant:
-  name: "tenant_{tenant_id}"
+  name: "tenant_${tenant_id}"
   host:
   port:
-  database: "db_tenant{tenant_id}"
+  database: "db_tenant${tenant_id}"
   username:
   password:
   _load:
     client: DB
     connection: common
     table: "tenants"
-    where: "id={tenant_id}"
+    where: "id=${tenant_id}"
     map:
       host: "db_host"
       port: "db_port"
