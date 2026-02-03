@@ -10,42 +10,28 @@ state-engineを使用したサンプルアプリケーションです。
 
 ## セットアップ
 
-### ローカル実行（Node.jsのみ）
-
-```bash
-cd samples/app
-npm install
-npm start
-```
-
 ### Docker Compose実行（推奨）
 
 PostgreSQL + Redis + アプリを一括起動:
 
 ```bash
 cd samples/app
-docker-compose up -d
+docker compose up -d
 ```
 
 ログ確認:
 
 ```bash
-docker-compose logs -f app
+docker compose logs -f app
 ```
 
 停止:
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### 環境変数
-
-`.env.example`を`.env`にコピーして環境変数を設定:
-
-```bash
-cp .env.example .env
-```
 
 主な環境変数:
 - `DB_HOST` - PostgreSQLホスト（デフォルト: postgres）
