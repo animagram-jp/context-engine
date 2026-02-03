@@ -6,7 +6,6 @@ use crate::ports::required::{
     APIClient, DBClient, DBConnectionConfigConverter, ENVClient, ExpressionClient, KVSClient,
     ProcessMemoryClient,
 };
-use crate::common::PlaceholderResolver;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -202,8 +201,14 @@ impl<'a> Load<'a> {
         let connection_config = if let Some(conn_value) = config.get("connection") {
             // placeholder 解決後は Object になっているはず
             if let Some(conn_map) = conn_value.as_object() {
+                // Map を HashMap に変換
+                let conn_hashmap: HashMap<String, Value> = conn_map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
                 db_config_converter
-                    .to_config(conn_map)
+                    .to_config(&conn_hashmap)
                     .ok_or("Load::load_from_db: failed to convert connection config")?
             } else {
                 return Err(format!(
@@ -306,29 +311,12 @@ mod tests {
         map.insert("port".to_string(), Value::String("DB_PORT".to_string()));
         config.insert("map".to_string(), Value::Object(map));
 
-        let params = HashMap::new();
-        let result = load.handle(&config, &params).unwrap();
+        let result = load.handle(&config).unwrap();
 
         assert_eq!(result.get("host"), Some(&Value::String("localhost".to_string())));
         assert_eq!(result.get("port"), Some(&Value::String("5432".to_string())));
     }
 
-    #[test]
-    fn test_load_recursion_limit() {
-        let mut load = Load::new();
-
-        let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::String("Env".to_string()));
-
-        let params = HashMap::new();
-
-        // 再帰深度を超える
-        for _ in 0..11 {
-            load.recursion_depth += 1;
-        }
-
-        let result = load.handle(&config, &params);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("max recursion depth"));
-    }
+    // 再帰深度テストは State が管理するため削除
+    // Load は単純なデータ取得のみを担当
 }
