@@ -10,8 +10,8 @@ pub mod state;
 // Re-export main types
 pub use common::{DotArrayAccessor, PlaceholderResolver};
 pub use manifest::Manifest;
-pub use ports::provided::State;
-pub use state::StateManager;
+pub use ports::provided::State as StateTrait;
+pub use state::{State, resolver::Resolver};
 pub use load::Load;
 
 // Re-export all Required Ports for app implementation

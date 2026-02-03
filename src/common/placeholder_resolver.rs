@@ -1,4 +1,5 @@
 use regex::Regex;
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// PlaceholderResolver - プレースホルダー抽出・置換ユーティリティ
@@ -163,17 +164,17 @@ impl PlaceholderResolver {
     ///
     /// # Returns
     /// * 解決後の値（型保持）
-    pub fn resolve_typed<F>(value: serde_yaml::Value, resolver: &F) -> serde_yaml::Value
+    pub fn resolve_typed<F>(value: Value, resolver: &mut F) -> Value
     where
-        F: Fn(&str) -> Option<serde_yaml::Value>,
+        F: FnMut(&str) -> Option<Value>,
     {
         match value {
-            serde_yaml::Value::String(s) => {
+            Value::String(s) => {
                 let placeholders = Self::extract_placeholders(&s);
 
                 if placeholders.len() == 1 && s == format!("${{{}}}", placeholders[0]) {
                     // 単一 placeholder → 型を保持して解決
-                    resolver(&placeholders[0]).unwrap_or(serde_yaml::Value::String(s))
+                    resolver(&placeholders[0]).unwrap_or(Value::String(s))
                 } else if !placeholders.is_empty() {
                     // 複数 or 文字列内 placeholder → 文字列置換
                     let mut result = s.clone();
@@ -181,33 +182,33 @@ impl PlaceholderResolver {
                         if let Some(resolved_value) = resolver(&ph) {
                             // 値を文字列に変換
                             let replacement = match resolved_value {
-                                serde_yaml::Value::String(s) => s,
-                                serde_yaml::Value::Number(n) => n.to_string(),
-                                serde_yaml::Value::Bool(b) => b.to_string(),
+                                Value::String(s) => s,
+                                Value::Number(n) => n.to_string(),
+                                Value::Bool(b) => b.to_string(),
                                 _ => continue,
                             };
                             result = result.replace(&format!("${{{}}}", ph), &replacement);
                         }
                     }
-                    serde_yaml::Value::String(result)
+                    Value::String(result)
                 } else {
                     // placeholder なし → そのまま
-                    serde_yaml::Value::String(s)
+                    Value::String(s)
                 }
             }
-            serde_yaml::Value::Mapping(map) => {
-                let new_map = map
-                    .into_iter()
-                    .map(|(k, v)| (k, Self::resolve_typed(v, resolver)))
-                    .collect();
-                serde_yaml::Value::Mapping(new_map)
+            Value::Object(map) => {
+                let mut new_map = serde_json::Map::new();
+                for (k, v) in map {
+                    new_map.insert(k, Self::resolve_typed(v, resolver));
+                }
+                Value::Object(new_map)
             }
-            serde_yaml::Value::Sequence(seq) => {
-                let new_seq = seq
-                    .into_iter()
-                    .map(|v| Self::resolve_typed(v, resolver))
-                    .collect();
-                serde_yaml::Value::Sequence(new_seq)
+            Value::Array(arr) => {
+                let mut new_arr = Vec::new();
+                for v in arr {
+                    new_arr.push(Self::resolve_typed(v, resolver));
+                }
+                Value::Array(new_arr)
             }
             // その他の型（Number, Bool, Null）はそのまま
             other => other,

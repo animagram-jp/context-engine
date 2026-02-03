@@ -13,6 +13,7 @@ use std::collections::HashMap;
 /// Load - 自動ロード専用
 ///
 /// _load メタデータに従って各種clientからデータを取得する。
+/// 再帰制御は Resolver が担当。
 pub struct Load<'a> {
     db_client: Option<&'a dyn DBClient>,
     kvs_client: Option<&'a dyn KVSClient>,
@@ -21,8 +22,6 @@ pub struct Load<'a> {
     api_client: Option<&'a dyn APIClient>,
     expression_client: Option<&'a dyn ExpressionClient>,
     db_config_converter: Option<&'a dyn DBConnectionConfigConverter>,
-    recursion_depth: usize,
-    max_recursion: usize,
 }
 
 impl<'a> Load<'a> {
@@ -36,8 +35,6 @@ impl<'a> Load<'a> {
             api_client: None,
             expression_client: None,
             db_config_converter: None,
-            recursion_depth: 0,
-            max_recursion: 10,
         }
     }
 
@@ -83,97 +80,27 @@ impl<'a> Load<'a> {
         self
     }
 
-    /// _load 設定に従ってデータをロード
+    /// placeholder 解決済みの config でデータをロード
     ///
     /// # Arguments
-    /// * `context_key` - 現在のコンテキストキー（例: "cache.user"）
-    /// * `load_config` - _load メタデータ
-    /// * `state_resolver` - state.get() への callback（自己再帰用）
+    /// * `config` - 解決済み _load メタデータ
     ///
     /// # Returns
     /// * `Ok(Value)` - ロード成功
     /// * `Err(String)` - ロード失敗
-    pub fn handle<F>(
-        &mut self,
-        context_key: &str,
-        load_config: &HashMap<String, Value>,
-        state_resolver: F,
-    ) -> Result<Value, String>
-    where
-        F: Fn(&str) -> Option<Value>,
-    {
-        // 再帰深度チェック
-        if self.recursion_depth >= self.max_recursion {
-            return Err(format!(
-                "Load::handle: max recursion depth ({}) reached",
-                self.max_recursion
-            ));
-        }
-
-        self.recursion_depth += 1;
-
-        let result = self.handle_internal(context_key, load_config, &state_resolver);
-
-        self.recursion_depth -= 1;
-
-        result
-    }
-
-    fn handle_internal<F>(
-        &mut self,
-        context_key: &str,
-        load_config: &HashMap<String, Value>,
-        state_resolver: &F,
-    ) -> Result<Value, String>
-    where
-        F: Fn(&str) -> Option<Value>,
-    {
-        use crate::common::PlaceholderResolver;
-        use crate::state::parameter_builder::ParameterBuilder;
-
-        let client = load_config
+    pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, String> {
+        let client = config
             .get("client")
             .and_then(|v| v.as_str())
             .ok_or("Load::handle: 'client' not found in _load config")?;
 
-        // load_config 内の placeholder を型付きで解決
-        let resolver = |placeholder_name: &str| {
-            ParameterBuilder::resolve_placeholder(placeholder_name, context_key, state_resolver)
-        };
-
-        let resolved_config_value = Value::Mapping(
-            load_config
-                .iter()
-                .map(|(k, v)| (Value::String(k.clone()), v.clone()))
-                .collect(),
-        );
-
-        let resolved_config_value =
-            PlaceholderResolver::resolve_typed(resolved_config_value, &resolver);
-
-        let resolved_config: HashMap<String, Value> = if let Value::Mapping(m) =
-            resolved_config_value
-        {
-            m.into_iter()
-                .map(|(k, v)| {
-                    if let Value::String(key) = k {
-                        (key, v)
-                    } else {
-                        (String::new(), v) // fallback
-                    }
-                })
-                .collect()
-        } else {
-            return Err("Load::handle: failed to resolve config".to_string());
-        };
-
         match client {
-            "Env" | "ENV" => self.load_from_env(&resolved_config),
-            "InMemory" => self.load_from_process_memory(&resolved_config),
-            "KVS" => self.load_from_kvs(&resolved_config),
-            "DB" => self.load_from_db(&resolved_config),
-            "API" => self.load_from_api(&resolved_config),
-            "EXPRESSION" => self.load_from_expression(&resolved_config),
+            "Env" | "ENV" => self.load_from_env(config),
+            "InMemory" => self.load_from_process_memory(config),
+            "KVS" => self.load_from_kvs(config),
+            "DB" => self.load_from_db(config),
+            "API" => self.load_from_api(config),
+            "EXPRESSION" => self.load_from_expression(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
