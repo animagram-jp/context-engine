@@ -4,14 +4,14 @@
 
 ## Required Ports一覧
 
-### 1. ProcessMemoryClient
-**実装:** `process_memory.js`
+### 1. InMemoryClient
+**実装:** `in_memory.js`
 
 プロセスメモリ内のKey-Value操作を提供します。
 
 ```javascript
-const ProcessMemoryAdapter = require('./process_memory');
-const pm = new ProcessMemoryAdapter();
+const InMemoryAdapter = require('./in_memory');
+const pm = new InMemoryAdapter();
 
 pm.set('userkey.sso_user_id', 'user123');
 const userId = pm.get('userkey.sso_user_id');
@@ -72,19 +72,6 @@ const data = await api.get('https://api.example.com/users/123');
 await api.post('https://api.example.com/users', { name: 'John' });
 ```
 
-### 6. ExpressionClient
-**実装:** `expression_client.js` (TODO)
-
-app固有の式評価ロジックを提供します。
-
-```javascript
-// Example (not implemented yet)
-const ExpressionAdapter = require('./expression_client');
-const expr = new ExpressionAdapter();
-
-const result = await expr.evaluate('get_tenant_id_from_org(100)');
-```
-
 ## 実装ガイド
 
 各adapterは以下の責務を持ちます:
@@ -97,11 +84,11 @@ const result = await expr.evaluate('get_tenant_id_from_org(100)');
 ## 使用例
 
 ```javascript
-const ProcessMemory = require('./adapters/process_memory');
+const InMemory = require('./adapters/in_memory');
 const ENV = require('./adapters/env_client');
 
 // Setup
-const pm = new ProcessMemory();
+const pm = new InMemory();
 const env = new ENV();
 
 // Set user context

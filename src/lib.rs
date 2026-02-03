@@ -17,7 +17,7 @@ pub use load::Load;
 // Re-export all Required Ports for app implementation
 pub use ports::required::{
     APIClient, ConnectionConfig, DBClient, DBConnectionConfigConverter, ENVClient,
-    ExpressionClient, KVSClient, ProcessMemoryClient,
+    KVSClient, InMemoryClient,
 };
 
 // TODO: 以下のモジュールを実装

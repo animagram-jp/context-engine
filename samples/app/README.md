@@ -88,7 +88,7 @@ samples/
   │   ├── index.js          # Main application
   │   └── README.md         # このファイル
   ├── adapters/             # Required Ports implementations
-  │   ├── process_memory.js # ProcessMemoryClient
+  │   ├── in_memory.js # InMemoryClient
   │   ├── env_client.js     # ENVClient
   │   └── README.md
   └── manifest/             # YAML definitions

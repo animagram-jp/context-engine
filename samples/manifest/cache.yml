@@ -1,20 +1,16 @@
-# cache.yml - KVS state management sample
-
 user:
-  _state:
-    type: map
   _store:
     client: KVS
-    key: "user:${sso_user_id}"
-    ttl: 14400  # 4 hours in seconds
+    key: 'user:${session.sso_user_id}' # absolute path reference
+    ttl: 14400
   _load:
     client: DB
-    connection: ${connection.tenant}    # 絶対パス参照（フルパス）
-    table: "users"
-    where: "sso_user_id='${sso_user_id}'"
+    connection: ${connection.tenant}
+    table: 'users'
+    where: "sso_user_id='${session.sso_user_id}'"
     map:
-      id: "id"
-      org_id: "sso_org_id"
+      id: 'id'
+      org_id: 'sso_org_id'
 
   id:
     _state:
@@ -25,26 +21,22 @@ user:
   tenant_id:
     _state:
       type: integer
-    # tenant_idは同層の org_id から計算
     _load:
-      client: EXPRESSION
-      expression: "get_tenant_id_from_org(${org_id})"  # 同層参照
+      key: '${org_id}' # relative path reference
 
 tenant:
-  _state:
-    type: map
   _store:
     client: KVS
-    key: "tenant:${tenant_id}"
-    ttl: 3600  # 1 hour
+    key: 'tenant:${cache.user.tenant_id}'
+    ttl: 3600
   _load:
     client: DB
-    connection: ${connection.common}    # 絶対パス参照（フルパス）
-    table: "tenants"
-    where: "id=${tenant_id}"
+    connection: ${connection.common}
+    table: 'tenants'
+    where: 'id=${cache.user.tenant_id}'
     map:
-      name: "name"
-      display_name: "display_name"
+      name: 'name'
+      display_name: 'display_name'
 
   name:
     _state:
@@ -52,22 +44,3 @@ tenant:
   display_name:
     _state:
       type: string
-
-# session - set専用の例（_loadなし）
-session:
-  _state:
-    type: map
-  _store:
-    client: KVS
-    key: "session:${session_id}"
-    ttl: 1800  # 30 minutes
-
-  token:
-    _state:
-      type: string
-  user_id:
-    _state:
-      type: integer
-  expires_at:
-    _state:
-      type: integer

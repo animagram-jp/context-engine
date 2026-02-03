@@ -111,14 +111,14 @@ fn test_manifest_get_cache_user_root_meta() {
 
     let meta = manifest.get_meta("cache.user");
 
-    assert!(meta.contains_key("_state"));
+    // user は _state が省略されている（子要素があるため自明）
     assert!(meta.contains_key("_store"));
     assert!(meta.contains_key("_load"));
 
     // _store内の設定確認
     if let Some(store) = meta.get("_store") {
         assert_eq!(store.get("client"), Some(&json!("KVS")));
-        assert_eq!(store.get("key"), Some(&json!("user:${sso_user_id}")));
+        assert_eq!(store.get("key"), Some(&json!("user:${session.sso_user_id}")));
         assert_eq!(store.get("ttl"), Some(&json!(14400)));
     }
 }
@@ -137,28 +137,11 @@ fn test_manifest_get_cache_tenant_id_meta() {
     // tenant_id固有のメタデータ
     assert!(meta.contains_key("_load"));
 
-    // EXPRESSION clientの確認
+    // client無しの_load（keyのみの相対参照）
     if let Some(load) = meta.get("_load") {
-        assert_eq!(load.get("client"), Some(&json!("EXPRESSION")));
-        assert!(load.get("expression").is_some());
-    }
-}
-
-#[test]
-fn test_manifest_get_cache_session_meta() {
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-
-    let meta = manifest.get_meta("cache.session");
-
-    assert!(meta.contains_key("_state"));
-    assert!(meta.contains_key("_store"));
-    // sessionは_loadなし（set専用）
-    assert!(!meta.contains_key("_load"));
-
-    // _store内のttl確認
-    if let Some(store) = meta.get("_store") {
-        assert_eq!(store.get("ttl"), Some(&json!(1800)));  // 30 minutes
+        // clientが無い場合はloadを呼ばずkeyの値を使用
+        assert_eq!(load.get("client"), None);
+        assert_eq!(load.get("key"), Some(&json!("${org_id}")));
     }
 }
 

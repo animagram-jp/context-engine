@@ -3,8 +3,8 @@
 // _load 設定に従って各種ソースからデータをロードする。
 
 use crate::ports::required::{
-    APIClient, DBClient, DBConnectionConfigConverter, ENVClient, ExpressionClient, KVSClient,
-    ProcessMemoryClient,
+    APIClient, DBClient, DBConnectionConfigConverter, ENVClient, KVSClient,
+    InMemoryClient,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,10 +16,9 @@ use std::collections::HashMap;
 pub struct Load<'a> {
     db_client: Option<&'a dyn DBClient>,
     kvs_client: Option<&'a dyn KVSClient>,
-    process_memory: Option<&'a dyn ProcessMemoryClient>,
+    in_memory: Option<&'a dyn InMemoryClient>,
     env_client: Option<&'a dyn ENVClient>,
     api_client: Option<&'a dyn APIClient>,
-    expression_client: Option<&'a dyn ExpressionClient>,
     db_config_converter: Option<&'a dyn DBConnectionConfigConverter>,
 }
 
@@ -29,10 +28,9 @@ impl<'a> Load<'a> {
         Self {
             db_client: None,
             kvs_client: None,
-            process_memory: None,
+            in_memory: None,
             env_client: None,
             api_client: None,
-            expression_client: None,
             db_config_converter: None,
         }
     }
@@ -49,9 +47,9 @@ impl<'a> Load<'a> {
         self
     }
 
-    /// ProcessMemoryClientを設定
-    pub fn with_process_memory(mut self, client: &'a dyn ProcessMemoryClient) -> Self {
-        self.process_memory = Some(client);
+    /// InMemoryClientを設定
+    pub fn with_in_memory(mut self, client: &'a dyn InMemoryClient) -> Self {
+        self.in_memory = Some(client);
         self
     }
 
@@ -64,12 +62,6 @@ impl<'a> Load<'a> {
     /// APIClientを設定
     pub fn with_api_client(mut self, client: &'a dyn APIClient) -> Self {
         self.api_client = Some(client);
-        self
-    }
-
-    /// ExpressionClientを設定
-    pub fn with_expression_client(mut self, client: &'a dyn ExpressionClient) -> Self {
-        self.expression_client = Some(client);
         self
     }
 
@@ -95,11 +87,10 @@ impl<'a> Load<'a> {
 
         match client {
             "Env" | "ENV" => self.load_from_env(config),
-            "InMemory" => self.load_from_process_memory(config),
+            "InMemory" => self.load_from_in_memory(config),
             "KVS" => self.load_from_kvs(config),
             "DB" => self.load_from_db(config),
             "API" => self.load_from_api(config),
-            "EXPRESSION" => self.load_from_expression(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -131,24 +122,24 @@ impl<'a> Load<'a> {
         Ok(Value::Object(result))
     }
 
-    /// ProcessMemoryから読み込み
-    fn load_from_process_memory(
+    /// InMemoryから読み込み
+    fn load_from_in_memory(
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let process_memory = self
-            .process_memory
-            .ok_or("Load::load_from_process_memory: ProcessMemoryClient not configured")?;
+        let in_memory = self
+            .in_memory
+            .ok_or("Load::load_from_in_memory: InMemoryClient not configured")?;
 
         let key = config
             .get("key")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_process_memory: 'key' not found")?;
+            .ok_or("Load::load_from_in_memory: 'key' not found")?;
 
         // placeholder はすでに resolved_config で解決済み
-        process_memory
+        in_memory
             .get(key)
-            .ok_or_else(|| format!("Load::load_from_process_memory: key '{}' not found", key))
+            .ok_or_else(|| format!("Load::load_from_in_memory: key '{}' not found", key))
     }
 
     /// KVSから読み込み
@@ -261,24 +252,6 @@ impl<'a> Load<'a> {
         });
 
         api_client.get(url, headers.as_ref())
-    }
-
-    /// EXPRESSIONから読み込み
-    fn load_from_expression(
-        &self,
-        config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
-        let expression_client = self
-            .expression_client
-            .ok_or("Load::load_from_expression: ExpressionClient not configured")?;
-
-        let expression = config
-            .get("expression")
-            .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_expression: 'expression' not found")?;
-
-        // placeholder はすでに resolved_config で解決済み
-        expression_client.evaluate(expression)
     }
 }
 

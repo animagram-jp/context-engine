@@ -3,15 +3,15 @@ common:
     type: map
   _store:
     client: InMemory
-    key: "connection.common"
+    key: 'connection.common'
   _load:
     client: Env
     map:
-      host: "DB_HOST"
-      port: "DB_PORT"
-      database: "DB_DATABASE"
-      username: "DB_USERNAME"
-      password: "DB_PASSWORD"
+      host: 'DB_HOST'
+      port: 'DB_PORT'
+      database: 'DB_DATABASE'
+      username: 'DB_USERNAME'
+      password: 'DB_PASSWORD'
 
   host:
     _state:
@@ -34,18 +34,18 @@ tenant:
     type: map
   _store:
     client: InMemory
-    key: "connection.tenant.${tenant_id}"
+    key: 'connection.tenant.${cache.user.tenant_id}'
   _load:
     client: DB
-    connection: ${connection.common}    # 絶対パス参照（フルパス）
-    table: "tenants"
-    where: "id=${tenant_id}"
+    connection: ${connection.common}
+    table: 'tenants'
+    where: 'id=${tenant_id}'
     map:
-      host: "db_host"
-      port: "db_port"
-      database: "db_database"
-      username: "db_username"
-      password: "db_password"
+      host: 'db_host'
+      port: 'db_port'
+      database: 'db_database'
+      username: 'db_username'
+      password: 'db_password'
 
   host:
     _state:

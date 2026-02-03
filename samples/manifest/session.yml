@@ -1,0 +1,9 @@
+sso_user_id:
+  _state:
+    type: integer
+  _store:
+    client: InMemory
+    key: 'request-attributes'
+  _load:
+    client: InMemory
+    key: 'request-header'

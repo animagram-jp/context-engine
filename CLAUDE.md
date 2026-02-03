@@ -33,7 +33,7 @@ node:
     key: "namespace.${variable}"
     ttl: 3600  # KVS使用時のみ（optional）
   _load:
-    client: DB  # Env/InMemory/KVS/DB/API/EXPRESSION
+    client: DB  # Env/InMemory/KVS/DB/API
     connection: common
     table: "table_name"
     where: "id=${variable}"
@@ -99,7 +99,7 @@ state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.
 
 ### Required Ports (app側が実装)
 
-1. **ProcessMemoryClient** - プロセスメモリ操作
+1. **InMemoryClient** - プロセスメモリ操作
 2. **KVSClient** - KVS操作（Redis等）
 3. **DBClient** - DB操作
 4. **ENVClient** - 環境変数取得
@@ -195,7 +195,7 @@ user:
 
 5. **責務分担**
    - **PlaceholderResolver**: 純粋な文字列処理（依存なし）
-   - **ParameterBuilder**: 値の解決ロジック（UserKey, ProcessMemory等へのアクセス）
+   - **ParameterBuilder**: 値の解決ロジック（UserKey, InMemory等へのアクセス）
    - **State/Load**: PlaceholderResolverを呼び出して実行時に置換
 
 6. **パフォーマンス考慮**

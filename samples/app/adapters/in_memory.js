@@ -1,11 +1,11 @@
 /**
- * ProcessMemoryClient implementation
+ * InMemoryClient implementation
  *
- * Implements the ProcessMemoryClient Required Port.
+ * Implements the InMemoryClient Required Port.
  * Manages in-memory key-value storage for the current process.
  */
 
-class ProcessMemoryAdapter {
+class InMemoryAdapter {
   constructor() {
     this.data = new Map();
   }
@@ -53,4 +53,4 @@ class ProcessMemoryAdapter {
   }
 }
 
-module.exports = ProcessMemoryAdapter;
+module.exports = InMemoryAdapter;

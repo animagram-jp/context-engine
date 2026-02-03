@@ -67,7 +67,7 @@ docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
       index.js        # 使用例
       package.json
     adapters/         # Required Ports実装例
-      process_memory.js
+      in_memory.js
       env_client.js
       README.md
 ```
@@ -83,12 +83,11 @@ docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
 - **State** - 統一CRUD実装（get/set/delete）
 
 ### Required Ports（実装必須インターフェース）
-- **ProcessMemoryClient** - プロセスメモリ操作
+- **InMemoryClient** - プロセスメモリ操作
 - **ENVClient** - 環境変数取得
 - **KVSClient** - KVS操作（Redis等）
 - **DBClient** - DB操作
 - **APIClient** - 外部API呼び出し
-- **ExpressionClient** - 式評価（app固有ロジック）
 
 ### 内部実装
 - **Load** - 自動ロード（_load設定に従いデータ取得）

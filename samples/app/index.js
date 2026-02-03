@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Import adapters
-const ProcessMemoryAdapter = require('./adapters/process_memory');
+const InMemoryAdapter = require('./adapters/in_memory');
 const ENVAdapter = require('./adapters/env_client');
 const KVSAdapter = require('./adapters/kvs_client');
 const DBAdapter = require('./adapters/db_client');
@@ -33,7 +33,7 @@ async function main() {
   console.log('   - cache.yml loaded\n');
 
   // 2. Setup adapters
-  const processMemory = new ProcessMemoryAdapter();
+  const InMemory = new InMemoryAdapter();
   const envClient = new ENVAdapter();
   const kvsClient = new KVSAdapter();
   const dbClient = new DBAdapter();
@@ -58,8 +58,8 @@ async function main() {
 
     // 4. Set user context
     const testUser = users[0];
-    processMemory.set('userkey.sso_user_id', testUser.sso_user_id);
-    processMemory.set('userkey.tenant_id', testUser.tenant_id);
+    InMemory.set('userkey.sso_user_id', testUser.sso_user_id);
+    InMemory.set('userkey.tenant_id', testUser.tenant_id);
 
     console.log('4. User context set:');
     console.log(`   - sso_user_id: ${testUser.sso_user_id}`);

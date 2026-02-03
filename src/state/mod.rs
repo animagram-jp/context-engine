@@ -4,7 +4,7 @@
 
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
-use crate::ports::required::{KVSClient, ProcessMemoryClient};
+use crate::ports::required::{KVSClient, InMemoryClient};
 use crate::common::PlaceholderResolver;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 pub struct State<'a> {
     manifest: &'a mut dyn ManifestTrait,
     load: Load<'a>,
-    process_memory: Option<&'a mut dyn ProcessMemoryClient>,
+    in_memory: Option<&'a mut dyn InMemoryClient>,
     kvs_client: Option<&'a mut dyn KVSClient>,
     recursion_depth: usize,
     max_recursion: usize,
@@ -28,16 +28,16 @@ impl<'a> State<'a> {
         Self {
             manifest,
             load,
-            process_memory: None,
+            in_memory: None,
             kvs_client: None,
             recursion_depth: 0,
             max_recursion: 10,
         }
     }
 
-    /// ProcessMemoryClient を設定
-    pub fn with_process_memory(mut self, client: &'a mut dyn ProcessMemoryClient) -> Self {
-        self.process_memory = Some(client);
+    /// InMemoryClient を設定
+    pub fn with_in_memory(mut self, client: &'a mut dyn InMemoryClient) -> Self {
+        self.in_memory = Some(client);
         self
     }
 
@@ -102,9 +102,9 @@ impl<'a> State<'a> {
 
         match client {
             "InMemory" => {
-                let process_memory = self.process_memory.as_ref()?;
+                let in_memory = self.in_memory.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
-                process_memory.get(key)
+                in_memory.get(key)
             }
             "KVS" => {
                 let kvs_client = self.kvs_client.as_ref()?;
@@ -129,9 +129,9 @@ impl<'a> State<'a> {
 
         match client {
             "InMemory" => {
-                if let Some(process_memory) = self.process_memory.as_mut() {
+                if let Some(in_memory) = self.in_memory.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        process_memory.set(key, value);
+                        in_memory.set(key, value);
                         return true;
                     }
                 }
@@ -160,9 +160,9 @@ impl<'a> State<'a> {
 
         match client {
             "InMemory" => {
-                if let Some(process_memory) = self.process_memory.as_mut() {
+                if let Some(in_memory) = self.in_memory.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        return process_memory.delete(key);
+                        return in_memory.delete(key);
                     }
                 }
                 false
@@ -211,7 +211,8 @@ impl<'a> StateTrait for State<'a> {
 
                 if let Some(value) = self.get_from_store(&resolved_store_config) {
                     self.recursion_depth -= 1;
-                    return Some(value);
+                    // 子フィールドアクセスの場合、オブジェクトから抽出
+                    return Some(self.extract_child_field(key, value));
                 }
             }
         }
@@ -225,24 +226,35 @@ impl<'a> StateTrait for State<'a> {
                 // placeholder 解決
                 let resolved_config = self.resolve_load_config(key, &load_config);
 
-                // Load 実行
-                if let Ok(loaded) = self.load.handle(&resolved_config) {
-                    // ロード成功 → _store に保存
-                    if let Some(store_config_value) = meta.get("_store") {
-                        if let Some(store_config_obj) = store_config_value.as_object() {
-                            let store_config: HashMap<String, Value> = store_config_obj
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect();
-
-                            // store_config の placeholder も解決
-                            let resolved_store_config = self.resolve_load_config(key, &store_config);
-                            self.set_to_store(&resolved_store_config, loaded.clone(), None);
-                        }
+                // client が無い場合は key の値を直接返す
+                if !resolved_config.contains_key("client") {
+                    // _load.key の値を返す（placeholder 解決済みの値）
+                    if let Some(key_value) = resolved_config.get("key") {
+                        // key_value は既に resolve_load_config で値に解決されている
+                        self.recursion_depth -= 1;
+                        return Some(key_value.clone());
                     }
-                    Some(loaded)
-                } else {
                     None
+                } else {
+                    // Load 実行
+                    if let Ok(loaded) = self.load.handle(&resolved_config) {
+                        // ロード成功 → _store に保存
+                        if let Some(store_config_value) = meta.get("_store") {
+                            if let Some(store_config_obj) = store_config_value.as_object() {
+                                let store_config: HashMap<String, Value> = store_config_obj
+                                    .iter()
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect();
+
+                                // store_config の placeholder も解決
+                                let resolved_store_config = self.resolve_load_config(key, &store_config);
+                                self.set_to_store(&resolved_store_config, loaded.clone(), None);
+                            }
+                        }
+                        Some(loaded)
+                    } else {
+                        None
+                    }
                 }
             } else {
                 None
@@ -310,14 +322,14 @@ impl<'a> StateTrait for State<'a> {
 mod tests {
     use super::*;
     use crate::manifest::Manifest;
-    use crate::ports::required::ProcessMemoryClient;
+    use crate::ports::required::InMemoryClient;
 
-    // Mock ProcessMemoryClient
-    struct MockProcessMemory {
+    // Mock InMemoryClient
+    struct MockInMemory {
         data: HashMap<String, Value>,
     }
 
-    impl MockProcessMemory {
+    impl MockInMemory {
         fn new() -> Self {
             Self {
                 data: HashMap::new(),
@@ -325,7 +337,7 @@ mod tests {
         }
     }
 
-    impl ProcessMemoryClient for MockProcessMemory {
+    impl InMemoryClient for MockInMemory {
         fn get(&self, key: &str) -> Option<Value> {
             self.data.get(key).cloned()
         }
@@ -346,9 +358,9 @@ mod tests {
         let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
 
         let load = Load::new();
-        let mut process_memory = MockProcessMemory::new();
+        let mut in_memory = MockInMemory::new();
 
-        let mut state = State::new(&mut manifest, load).with_process_memory(&mut process_memory);
+        let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
 
         // connection.common は InMemory で placeholder なし
         let mut conn_value = serde_json::Map::new();
@@ -370,9 +382,9 @@ mod tests {
         let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
 
         let load = Load::new();
-        let mut process_memory = MockProcessMemory::new();
+        let mut in_memory = MockInMemory::new();
 
-        let mut state = State::new(&mut manifest, load).with_process_memory(&mut process_memory);
+        let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
 
         // connection.common でテスト
         let value = Value::String("test_value".to_string());
