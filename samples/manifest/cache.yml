@@ -9,7 +9,7 @@ user:
     ttl: 14400  # 4 hours in seconds
   _load:
     client: DB
-    connection: tenant
+    connection: ${connection.tenant}    # 絶対パス参照（フルパス）
     table: "users"
     where: "sso_user_id='${sso_user_id}'"
     map:
@@ -25,11 +25,10 @@ user:
   tenant_id:
     _state:
       type: integer
-    # tenant_idは別のstateから取得する例
-    # 実装はapp側のEXPRESSION client次第
+    # tenant_idは同層の org_id から計算
     _load:
       client: EXPRESSION
-      expression: "get_tenant_id_from_org(${org_id})"
+      expression: "get_tenant_id_from_org(${org_id})"  # 同層参照
 
 tenant:
   _state:
@@ -40,7 +39,7 @@ tenant:
     ttl: 3600  # 1 hour
   _load:
     client: DB
-    connection: common
+    connection: ${connection.common}    # 絶対パス参照（フルパス）
     table: "tenants"
     where: "id=${tenant_id}"
     map:

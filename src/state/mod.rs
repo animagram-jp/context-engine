@@ -147,16 +147,99 @@ impl<'a> StateManager<'a> {
         }
     }
 
-    /// manifest keyからパラメータを構築
-    fn build_params(&mut self, key: &str) -> HashMap<String, String> {
-        // ParameterBuilderを使用してプレースホルダー値を解決
-        let mut builder = ParameterBuilder::new(self.manifest);
+    /// config 内の placeholder を解決
+    fn resolve_config_placeholders<F>(
+        &self,
+        config: &HashMap<String, Value>,
+        context_key: &str,
+        state_resolver: &F,
+    ) -> HashMap<String, Value>
+    where
+        F: Fn(&str) -> Option<Value>,
+    {
+        use crate::common::PlaceholderResolver;
+        use crate::state::parameter_builder::ParameterBuilder;
 
-        if let Some(pm) = self.process_memory.as_ref() {
-            builder = builder.with_process_memory(*pm);
+        let resolver = |placeholder_name: &str| {
+            ParameterBuilder::resolve_placeholder(placeholder_name, context_key, state_resolver)
+        };
+
+        let config_value = Value::Mapping(
+            config
+                .iter()
+                .map(|(k, v)| (Value::String(k.clone()), v.clone()))
+                .collect(),
+        );
+
+        let resolved_value = PlaceholderResolver::resolve_typed(config_value, &resolver);
+
+        if let Value::Mapping(m) = resolved_value {
+            m.into_iter()
+                .map(|(k, v)| {
+                    if let Value::String(key) = k {
+                        (key, v)
+                    } else {
+                        (String::new(), v)
+                    }
+                })
+                .collect()
+        } else {
+            HashMap::new()
         }
+    }
 
-        builder.build(key, HashMap::new())
+    /// placeholder 解決済みの store から値を取得
+    fn get_from_store_resolved(&self, store_config: &HashMap<String, Value>) -> Option<Value> {
+        let client = store_config.get("client")?.as_str()?;
+
+        match client {
+            "InMemory" => {
+                let process_memory = self.process_memory.as_ref()?;
+                let key = store_config.get("key")?.as_str()?;
+                process_memory.get(key)
+            }
+            "KVS" => {
+                let kvs_client = self.kvs_client.as_ref()?;
+                let key = store_config.get("key")?.as_str()?;
+                kvs_client.get(key)
+            }
+            _ => None,
+        }
+    }
+
+    /// placeholder 解決済みの store に値を保存
+    fn set_to_store_resolved(
+        &mut self,
+        store_config: &HashMap<String, Value>,
+        value: Value,
+        ttl: Option<u64>,
+    ) -> bool {
+        let client = match store_config.get("client").and_then(|v| v.as_str()) {
+            Some(c) => c,
+            None => return false,
+        };
+
+        match client {
+            "InMemory" => {
+                if let Some(process_memory) = self.process_memory.as_mut() {
+                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
+                        process_memory.set(key, value);
+                        return true;
+                    }
+                }
+                false
+            }
+            "KVS" => {
+                if let Some(kvs_client) = self.kvs_client.as_mut() {
+                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
+                        let final_ttl = ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
+                        return kvs_client.set(key, value, final_ttl);
+                    }
+                }
+                false
+            }
+            _ => false,
+        }
     }
 }
 
@@ -168,22 +251,30 @@ impl<'a> StateTrait for StateManager<'a> {
             return None;
         }
 
-        // 2. パラメータ構築
-        let params = self.build_params(key);
+        // 2. _store から値を取得（placeholder 解決付き）
+        if let Some(store_config_value) = meta.get("_store") {
+            if let Some(store_config_obj) = store_config_value.as_object() {
+                let store_config: HashMap<String, Value> = store_config_obj
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
 
-        // 3. _store設定取得
-        let store_config = meta.get("_store").and_then(|v| v.as_object())?;
-        let store_config_map: HashMap<String, Value> = store_config
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+                // placeholder 解決用 callback
+                let resolver = |placeholder_key: &str| -> Option<Value> {
+                    // 自己再帰！
+                    self.get(placeholder_key)
+                };
 
-        // 4. _storeから値を取得
-        if let Some(value) = self.get_from_store(&store_config_map, &params) {
-            return Some(value);
+                // store_config の placeholder を解決
+                let resolved_store = self.resolve_config_placeholders(&store_config, key, &resolver);
+
+                if let Some(value) = self.get_from_store_resolved(&resolved_store) {
+                    return Some(value);
+                }
+            }
         }
 
-        // 5. miss時は自動ロード
+        // 3. miss時は自動ロード
         if let Some(load_config_value) = meta.get("_load") {
             if let Some(load_config_obj) = load_config_value.as_object() {
                 let load_config: HashMap<String, Value> = load_config_obj
@@ -191,9 +282,29 @@ impl<'a> StateTrait for StateManager<'a> {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
 
-                if let Ok(loaded) = self.load.handle(&load_config, &params) {
+                // state resolver callback（自己再帰）
+                let state_resolver = |dep_key: &str| -> Option<Value> {
+                    self.get(dep_key)
+                };
+
+                if let Ok(loaded) = self.load.handle(key, &load_config, state_resolver) {
                     // ロード成功 → _storeに保存
-                    self.set_to_store(&store_config_map, &params, loaded.clone(), None);
+                    if let Some(store_config_value) = meta.get("_store") {
+                        if let Some(store_config_obj) = store_config_value.as_object() {
+                            let store_config: HashMap<String, Value> = store_config_obj
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect();
+
+                            let resolver = |placeholder_key: &str| -> Option<Value> {
+                                self.get(placeholder_key)
+                            };
+
+                            let resolved_store =
+                                self.resolve_config_placeholders(&store_config, key, &resolver);
+                            self.set_to_store_resolved(&resolved_store, loaded.clone(), None);
+                        }
+                    }
                     return Some(loaded);
                 }
             }

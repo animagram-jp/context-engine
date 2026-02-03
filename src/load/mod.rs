@@ -86,17 +86,22 @@ impl<'a> Load<'a> {
     /// _load 設定に従ってデータをロード
     ///
     /// # Arguments
+    /// * `context_key` - 現在のコンテキストキー（例: "cache.user"）
     /// * `load_config` - _load メタデータ
-    /// * `params` - プレースホルダー置換用パラメータ
+    /// * `state_resolver` - state.get() への callback（自己再帰用）
     ///
     /// # Returns
     /// * `Ok(Value)` - ロード成功
     /// * `Err(String)` - ロード失敗
-    pub fn handle(
+    pub fn handle<F>(
         &mut self,
+        context_key: &str,
         load_config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
-    ) -> Result<Value, String> {
+        state_resolver: F,
+    ) -> Result<Value, String>
+    where
+        F: Fn(&str) -> Option<Value>,
+    {
         // 再帰深度チェック
         if self.recursion_depth >= self.max_recursion {
             return Err(format!(
@@ -107,30 +112,68 @@ impl<'a> Load<'a> {
 
         self.recursion_depth += 1;
 
-        let result = self.handle_internal(load_config, params);
+        let result = self.handle_internal(context_key, load_config, &state_resolver);
 
         self.recursion_depth -= 1;
 
         result
     }
 
-    fn handle_internal(
+    fn handle_internal<F>(
         &mut self,
+        context_key: &str,
         load_config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
-    ) -> Result<Value, String> {
+        state_resolver: &F,
+    ) -> Result<Value, String>
+    where
+        F: Fn(&str) -> Option<Value>,
+    {
+        use crate::common::PlaceholderResolver;
+        use crate::state::parameter_builder::ParameterBuilder;
+
         let client = load_config
             .get("client")
             .and_then(|v| v.as_str())
             .ok_or("Load::handle: 'client' not found in _load config")?;
 
+        // load_config 内の placeholder を型付きで解決
+        let resolver = |placeholder_name: &str| {
+            ParameterBuilder::resolve_placeholder(placeholder_name, context_key, state_resolver)
+        };
+
+        let resolved_config_value = Value::Mapping(
+            load_config
+                .iter()
+                .map(|(k, v)| (Value::String(k.clone()), v.clone()))
+                .collect(),
+        );
+
+        let resolved_config_value =
+            PlaceholderResolver::resolve_typed(resolved_config_value, &resolver);
+
+        let resolved_config: HashMap<String, Value> = if let Value::Mapping(m) =
+            resolved_config_value
+        {
+            m.into_iter()
+                .map(|(k, v)| {
+                    if let Value::String(key) = k {
+                        (key, v)
+                    } else {
+                        (String::new(), v) // fallback
+                    }
+                })
+                .collect()
+        } else {
+            return Err("Load::handle: failed to resolve config".to_string());
+        };
+
         match client {
-            "Env" | "ENV" => self.load_from_env(load_config, params),
-            "InMemory" => self.load_from_process_memory(load_config, params),
-            "KVS" => self.load_from_kvs(load_config, params),
-            "DB" => self.load_from_db(load_config, params),
-            "API" => self.load_from_api(load_config, params),
-            "EXPRESSION" => self.load_from_expression(load_config, params),
+            "Env" | "ENV" => self.load_from_env(&resolved_config),
+            "InMemory" => self.load_from_process_memory(&resolved_config),
+            "KVS" => self.load_from_kvs(&resolved_config),
+            "DB" => self.load_from_db(&resolved_config),
+            "API" => self.load_from_api(&resolved_config),
+            "EXPRESSION" => self.load_from_expression(&resolved_config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -139,7 +182,6 @@ impl<'a> Load<'a> {
     fn load_from_env(
         &self,
         config: &HashMap<String, Value>,
-        _params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let env_client = self
             .env_client
@@ -167,21 +209,19 @@ impl<'a> Load<'a> {
     fn load_from_process_memory(
         &self,
         config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let process_memory = self
             .process_memory
             .ok_or("Load::load_from_process_memory: ProcessMemoryClient not configured")?;
 
-        let key_template = config
+        let key = config
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_process_memory: 'key' not found")?;
 
-        let key = PlaceholderResolver::replace(key_template, params);
-
+        // placeholder はすでに resolved_config で解決済み
         process_memory
-            .get(&key)
+            .get(key)
             .ok_or_else(|| format!("Load::load_from_process_memory: key '{}' not found", key))
     }
 
@@ -189,21 +229,19 @@ impl<'a> Load<'a> {
     fn load_from_kvs(
         &self,
         config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let kvs_client = self
             .kvs_client
             .ok_or("Load::load_from_kvs: KVSClient not configured")?;
 
-        let key_template = config
+        let key = config
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_kvs: 'key' not found")?;
 
-        let key = PlaceholderResolver::replace(key_template, params);
-
+        // placeholder はすでに resolved_config で解決済み
         kvs_client
-            .get(&key)
+            .get(key)
             .ok_or_else(|| format!("Load::load_from_kvs: key '{}' not found", key))
     }
 
@@ -211,13 +249,12 @@ impl<'a> Load<'a> {
     fn load_from_db(
         &self,
         config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let db_client = self
             .db_client
             .ok_or("Load::load_from_db: DBClient not configured")?;
 
-        let _db_config_converter = self
+        let db_config_converter = self
             .db_config_converter
             .ok_or("Load::load_from_db: DBConnectionConfigConverter not configured")?;
 
@@ -226,26 +263,33 @@ impl<'a> Load<'a> {
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_db: 'table' not found")?;
 
-        let where_template = config.get("where").and_then(|v| v.as_str());
-        let where_clause = where_template.map(|t| PlaceholderResolver::replace(t, params));
+        let where_clause = config.get("where").and_then(|v| v.as_str());
 
         let map = config
             .get("map")
             .and_then(|v| v.as_object())
             .ok_or("Load::load_from_db: 'map' not found")?;
 
-        // TODO: connection解決（connection.ymlからDB接続設定取得）
-        // 現時点ではダミー実装
-        let dummy_config = crate::ports::required::ConnectionConfig {
-            host: "localhost".to_string(),
-            port: 5432,
-            database: "test_db".to_string(),
-            username: "test_user".to_string(),
-            password: "test_pass".to_string(),
+        // connection 解決: config.connection の値は placeholder 解決済み
+        // connection が Value::Object なら直接使用、Value::String なら error
+        let connection_config = if let Some(conn_value) = config.get("connection") {
+            // placeholder 解決後は Object になっているはず
+            if let Some(conn_map) = conn_value.as_object() {
+                db_config_converter
+                    .to_config(conn_map)
+                    .ok_or("Load::load_from_db: failed to convert connection config")?
+            } else {
+                return Err(format!(
+                    "Load::load_from_db: connection must be an object after resolution, got: {:?}",
+                    conn_value
+                ));
+            }
+        } else {
+            return Err("Load::load_from_db: 'connection' not specified".to_string());
         };
 
         let row = db_client
-            .fetch_one(&dummy_config, table, where_clause.as_deref())
+            .fetch_one(&connection_config, table, where_clause)
             .ok_or_else(|| format!("Load::load_from_db: no data found in table '{}'", table))?;
 
         // mapに従ってフィールドをマッピング
@@ -265,18 +309,17 @@ impl<'a> Load<'a> {
     fn load_from_api(
         &self,
         config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let api_client = self
             .api_client
             .ok_or("Load::load_from_api: APIClient not configured")?;
 
-        let url_template = config
+        let url = config
             .get("url")
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_api: 'url' not found")?;
 
-        let url = PlaceholderResolver::replace(url_template, params);
+        // placeholder はすでに resolved_config で解決済み
 
         // headers処理（optional）
         let headers = config.get("headers").and_then(|v| v.as_object()).map(|h| {
@@ -285,27 +328,25 @@ impl<'a> Load<'a> {
                 .collect::<HashMap<String, String>>()
         });
 
-        api_client.get(&url, headers.as_ref())
+        api_client.get(url, headers.as_ref())
     }
 
     /// EXPRESSIONから読み込み
     fn load_from_expression(
         &self,
         config: &HashMap<String, Value>,
-        params: &HashMap<String, String>,
     ) -> Result<Value, String> {
         let expression_client = self
             .expression_client
             .ok_or("Load::load_from_expression: ExpressionClient not configured")?;
 
-        let expression_template = config
+        let expression = config
             .get("expression")
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_expression: 'expression' not found")?;
 
-        let expression = PlaceholderResolver::replace(expression_template, params);
-
-        expression_client.evaluate(&expression)
+        // placeholder はすでに resolved_config で解決済み
+        expression_client.evaluate(expression)
     }
 }
 

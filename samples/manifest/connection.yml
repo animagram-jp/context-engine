@@ -37,7 +37,7 @@ tenant:
     key: "connection.tenant.${tenant_id}"
   _load:
     client: DB
-    connection: common
+    connection: ${connection.common}    # 絶対パス参照（フルパス）
     table: "tenants"
     where: "id=${tenant_id}"
     map:

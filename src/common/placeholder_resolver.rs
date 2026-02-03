@@ -15,6 +15,8 @@ pub struct PlaceholderResolver;
 impl PlaceholderResolver {
     /// テンプレート文字列からプレースホルダ名を抽出
     ///
+    /// ドット記法を含む placeholder にも対応（例: ${connection.tenant}）
+    ///
     /// # Examples
     ///
     /// ```
@@ -23,9 +25,14 @@ impl PlaceholderResolver {
     /// let template = "user:${sso_user_id}:${tenant_id}";
     /// let result = PlaceholderResolver::extract_placeholders(template);
     /// assert_eq!(result, vec!["sso_user_id", "tenant_id"]);
+    ///
+    /// let template2 = "db:${connection.tenant}";
+    /// let result2 = PlaceholderResolver::extract_placeholders(template2);
+    /// assert_eq!(result2, vec!["connection.tenant"]);
     /// ```
     pub fn extract_placeholders(template: &str) -> Vec<String> {
-        let re = Regex::new(r"\$\{(\w+)\}").unwrap();
+        // ドット記法対応: \w+ から [\w.]+ に変更
+        let re = Regex::new(r"\$\{([\w.]+)\}").unwrap();
         re.captures_iter(template)
             .map(|cap| cap[1].to_string())
             .collect()
@@ -137,6 +144,68 @@ impl PlaceholderResolver {
                 let new_seq = seq
                     .into_iter()
                     .map(|v| Self::replace_in_map(v, params))
+                    .collect();
+                serde_yaml::Value::Sequence(new_seq)
+            }
+            // その他の型（Number, Bool, Null）はそのまま
+            other => other,
+        }
+    }
+
+    /// 型付きプレースホルダー解決
+    ///
+    /// callback を使って値を解決し、型を保持する。
+    /// 値全体が ${...} のみの場合は型を保持、文字列の一部なら文字列置換。
+    ///
+    /// # Arguments
+    /// * `value` - 解決対象の値
+    /// * `resolver` - プレースホルダー名から値を解決する callback
+    ///
+    /// # Returns
+    /// * 解決後の値（型保持）
+    pub fn resolve_typed<F>(value: serde_yaml::Value, resolver: &F) -> serde_yaml::Value
+    where
+        F: Fn(&str) -> Option<serde_yaml::Value>,
+    {
+        match value {
+            serde_yaml::Value::String(s) => {
+                let placeholders = Self::extract_placeholders(&s);
+
+                if placeholders.len() == 1 && s == format!("${{{}}}", placeholders[0]) {
+                    // 単一 placeholder → 型を保持して解決
+                    resolver(&placeholders[0]).unwrap_or(serde_yaml::Value::String(s))
+                } else if !placeholders.is_empty() {
+                    // 複数 or 文字列内 placeholder → 文字列置換
+                    let mut result = s.clone();
+                    for ph in placeholders {
+                        if let Some(resolved_value) = resolver(&ph) {
+                            // 値を文字列に変換
+                            let replacement = match resolved_value {
+                                serde_yaml::Value::String(s) => s,
+                                serde_yaml::Value::Number(n) => n.to_string(),
+                                serde_yaml::Value::Bool(b) => b.to_string(),
+                                _ => continue,
+                            };
+                            result = result.replace(&format!("${{{}}}", ph), &replacement);
+                        }
+                    }
+                    serde_yaml::Value::String(result)
+                } else {
+                    // placeholder なし → そのまま
+                    serde_yaml::Value::String(s)
+                }
+            }
+            serde_yaml::Value::Mapping(map) => {
+                let new_map = map
+                    .into_iter()
+                    .map(|(k, v)| (k, Self::resolve_typed(v, resolver)))
+                    .collect();
+                serde_yaml::Value::Mapping(new_map)
+            }
+            serde_yaml::Value::Sequence(seq) => {
+                let new_seq = seq
+                    .into_iter()
+                    .map(|v| Self::resolve_typed(v, resolver))
                     .collect();
                 serde_yaml::Value::Sequence(new_seq)
             }
