@@ -14,7 +14,7 @@ state-engine library
 
 # to do
 
-- 
+-
 
 ## manifest/*.yml
 
@@ -124,7 +124,7 @@ src/
   └── ports/
       ├── mod.rs                # Portsモジュール
       ├── provided.rs           # Provided Ports (Manifest, State)
-      └── required.rs           # Required Ports (各種Client)  
+      └── required.rs           # Required Ports (各種Client)
 
 
 ## note
@@ -233,3 +233,7 @@ load::handle() で _load に従い自動ロード
 - **_store**: 「どこへ」書くか（保存先定義）
 
 この分離により、任意のソース→任意のストアの組み合わせを自由に記述可能。
+
+# todo
+
+- declare-eのclient無し_load.keyでloadを呼ばない実装取り込み
