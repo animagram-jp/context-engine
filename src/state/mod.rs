@@ -50,34 +50,21 @@ impl<'a> State<'a> {
     /// placeholder を namespace ルールで解決
     ///
     /// 解決順序:
-    /// 1. 同層参照: ${id} → {context_key}.id
-    /// 2. 親層参照: ${user.id} → {parent_context}.user.id
-    /// 3. 絶対パス: ${connection.tenant} → connection.tenant
+    /// 1. 親層参照: ${org_id} → {parent}.org_id
+    /// 2. 絶対パス: ${org_id} → org_id
+    ///
+    /// placeholder内の文字列を一切気にせず、単純に parent + name と name で試行。
     fn resolve_placeholder(&mut self, name: &str, context_key: &str) -> Option<Value> {
-        // 1. 同層参照
-        let same_level_key = format!("{}.{}", context_key, name);
-        if let Some(value) = self.get(&same_level_key) {
-            return Some(value);
-        }
-
-        // 2. 親層参照
-        if name.contains('.') {
-            if let Some(parent) = context_key.rsplit_once('.').map(|(p, _)| p) {
-                let parent_ref_key = format!("{}.{}", parent, name);
-                if let Some(value) = self.get(&parent_ref_key) {
-                    return Some(value);
-                }
-            }
-        }
-
-        // 3. 絶対パス
-        if name.contains('.') {
-            if let Some(value) = self.get(name) {
+        // 1. 親層参照
+        if let Some(parent) = context_key.rsplit_once('.').map(|(p, _)| p) {
+            let parent_key = format!("{}.{}", parent, name);
+            if let Some(value) = self.get(&parent_key) {
                 return Some(value);
             }
         }
 
-        None
+        // 2. 絶対パス
+        self.get(name)
     }
 
     /// load_config 内の placeholder を解決

@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn test_load_from_env() {
         let env_client = MockENVClient;
-        let mut load = Load::new().with_env_client(&env_client);
+        let load = Load::new().with_env_client(&env_client);
 
         let mut config = HashMap::new();
         config.insert("client".to_string(), Value::String("Env".to_string()));
