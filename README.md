@@ -1,37 +1,66 @@
 # state-engine 0.0.1
 
-YAML拡張DSLに基づき、プロセスメモリ・KVS・DB間の状態を同期し、データのライフサイクル管理を自動化するライブラリです。(A library that automates data lifecycle management—synchronizing state between process memory, KVS, and databases based on a YAML-extended DSL.)
+Declarative state management for multi-tenant, multi-service systems.
+Synchronizes process memory, KVS, and databases using YAML DSL.
+開発者が記述するYAML拡張DSL(ドメイン特化言語)を設計図に、高度要件のステートデータを自動管理するライブラリです。
 
-このライブラリは、データのソースとストアを開発者が自由に記述するYAML拡張DSL(ドメイン特化言語)に従い自動制御します。
-例えば、ユーザー単位でプロセスメモリのデータやKVSデータを自動管理し、マルチテナントDBアプリを中間表無しに実現できます。これにより、システムの保守性を大きく向上させます。
-state-engineは、#background記載の新たなwebシステム構成を発想の基盤に開発されています。
+Automates complex state lifecycles through developer-defined YAML manifests.
+Enables multi-tenant DB apps without junction tables.
+Built on a reimagined web architecture (see [## background](#background)).
+このライブラリを導入し、段階的に適切なYAMLとAdapterクラスを整備すれば、例えばマルチテナントDBアプリに中間表が不要になります。
+state-engineは、[## background](#background)記載の新たなwebシステム構成を発想元として開発されています。
 
-## manifest YAML拡張DSL
+## Version
 
-```yaml
-# node.yml
-node_A:
-  _state: #
-    type: {integer, float, string, boolean, list, map}
-  _store:
-    client: {InMemory, ENV, KVS, DB, API}
-  _load:
-    client: {InMemory, ENV, KVS, DB, API}
-  node_1:
-    _state:
-      ...: # 子要素は親を継承して上書き
-    _store:
-      ...:
-    _load:
-      ...:
+- 0.1.0 (2026-2-4)
 
-node_B:
-  node_2:
-    _state:
-      table: 'table-${node_A.node_1}'
+## Installation
+
+```toml
+# Cargo.toml
+[dependencies]
+state-engine = "0.1"
 ```
 
-## background - webシステムの構成再定義
+## Quick Start
+
+```yaml
+# manifest/cache.yml
+user:
+  _store:
+    client: KVS
+    key: "user:${id}"
+  _load:
+    client: DB
+    table: users
+```
+
+## Why state-engine?
+
+**Before:**
+```rust
+// Manual cache management
+let cache_key = format!("user:{}", id);
+let user = redis.get(&cache_key).or_else(|| {
+    let user = db.query("SELECT * FROM users WHERE id=?", id)?;
+    redis.set(&cache_key, &user, 3600);
+    Some(user)
+})?;
+```
+
+**After:**
+```rust
+let user = state.get("cache.user")?;
+```
+
+✅ Multi-tenant DB without junction tables
+✅ Automatic KVS/DB synchronization
+✅ No manual cache invalidation
+
+
+## background
+
+webシステムの構成再定義
 
 よりユーザーの主権を尊重し、資源と責務配置の合理性を追求したwebシステム構成を設計する。
 
@@ -55,34 +84,29 @@ computer
     conductor
 ```
 
-## Quick Start
 
-```bash
-# run test
-docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
-```
 
 ## tree
 
 ```
 /
-  README.md           # このファイル
-  CLAUDE.md           # 設計仕様書
+  README.md
   Cargo.toml          # Rust プロジェクト設定
-  src/                # ライブラリソースコード
-    common/           # 共通ユーティリティ
+  docs/               # 各ガイドドキュメント
+    DSL-guide.md
+  src/
+    ports/            # 外部インターフェース定義
+      provided.rs     # Manifest, State traits
+      required.rs     # Client traits
+    common/           # 共通ロジック
       dot_array_accessor.rs
       placeholder_resolver.rs
     manifest/         # YAML読み込み
-    load/             # 自動ロード
     state/            # State CRUD実装
       parameter_builder.rs
-    ports/            # インターフェース定義
-      provided.rs     # Manifest, State traits
-      required.rs     # Client traits
-    lib.rs
-  tests/              # テストコード
-    mocks/            # モック実装
+    load/             # 自動ロード
+  tests/
+    mocks/
     integration/      # 統合テスト
   samples/            # サンプルコード
     manifest/         # YAML定義サンプル
@@ -96,10 +120,6 @@ docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
       env_client.js
       README.md
 ```
-
-## Architecture
-
-詳細は [CLAUDE.md](./CLAUDE.md) を参照
 
 このライブラリは、YAMLベースの宣言的ステート管理を提供します：
 
@@ -121,12 +141,8 @@ docker run --rm -v "$(pwd):/app" -w /app rust:1-alpine cargo test
 
 ## Sample Application
 
-Node.jsサンプルアプリケーション:
-
-```bash
-cd samples/app
-npm install
-npm start
-```
-
 詳細は [samples/app/README.md](./samples/app/README.md) を参照
+
+## License
+
+MIT

@@ -11,7 +11,7 @@ class InMemoryAdapter {
   }
 
   /**
-   * Get value from process memory
+   * Get value from in memory
    * @param {string} key - The key to retrieve
    * @returns {any|null} The value or null if not found
    */
@@ -20,7 +20,7 @@ class InMemoryAdapter {
   }
 
   /**
-   * Set value in process memory
+   * Set value in in memory
    * @param {string} key - The key to set
    * @param {any} value - The value to store
    */
@@ -29,7 +29,7 @@ class InMemoryAdapter {
   }
 
   /**
-   * Delete value from process memory
+   * Delete value from in memory
    * @param {string} key - The key to delete
    * @returns {boolean} True if deleted, false if not found
    */
