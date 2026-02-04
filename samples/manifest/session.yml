@@ -3,7 +3,7 @@ sso_user_id:
     type: integer
   _store:
     client: InMemory
-    key: 'request-attributes'
+    key: 'request-attributes-user-key'
   _load:
     client: InMemory
-    key: 'request-header'
+    key: 'request-header-user-key'

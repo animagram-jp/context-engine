@@ -6,6 +6,31 @@ YAML拡張DSLに基づき、プロセスメモリ・KVS・DB間の状態を同�
 例えば、ユーザー単位でプロセスメモリのデータやKVSデータを自動管理し、マルチテナントDBアプリを中間表無しに実現できます。これにより、システムの保守性を大きく向上させます。
 state-engineは、#background記載の新たなwebシステム構成を発想の基盤に開発されています。
 
+## manifest YAML拡張DSL
+
+```yaml
+# node.yml
+node_A:
+  _state: #
+    type: {integer, float, string, boolean, list, map}
+  _store:
+    client: {InMemory, ENV, KVS, DB, API}
+  _load:
+    client: {InMemory, ENV, KVS, DB, API}
+  node_1:
+    _state:
+      ...: # 子要素は親を継承して上書き
+    _store:
+      ...:
+    _load:
+      ...:
+
+node_B:
+  node_2:
+    _state:
+      table: 'table-${node_A.node_1}'
+```
+
 ## background - webシステムの構成再定義
 
 よりユーザーの主権を尊重し、資源と責務配置の合理性を追求したwebシステム構成を設計する。

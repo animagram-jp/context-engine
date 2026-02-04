@@ -7,7 +7,7 @@ user:
     client: DB
     connection: ${connection.tenant}
     table: 'users'
-    where: "sso_user_id='${session.sso_user_id}'"
+    where: 'sso_user_id=${session.sso_user_id}'
     map:
       id: 'id'
       org_id: 'sso_org_id'
