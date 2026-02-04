@@ -12,7 +12,7 @@ state-engineは、[## background](#background)記載の新たなwebシステム�
 
 ## Version
 
-- 0.1.0 (2026-2-4)
+- 0.1.0 scheduled (2026-2-5)
 
 ## Installation
 
@@ -67,81 +67,67 @@ webシステムの構成再定義
 高効率なRust言語とWeb Assembly技術を踏まえて、以下の定義のterminal serverのビジネスロジックへの責務拡大、database serverの認証とCRUD処理への責務拡大を実現。
 conductorは中・大規模なシステムにおいてdatabaseとterminalの間を取り持ち、ユニークなDB接続情報などのステートを提供する。
 
-- computer - 電子計算機。ネットワーク通信機能を要するもの。
-- server - webシステムを構成するcomputerのうち、機能を人間(ユーザー)に提供するもの
-- orchestrator - webシステムを構成するcomputerのうち、システム内部の維持を管理するもの。OPTIONAL
-- database - serverのうち、保持期間を定めないデータを維持し、terminalやconductorにCRUDを受け付けるもの
-- terminal - serverのうち、人間が直接触るインターフェースを提供するもの。「端末」と同義
-- conductor - serverのうち、databaseとterminalの両方に対して相互に通信し、二者の同期通信が成立する状態を維持するもの(OPTIONAL)
+- computer: 電子計算機。ネットワーク通信機能を要するもの。
+- server: webシステムを構成するcomputerのうち、機能を人間(ユーザー)に提供するもの
+- orchestrator: webシステムを構成するcomputerのうち、システム内部の維持を管理するもの。OPTIONAL
+- database: serverのうち、保持期間を定めないデータを維持し、terminalやconductorにCRUDを受け付けるもの
+- terminal: serverのうち、人間が直接触るインターフェースを提供するもの。「端末」と同義
+- conductor: serverのうち、databaseとterminalの両方に対して相互に通信し、二者の同期通信が成立する状態を維持するもの(OPTIONAL)
 
+```yaml
+# terms relationship
+computer:
+  orchestrator:
+  server:
+    database:
+    terminal:
+    conductor:
 ```
-# 階層図
-computer
-  orchestrator
-  server
-    database
-    terminal
-    conductor
-```
-
-
 
 ## tree
 
 ```
 /
   README.md
-  Cargo.toml          # Rust プロジェクト設定
-  docs/               # 各ガイドドキュメント
+  Cargo.toml
+  docs/               # guide documents
     DSL-guide.md
+    Architecture.md
   src/
     ports/            # 外部インターフェース定義
       provided.rs     # Manifest, State traits
-      required.rs     # Client traits
-    common/           # 共通ロジック
+      required.rs     # Client traits to adapt
+    common/           # pure logic utility
       dot_array_accessor.rs
       placeholder_resolver.rs
-    manifest/         # YAML読み込み
-    state/            # State CRUD実装
+    manifest/         # Manifest source
+    state/            # State source
       parameter_builder.rs
-    load/             # 自動ロード
+    load/             # internal class for State
   tests/
     mocks/
-    integration/      # 統合テスト
-  samples/            # サンプルコード
-    manifest/         # YAML定義サンプル
-      connection.yml  # DB接続設定
-      cache.yml       # KVSキャッシュ設定
-    app/              # Node.js実装サンプル
-      index.js        # 使用例
+    integration/
+
+  samples/
+    manifest/         # DSL samples using in tests
+      connection.yml  # sample 1
+      cache.yml       # sample 2
+    app/              # nodejs sample application
+      index.js
       package.json
-    adapters/         # Required Ports実装例
+    adapters/         # nodejs sample adapters
       in_memory.js
       env_client.js
       README.md
 ```
 
-このライブラリは、YAMLベースの宣言的ステート管理を提供します：
+## Architecture
 
-### Provided Ports（提供インターフェース）
-- **Manifest** - YAMLファイル読み込み・メタデータ管理
-- **State** - 統一CRUD実装（get/set/delete）
-
-### Required Ports（実装必須インターフェース）
-- **InMemoryClient** - プロセスメモリ操作
-- **ENVClient** - 環境変数取得
-- **KVSClient** - KVS操作（Redis等）
-- **DBClient** - DB操作
-- **APIClient** - 外部API呼び出し
-
-### 内部実装
-- **Load** - 自動ロード（_load設定に従いデータ取得）
-- **ParameterBuilder** - プレースホルダー値解決
-- **PlaceholderResolver** - `${variable}` 形式の置換
+see [Architecture.md](./docs/Architecture.md)
 
 ## Sample Application
 
-詳細は [samples/app/README.md](./samples/app/README.md) を参照
+see [samples/app/README.md](./samples/app/README.md)
 
 ## License
 

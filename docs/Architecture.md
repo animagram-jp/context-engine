@@ -7,8 +7,6 @@
 1. Manifest - read-only class from DSL files. It detect _ prefix key (meta block) and ignore at get(), collect at getMeta()
 2. State - get/set/delete class to state objects. It has Load function only at get(), Self-Reference and Serialize at get() and set(), Validate at set(), ...
 
-## Method lists
-
 ### Manifest::class
 
 #### Manifest::get('filename.node')
@@ -42,3 +40,8 @@ manifest/*.ymlの指定nodeが表すstateを参照し、value、もしくは配�
 state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.node')の_storeと_loadの記述内容に従ってデータを取得する。
 
 ※ 無限再帰によるprocess errorについて、事前のyml静的解析の他、呼出回数のinstance var管理など議論の余地あり
+
+## 内部実装 // todo: 整備
+
+ParameterBuilder
+PlaceholderResolver
