@@ -22,6 +22,7 @@ user:
     _state:
       type: integer
     _load:
+      client: State
       key: '${org_id}' # relative path reference
 
 tenant:
