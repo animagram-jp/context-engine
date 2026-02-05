@@ -137,10 +137,10 @@ fn test_manifest_get_cache_tenant_id_meta() {
     // tenant_id固有のメタデータ
     assert!(meta.contains_key("_load"));
 
-    // client無しの_load（keyのみの相対参照）
+    // client: State の_load（keyのみの相対参照）
     if let Some(load) = meta.get("_load") {
-        // clientが無い場合はloadを呼ばずkeyの値を使用
-        assert_eq!(load.get("client"), None);
+        // client: State の場合はloadを呼ばずkeyの値を使用（親の_load継承を防ぐため明示）
+        assert_eq!(load.get("client"), Some(&json!("State")));
         assert_eq!(load.get("key"), Some(&json!("${org_id}")));
     }
 }

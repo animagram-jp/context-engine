@@ -80,7 +80,7 @@ fn test_load_without_client_key_reference() {
 
     // 事前にデータをセット
     kvs.set("user:123", json!({"id": 1, "org_id": 100, "tenant_id": 10}), None);
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)

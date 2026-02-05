@@ -47,6 +47,39 @@ impl<'a> State<'a> {
         self
     }
 
+    /// storeから取得した値から、要求された子フィールドを抽出
+    ///
+    /// key="cache.user.org_id" で _store が "cache.user" レベルで定義されている場合、
+    /// storeには user オブジェクト全体が保存されているため、"org_id" フィールドを抽出する。
+    fn extract_field_from_value(key: &str, value: Value, meta: &HashMap<String, Value>) -> Value {
+        // metaに _store が含まれている場合、直接マッチしたので値をそのまま返す
+        // （cache.user を取得した場合）
+        if let Some(store_meta) = meta.get("_store") {
+            if let Some(store_obj) = store_meta.as_object() {
+                // _store の定義が継承でなく、このレベルで直接定義されているか確認
+                // ここでは簡易的に、keyの最後の部分とvalueの構造で判断
+                // cache.user → value全体を返す
+                // cache.user.org_id → valueから org_id を抽出
+
+                // keyの階層を分解
+                let parts: Vec<&str> = key.split('.').collect();
+                if parts.len() < 2 {
+                    return value;
+                }
+
+                // 最後の部分が value の中のフィールドとして存在するか確認
+                let last_field = parts[parts.len() - 1];
+                if let Some(field_value) = value.get(last_field) {
+                    // 子フィールドが存在する → 抽出して返す
+                    return field_value.clone();
+                }
+            }
+        }
+
+        // それ以外は値をそのまま返す
+        value
+    }
+
     /// placeholder を namespace ルールで解決
     ///
     /// 解決順序:
@@ -211,8 +244,10 @@ impl<'a> StateTrait for State<'a> {
 
                 if let Some(value) = self.get_from_store(&resolved_store_config) {
                     self.recursion_depth -= 1;
-                    // 子フィールドアクセスの場合、オブジェクトから抽出
-                    return Some(self.extract_child_field(key, value));
+                    // 取得した値から子フィールドを抽出
+                    // key="cache.user.org_id" で _store.key="user:${id}" の場合、
+                    // storeに保存されているのは "cache.user" 全体なので、"org_id" を抽出する必要がある
+                    return Some(Self::extract_field_from_value(key, value, &meta));
                 }
             }
         }
@@ -226,8 +261,9 @@ impl<'a> StateTrait for State<'a> {
                 // placeholder 解決
                 let resolved_config = self.resolve_load_config(key, &load_config);
 
-                // client が無い場合は key の値を直接返す
-                if !resolved_config.contains_key("client") {
+                // client: State の場合は key の値を直接返す（State内参照）
+                let client_value = resolved_config.get("client").and_then(|v| v.as_str());
+                if client_value == Some("State") {
                     // _load.key の値を返す（placeholder 解決済みの値）
                     if let Some(key_value) = resolved_config.get("key") {
                         // key_value は既に resolve_load_config で値に解決されている

@@ -39,6 +39,8 @@ manifest/*.ymlの指定nodeが表すstateを参照し、value、もしくは配�
 
 state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.node')の_storeと_loadの記述内容に従ってデータを取得する。
 
+_load.client: State の場合はload::handle()を呼ばず、_load.key(placeholder解決済み)の値をそのまま返却する。これは親の_load.clientを継承させず、State内の別keyを参照するための明示的な指定である。
+
 ※ 無限再帰によるprocess errorについて、事前のyml静的解析の他、呼出回数のinstance var管理など議論の余地あり
 
 ## 内部実装 // todo: 整備
