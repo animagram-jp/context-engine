@@ -5,7 +5,7 @@
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
-use crate::common::PlaceholderResolver;
+use crate::common::{PlaceholderResolver, DotArrayAccessor};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -20,6 +20,8 @@ pub struct State<'a> {
     kvs_client: Option<&'a mut dyn KVSClient>,
     recursion_depth: usize,
     max_recursion: usize,
+    cache: Value,  // インスタンスメモリキャッシュ（階層構造）
+    dot_accessor: DotArrayAccessor,  // ドット記法アクセサ
 }
 
 impl<'a> State<'a> {
@@ -32,6 +34,8 @@ impl<'a> State<'a> {
             kvs_client: None,
             recursion_depth: 0,
             max_recursion: 10,
+            cache: Value::Object(serde_json::Map::new()),
+            dot_accessor: DotArrayAccessor::new(),
         }
     }
 
@@ -226,14 +230,20 @@ impl<'a> StateTrait for State<'a> {
 
         self.recursion_depth += 1;
 
-        // 1. メタデータ取得
+        // 1. インスタンスキャッシュをチェック（最優先）
+        if let Some(cached) = self.dot_accessor.get(&self.cache, key) {
+            self.recursion_depth -= 1;
+            return Some(cached.clone());
+        }
+
+        // 2. メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             self.recursion_depth -= 1;
             return None;
         }
 
-        // 2. _load.client: State の場合は _store をスキップ
+        // 3. _load.client: State の場合は _store をスキップ
         //    明示的なState参照は親の _store を使わない
         let has_state_client = meta.get("_load")
             .and_then(|v| v.as_object())
@@ -241,7 +251,7 @@ impl<'a> StateTrait for State<'a> {
             .and_then(|v| v.as_str())
             == Some("State");
 
-        // 3. _store から値を取得（client: State でない場合のみ）
+        // 4. _store から値を取得（client: State でない場合のみ）
         if !has_state_client {
             if let Some(store_config_value) = meta.get("_store") {
                 if let Some(store_config_obj) = store_config_value.as_object() {
@@ -252,17 +262,22 @@ impl<'a> StateTrait for State<'a> {
                     let resolved_store_config = self.resolve_load_config(key, &store_config);
 
                     if let Some(value) = self.get_from_store(&resolved_store_config) {
-                        self.recursion_depth -= 1;
                         // 取得した値から子フィールドを抽出
                         // key="cache.user.org_id" で _store.key="user:${id}" の場合、
                         // storeに保存されているのは "cache.user" 全体なので、"org_id" を抽出する必要がある
-                        return Some(Self::extract_field_from_value(key, value, &meta));
+                        let extracted = Self::extract_field_from_value(key, value, &meta);
+
+                        // インスタンスキャッシュに保存
+                        DotArrayAccessor::set(&mut self.cache, key, extracted.clone());
+
+                        self.recursion_depth -= 1;
+                        return Some(extracted);
                     }
                 }
             }
         }
 
-        // 4. miss時は自動ロード
+        // 5. miss時は自動ロード
         let result = if let Some(load_config_value) = meta.get("_load") {
             if let Some(load_config_obj) = load_config_value.as_object() {
                 let load_config: HashMap<String, Value> =
@@ -284,6 +299,9 @@ impl<'a> StateTrait for State<'a> {
                     // _load.key の値を返す（placeholder 解決済みの値）
                     if let Some(key_value) = resolved_config.get("key") {
                         // key_value は既に resolve_load_config で値に解決されている
+                        // インスタンスキャッシュに保存
+                        DotArrayAccessor::set(&mut self.cache, key, key_value.clone());
+
                         self.recursion_depth -= 1;
                         return Some(key_value.clone());
                     }
@@ -305,6 +323,10 @@ impl<'a> StateTrait for State<'a> {
                                 self.set_to_store(&resolved_store_config, loaded.clone(), None);
                             }
                         }
+
+                        // インスタンスキャッシュに保存
+                        DotArrayAccessor::set(&mut self.cache, key, loaded.clone());
+
                         Some(loaded)
                     } else {
                         None
@@ -345,7 +367,14 @@ impl<'a> StateTrait for State<'a> {
         let resolved_store_config = self.resolve_load_config(key, &store_config_map);
 
         // _store に保存
-        self.set_to_store(&resolved_store_config, value, ttl)
+        let result = self.set_to_store(&resolved_store_config, value.clone(), ttl);
+
+        // 成功時はインスタンスキャッシュにも保存
+        if result {
+            DotArrayAccessor::set(&mut self.cache, key, value);
+        }
+
+        result
     }
 
     fn delete(&mut self, key: &str) -> bool {
@@ -368,7 +397,14 @@ impl<'a> StateTrait for State<'a> {
         let resolved_store_config = self.resolve_load_config(key, &store_config_map);
 
         // _store から削除
-        self.delete_from_store(&resolved_store_config)
+        let result = self.delete_from_store(&resolved_store_config);
+
+        // 成功時はインスタンスキャッシュからも削除
+        if result {
+            DotArrayAccessor::unset(&mut self.cache, key);
+        }
+
+        result
     }
 }
 
