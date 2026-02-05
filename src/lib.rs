@@ -19,7 +19,3 @@ pub use ports::required::{
     APIClient, ConnectionConfig, DBClient, DBConnectionConfigConverter, ENVClient,
     KVSClient, InMemoryClient,
 };
-
-// TODO: 以下のモジュールを実装
-// pub mod load;
-// pub mod state;

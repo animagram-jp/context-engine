@@ -5,7 +5,7 @@
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
-use crate::common::{PlaceholderResolver, DotArrayAccessor};
+use crate::common::{DotArrayAccessor, PlaceholderResolver};
 use serde_json::Value;
 use std::collections::HashMap;
 
