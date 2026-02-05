@@ -55,7 +55,7 @@ impl<'a> State<'a> {
         // metaに _store が含まれている場合、直接マッチしたので値をそのまま返す
         // （cache.user を取得した場合）
         if let Some(store_meta) = meta.get("_store") {
-            if let Some(store_obj) = store_meta.as_object() {
+            if let Some(_store_obj) = store_meta.as_object() {
                 // _store の定義が継承でなく、このレベルで直接定義されているか確認
                 // ここでは簡易的に、keyの最後の部分とvalueの構造で判断
                 // cache.user → value全体を返す
@@ -233,26 +233,36 @@ impl<'a> StateTrait for State<'a> {
             return None;
         }
 
-        // 2. _store から値を取得
-        if let Some(store_config_value) = meta.get("_store") {
-            if let Some(store_config_obj) = store_config_value.as_object() {
-                let store_config: HashMap<String, Value> =
-                    store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        // 2. _load.client: State の場合は _store をスキップ
+        //    明示的なState参照は親の _store を使わない
+        let has_state_client = meta.get("_load")
+            .and_then(|v| v.as_object())
+            .and_then(|obj| obj.get("client"))
+            .and_then(|v| v.as_str())
+            == Some("State");
 
-                // store_config 内の placeholder を解決
-                let resolved_store_config = self.resolve_load_config(key, &store_config);
+        // 3. _store から値を取得（client: State でない場合のみ）
+        if !has_state_client {
+            if let Some(store_config_value) = meta.get("_store") {
+                if let Some(store_config_obj) = store_config_value.as_object() {
+                    let store_config: HashMap<String, Value> =
+                        store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-                if let Some(value) = self.get_from_store(&resolved_store_config) {
-                    self.recursion_depth -= 1;
-                    // 取得した値から子フィールドを抽出
-                    // key="cache.user.org_id" で _store.key="user:${id}" の場合、
-                    // storeに保存されているのは "cache.user" 全体なので、"org_id" を抽出する必要がある
-                    return Some(Self::extract_field_from_value(key, value, &meta));
+                    // store_config 内の placeholder を解決
+                    let resolved_store_config = self.resolve_load_config(key, &store_config);
+
+                    if let Some(value) = self.get_from_store(&resolved_store_config) {
+                        self.recursion_depth -= 1;
+                        // 取得した値から子フィールドを抽出
+                        // key="cache.user.org_id" で _store.key="user:${id}" の場合、
+                        // storeに保存されているのは "cache.user" 全体なので、"org_id" を抽出する必要がある
+                        return Some(Self::extract_field_from_value(key, value, &meta));
+                    }
                 }
             }
         }
 
-        // 3. miss時は自動ロード
+        // 4. miss時は自動ロード
         let result = if let Some(load_config_value) = meta.get("_load") {
             if let Some(load_config_obj) = load_config_value.as_object() {
                 let load_config: HashMap<String, Value> =

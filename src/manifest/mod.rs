@@ -39,14 +39,8 @@ impl Manifest {
         } else {
             // ドット記法でアクセス
             self.cache.get(&file).and_then(|data| {
-                if let Value::Object(map) = data {
-                    let hashmap: HashMap<String, Value> = map.iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
-                    DotArrayAccessor::get(&hashmap, &path).cloned()
-                } else {
-                    None
-                }
+                let mut accessor = DotArrayAccessor::new();
+                accessor.get(data, &path).cloned()
             })
         };
 
