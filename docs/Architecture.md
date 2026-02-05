@@ -1,49 +1,354 @@
 # Architecture
 
-## Ports(Library Interface Class)
+## Ports (Library Interface Class)
 
 ### Provided
 
-1. Manifest - read-only class from DSL files. It detect _ prefix key (meta block) and ignore at get(), collect at getMeta()
-2. State - get/set/delete class to state objects. It has Load function only at get(), Self-Reference and Serialize at get() and set(), Validate at set(), ...
+1. **Manifest** - Read-only class from DSL files. It detects `_` prefix keys (meta blocks) and ignores them at `get()`, collects them at `getMeta()`
+2. **State** - get/set/delete class for state objects. It has Load function only at `get()`, Self-Reference and Serialize at `get()` and `set()`, Type casting at `get()` and `set()`, ...
 
-### Manifest::class
+### Required
 
-#### Manifest::get('filename.node')
+Application must implement the following interfaces:
 
-manifest/*.ymlの_prefixブロック(以下、メタデータブロック)を無視したnode構造の読み出し(指定nodeが最下位なら値(記述が無ければnull), それ以外は配下のnode全てを表現したcollectionデータを返却)。指定nodeがyml上で存在しなければ(miss)、nullを返却する。'filename.node'には'filename.'の意味で'filename'を指定することが出来る。
+1. **InMemoryClient** - Process memory operations (e.g., Request attributes, Application context)
+2. **KVSClient** - Key-Value Store operations (e.g., Redis, Memcached)
+3. **DBClient** - Database operations (optional, for Load layer)
+4. **ENVClient** - Environment variable retrieval (optional, for Load layer)
 
-#### Manifest::getMeta('filename.node')
+---
 
-manifest/*.ymlの指定nodeのメタデータブロックを返却する。この時、該当yml fileのroot nodeから指定nodeまでのメタデータブロックを順に全て読み出し、より子の同キーで上書きしたlistを返却する。指定nodeがyml上で存在しなければ(miss)、nullを返却する。'filename.node'には'filename.*'の意味で'filename'を指定することが出来、この場合はnodeに属さない最上位のメタデータブロックのみがlistに格納されて返却される。メタデータブロック以下のnodeを指定することもできるが、想定はされていない。
+## Manifest::class
 
-### State::class
+### Manifest::get('filename.node')
 
-#### State::get('filename.node')
+Read node structure from manifest/*.yml, ignoring `_` prefix blocks (meta blocks).
 
-manifest/*.ymlの指定nodeが表すstateを参照し、value、もしくは配下のcollectionsを返却する。指定nodeが表すstate keyがmissした場合、placeholderをload::handle()にて自動取得を試行後、再度valueもしくはcollectionsを返却する。load::handle()のerror時はnullを返却する※
+**Behavior:**
+- If the specified node is a leaf, return its value (or null if not defined)
+- Otherwise, return a collection representing all child nodes
+- If the node doesn't exist in YAML (miss), return null
 
-※load::handle()のerrorについては、専用のExceptionクラスでdebug情報を返却する
+**Key specification:**
+- `'filename.node'` - Normal specification
+- `'filename'` - Means `'filename.'`, retrieves the entire file root
 
-#### State:set('filename.node', $value, ?$ttl)
+---
 
-指定nodeの表すstateに対して値をsetする。操作先storeがKVSであれば、ttlのオプションを設定でき、操作先KVS recordのttlが再設定される。無指定では、ttlはymlにデフォルト値が設定されていれば再設定し、無ければ操作時点の値を維持する※
+### Manifest::getMeta('filename.node')
 
-※ ttl挙動は議論の余地あり
+Return metadata blocks for the specified node.
 
-#### State:delete('filename.node')
+**Behavior:**
+- Read all metadata blocks from file root to the specified node in order
+- Return a list (map) with child keys overwriting parent keys
+- If the node doesn't exist in YAML (miss), return null
 
-指定nodeが表すstateの該当部を{key:value}レコードごと削除する。削除後、同nodeはmiss hitを示す。
+**Key specification:**
+- `'filename.node'` - Return metadata inherited/overwritten up to the specified node
+- `'filename'` - Means `'filename.*'`, returns only top-level metadata blocks
 
-#### Load::handle()
+**Metadata inheritance rules:**
+```yaml
+# cache.yml
+_store:
+  client: KVS
+  ttl: 3600
 
-state::get('filename.node')がmiss valueした時、manifest::getMeta('filename.node')の_storeと_loadの記述内容に従ってデータを取得する。
+user:
+  _store:
+    key: "user:${sso_user_id}"  # Inherits client: KVS, overwrites key
 
-_load.client: State の場合はload::handle()を呼ばず、_load.key(placeholder解決済み)の値をそのまま返却する。これは親の_load.clientを継承させず、State内の別keyを参照するための明示的な指定である。
+  tenant_id:
+    # Inherits _store from parent: client: KVS, key: "user:${sso_user_id}", ttl: 3600
+```
 
-※ 無限再帰によるprocess errorについて、事前のyml静的解析の他、呼出回数のinstance var管理など議論の余地あり
+---
 
-## 内部実装 // todo: 整備
+## State::class
 
-ParameterBuilder
-PlaceholderResolver
+### State::get('filename.node')
+
+Reference the state represented by the specified node, returning value or collections.
+
+**Operation flow:**
+1. Get metadata via `Manifest::getMeta()`
+2. Determine store type from `_store` config (KVS/InMemory)
+3. Resolve placeholders (`${session.sso_user_id}`, etc.)
+4. Build store key
+5. **Check State::cache (instance HashMap)** ← Priority
+6. Retrieve from store (KVS/InMemoryClient)
+7. Extract individual field from data
+8. **On miss, auto-load via `Load::handle()`**
+9. Type cast according to `_state.type`
+
+**Auto-load:**
+- If the specified node's state key misses, attempt auto-retrieval via `Load::handle()`
+- On `Load::handle()` error, return `None`
+
+**Type casting:**
+```yaml
+tenant_id:
+  _state:
+    type: integer  # Automatically cast to int
+```
+
+---
+
+### State::set('filename.node', value, ttl)
+
+Set a value to the state represented by the specified node.
+
+**Behavior:**
+- Save to persistent store (KVS/InMemoryClient)
+- Also save to State::cache (for speed)
+- If store is KVS, TTL can be set
+
+**TTL behavior:**
+- `ttl` argument specified → Use specified value
+- No `ttl` argument, `_store.ttl` in YAML → Use YAML default
+- No `ttl` argument, no `_store.ttl` in YAML → Maintain current value
+
+---
+
+### State::delete('filename.node')
+
+Delete the {key:value} record represented by the specified node.
+
+**Behavior:**
+- Delete from persistent store (KVS/InMemoryClient)
+- Also delete from State::cache
+- After deletion, the node shows miss hit
+
+---
+
+## Load::handle()
+
+When `State::get()` misses a value, retrieve data according to `_store` and `_load` settings from `Manifest::getMeta()`.
+
+**Client types:**
+- `ENV` - Load from environment variables
+- `DB` - Load from database
+- `KVS` - Load from KVS
+- `InMemory` - Load from process memory
+- `State` - Reference another State key (self-reference)
+
+**Special behavior for State client:**
+```yaml
+tenant_id:
+  _load:
+    client: State
+    key: ${org_id}  # Directly returns State::get('cache.user.org_id')
+```
+
+When `_load.client: State`, `Load::handle()` is not called; instead, the value of `_load.key` (with placeholders resolved) is returned directly.
+
+**Design rules:**
+- No `_load` → No auto-load, return `None`
+- No `_load.client` → No auto-load, return `None`
+- `_load.client: State` → Use `_load.key` value directly (don't call Load::handle())
+- Other clients → Auto-load via `Load::handle()`
+
+This is an explicit designation to reference another key within State without inheriting the parent's `_load.client`.
+
+**Note:**
+- `client == null` is treated as YAML misconfiguration
+- The Load::handle() match statement returns null in the default case
+
+**Recursion depth limit:**
+- MAX_RECURSION = 10
+- Counter incremented with each recursive call
+- Throws error when exceeded
+- Counter decremented in finally block
+
+---
+
+## State::get() Detailed Flow
+
+```
+1. Manifest::getMeta(key) → Get metadata
+   ↓
+2. Get type info from _state
+   ↓
+3. Get storage destination from _store (client: KVS/InMemory)
+   ↓
+4. Resolve placeholders in store_config
+   ↓
+5. ★ Check in-memory cache (absolute key) ← Highest priority
+   if cache.contains_key(key) { return; }
+   ↓
+6. Build storeKey
+   ↓
+7. Retrieve value from store (getFromStore)
+   ↓
+8. Extract individual field from data
+   ↓
+9. On miss, auto-load
+   ├─→ Load::handle(loadConfig)
+   │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
+   │    ├─→ client: KVS → KVSClient::get()
+   │    ├─→ client: ENV → ENVClient::get()
+   │    ├─→ client: InMemory → InMemoryClient::get()
+   │    └─→ client: State → Return specified key value directly (recursion)
+   ├─→ Save to persistent store (setToStore)
+   └─→ Save to in-memory cache
+   ↓
+10. Type casting
+   ↓
+11. Return value
+```
+
+---
+
+## State::cache (Instance Memory Cache)
+
+The State struct maintains an instance-level cache (`cache: HashMap<String, Value>`) separate from persistent stores (KVS/InMemoryClient).
+
+**Important:** This is NOT InMemoryClient. It's a simple HashMap member variable of the State instance itself.
+
+**Purpose:**
+1. **Speed up duplicate `State::get()` calls within the same request**
+2. **Reduce access count to KVS/InMemoryClient**
+3. **Design to avoid duplicate loads** (don't load the same key multiple times)
+
+**Check order (important):**
+```rust
+// State::get() flow
+1. Get metadata
+2. Get type info from _state
+3. Get storage destination from _store
+4. Resolve placeholders
+5. ★ Check State::cache (absolute key) ← First check
+   if self.cache.contains_key(key) {
+       return cast_type(self.cache[key], key);
+   }
+6. Build storeKey
+7. Retrieve from persistent store (KVS/InMemoryClient)
+8. On miss, auto-load → After loading, save to State::cache
+```
+
+**Cache key:**
+- Saved as **absolute path** (`cache.user.tenant_id`)
+- Dot notation as-is
+
+**Save timing:**
+- On successful load in `State::get()`: `self.cache.insert(key, extracted)`
+- On `State::set()`: `self.cache.insert(key, value)`
+
+**Delete timing:**
+- On `State::delete()`: `self.cache.remove(key)`
+
+**Lifecycle:**
+- State instance creation: Empty
+- During State lifetime: Accumulates
+- State instance drop: Destroyed (memory released)
+
+**Important design intent:**
+- State::cache is checked with higher priority than persistent stores (KVS/InMemoryClient)
+- This realizes a design that comprehensively handles external stores
+- Even with multiple accesses to the same data, only 1 store access + N HashMap accesses are needed
+
+---
+
+## Placeholder Resolution Rules (Namespace)
+
+Placeholder resolution priority.
+
+**Resolution order:**
+1. **Same dictionary reference (relative path)**: `${org_id}` → `cache.user.org_id`
+2. **Absolute path**: `${org_id}` → `org_id`
+
+**Example (contextKey: 'cache.user.tenant_id._load.key'):**
+```
+// Extract dictionary scope
+dictScope = 'cache.user'; // Up to before meta key (_load)
+
+// 1. Search within the same dictionary
+scopedKey = 'cache.user.org_id';
+value = self.get(scopedKey); // → State::get('cache.user.org_id')
+if value.is_some() { return value; }
+
+// 2. Search absolute path
+return self.get('org_id'); // → State::get('org_id')
+```
+
+**Note:**
+- Dictionary scope is traced up to meta keys (`_load`, `_store`, etc.) or the last field
+- Assumes `cache.user` is a dictionary, `org_id`/`tenant_id` are fields
+
+---
+
+## Field Extraction
+
+When retrieving data, individual fields may need to be extracted.
+
+**extractField logic:**
+```rust
+fn extract_field(data: Value, key: &str) -> Value {
+    // If not an object, return as-is
+    if !data.is_object() {
+        return data;
+    }
+
+    // Get last segment of key
+    // cache.user.id → id
+    let segments: Vec<&str> = key.split('.').collect();
+    let field_name = segments.last().unwrap();
+
+    // Extract field from dictionary
+    data.get(field_name).cloned().unwrap_or(Value::Null)
+}
+```
+
+---
+
+## Internal Implementation
+
+### PlaceholderResolver
+
+Pure string processing (no dependencies).
+
+**Methods:**
+- `extract_placeholders(template)` - Extract variable names from template
+- `replace(template, params)` - Replace with values
+- `resolve_typed(value, resolver)` - Recursively resolve placeholders in JSON value
+
+**Type preservation:**
+- Single placeholder and entire string is `${...}` format → Preserve type
+- Multiple or within string placeholders → String replacement
+
+### DotArrayAccessor
+
+Provides array access with dot notation.
+
+**Methods:**
+- `get(data, path)` - Get value with dot notation
+- Example: `get(data, "user.profile.name")`
+
+---
+
+## Known Discussion Points / TODO
+
+### 1. TTL Behavior
+
+TTL processing in `State::set()`:
+- Argument specified > YAML setting > Maintain current value
+- Is this priority order appropriate?
+- Should it always overwrite with YAML default when unspecified?
+
+### 2. Infinite Recursion Detection
+
+Currently counter-based (MAX_RECURSION=10):
+- Should it be detected via static analysis beforehand?
+- Should call paths be recorded for loop detection?
+- Should error messages include paths?
+
+### 3. State::delete() Implementation
+
+**Current status:**
+- Currently implemented to delete entire dictionary
+- TODO comment: "For individual field deletion, need to load dictionary, delete field, and re-save"
+
+**TODO:**
+- Complete individual field deletion implementation
+- Or finalize specification as dictionary-only deletion

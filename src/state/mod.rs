@@ -258,11 +258,18 @@ impl<'a> StateTrait for State<'a> {
                 let load_config: HashMap<String, Value> =
                     load_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
+                // client が無い場合は自動ロードしない
+                if !load_config.contains_key("client") {
+                    self.recursion_depth -= 1;
+                    return None;
+                }
+
                 // placeholder 解決
                 let resolved_config = self.resolve_load_config(key, &load_config);
 
                 // client: State の場合は key の値を直接返す（State内参照）
                 let client_value = resolved_config.get("client").and_then(|v| v.as_str());
+
                 if client_value == Some("State") {
                     // _load.key の値を返す（placeholder 解決済みの値）
                     if let Some(key_value) = resolved_config.get("key") {
@@ -270,6 +277,7 @@ impl<'a> StateTrait for State<'a> {
                         self.recursion_depth -= 1;
                         return Some(key_value.clone());
                     }
+                    self.recursion_depth -= 1;
                     None
                 } else {
                     // Load 実行
