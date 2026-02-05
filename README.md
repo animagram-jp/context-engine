@@ -94,16 +94,16 @@ computer:
     DSL-guide.md
     Architecture.md
   src/
-    ports/            # 外部インターフェース定義
-      provided.rs     # Manifest, State traits
-      required.rs     # Client traits to adapt
+    ports/            # external interfaces
+      provided.rs     # library provides
+      required.rs     # Library requires
     common/           # pure logic utility
       dot_array_accessor.rs
       placeholder_resolver.rs
     manifest/         # Manifest source
     state/            # State source
       parameter_builder.rs
-    load/             # internal class for State
+    load/             # internal class
   tests/
     mocks/
     integration/
