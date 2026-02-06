@@ -12,7 +12,7 @@ state-engineは、[## background](#background)記載の新たなwebシステム�
 
 ## Version
 
-- 0.1.0 scheduled (2026-2-5)
+- 0.1.0 scheduled (2026-2-8)
 
 ## Installation
 
@@ -59,6 +59,8 @@ let user = state.get("cache.user")?;
 
 
 ## background
+
+reimagined web architecture / webシステムの構成再定義
 
 webシステムの構成再定義
 

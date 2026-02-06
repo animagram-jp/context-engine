@@ -1,12 +1,12 @@
 // MockLogger - Simple logger for testing
 use std::sync::{Arc, Mutex};
 
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct MockLogger {
     logs: Arc<Mutex<Vec<String>>>,
 }
 
+#[allow(dead_code)]
 impl MockLogger {
     pub fn new() -> Self {
         Self {
