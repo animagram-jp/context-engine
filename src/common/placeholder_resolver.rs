@@ -113,7 +113,7 @@ impl PlaceholderResolver {
     /// ```
     /// use state_engine::common::placeholder_resolver::PlaceholderResolver;
     /// use std::collections::HashMap;
-    /// use serde_yaml::Value;
+    /// use serde_yaml_ng::Value;
     ///
     /// let mut values = HashMap::new();
     /// values.insert("key1".to_string(), Value::String("${value1}".to_string()));
@@ -129,24 +129,24 @@ impl PlaceholderResolver {
     ///
     /// // result["key1"] == "a", result["key2"] == "b"
     /// ```
-    pub fn replace_in_map(value: serde_yaml::Value, params: &HashMap<String, String>) -> serde_yaml::Value {
+    pub fn replace_in_map(value: serde_yaml_ng::Value, params: &HashMap<String, String>) -> serde_yaml_ng::Value {
         match value {
-            serde_yaml::Value::String(s) => {
-                serde_yaml::Value::String(Self::replace(&s, params))
+            serde_yaml_ng::Value::String(s) => {
+                serde_yaml_ng::Value::String(Self::replace(&s, params))
             }
-            serde_yaml::Value::Mapping(map) => {
+            serde_yaml_ng::Value::Mapping(map) => {
                 let new_map = map
                     .into_iter()
                     .map(|(k, v)| (k, Self::replace_in_map(v, params)))
                     .collect();
-                serde_yaml::Value::Mapping(new_map)
+                serde_yaml_ng::Value::Mapping(new_map)
             }
-            serde_yaml::Value::Sequence(seq) => {
+            serde_yaml_ng::Value::Sequence(seq) => {
                 let new_seq = seq
                     .into_iter()
                     .map(|v| Self::replace_in_map(v, params))
                     .collect();
-                serde_yaml::Value::Sequence(new_seq)
+                serde_yaml_ng::Value::Sequence(new_seq)
             }
             // その他の型（Number, Bool, Null）はそのまま
             other => other,
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_map_simple() {
-        use serde_yaml::{Mapping, Value};
+        use serde_yaml_ng::{Mapping, Value};
 
         let mut map = Mapping::new();
         map.insert(
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_map_nested() {
-        use serde_yaml::{Mapping, Value};
+        use serde_yaml_ng::{Mapping, Value};
 
         let mut inner = Mapping::new();
         inner.insert(
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_replace_in_map_preserves_types() {
-        use serde_yaml::{Mapping, Value};
+        use serde_yaml_ng::{Mapping, Value};
 
         let mut map = Mapping::new();
         map.insert(

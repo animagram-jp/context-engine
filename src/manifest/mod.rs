@@ -188,7 +188,7 @@ impl Manifest {
         let content = fs::read_to_string(&file_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
 
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
+        let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)
             .map_err(|e| format!("Failed to parse YAML: {}", e))?;
 
         let json_value = self.yaml_to_json(&yaml);
@@ -197,12 +197,12 @@ impl Manifest {
         Ok(())
     }
 
-    /// serde_yaml::Value を serde_json::Value に変換
-    fn yaml_to_json(&self, yaml: &serde_yaml::Value) -> Value {
+    /// serde_yaml_ng::Value を serde_json::Value に変換
+    fn yaml_to_json(&self, yaml: &serde_yaml_ng::Value) -> Value {
         match yaml {
-            serde_yaml::Value::Null => Value::Null,
-            serde_yaml::Value::Bool(b) => Value::Bool(*b),
-            serde_yaml::Value::Number(n) => {
+            serde_yaml_ng::Value::Null => Value::Null,
+            serde_yaml_ng::Value::Bool(b) => Value::Bool(*b),
+            serde_yaml_ng::Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Value::Number(serde_json::Number::from(i))
                 } else if let Some(f) = n.as_f64() {
@@ -211,14 +211,14 @@ impl Manifest {
                     Value::Null
                 }
             }
-            serde_yaml::Value::String(s) => Value::String(s.clone()),
-            serde_yaml::Value::Sequence(seq) => {
+            serde_yaml_ng::Value::String(s) => Value::String(s.clone()),
+            serde_yaml_ng::Value::Sequence(seq) => {
                 Value::Array(seq.iter().map(|v| self.yaml_to_json(v)).collect())
             }
-            serde_yaml::Value::Mapping(map) => {
+            serde_yaml_ng::Value::Mapping(map) => {
                 let mut obj = serde_json::Map::new();
                 for (k, v) in map {
-                    if let serde_yaml::Value::String(key) = k {
+                    if let serde_yaml_ng::Value::String(key) = k {
                         obj.insert(key.clone(), self.yaml_to_json(v));
                     }
                 }
