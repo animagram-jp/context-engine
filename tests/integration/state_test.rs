@@ -1,7 +1,7 @@
 // State module integration tests
 use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
-use state_engine::ports::required::{InMemoryClient, KVSClient};
+use state_engine::ports::required::{InMemoryClient, KVSClient, ENVClient};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -67,6 +67,25 @@ impl KVSClient for MockKVS {
 
     fn exists(&self, key: &str) -> bool {
         self.data.contains_key(key)
+    }
+}
+
+// Mock ENVClient
+struct MockENVClient {
+    data: HashMap<String, String>,
+}
+
+impl MockENVClient {
+    fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+        }
+    }
+}
+
+impl ENVClient for MockENVClient {
+    fn get(&self, key: &str) -> Option<String> {
+        self.data.get(key).cloned()
     }
 }
 
@@ -164,4 +183,49 @@ fn test_state_delete_kvs() {
 
     let retrieved = state.get("cache.user");
     assert_eq!(retrieved, None);
+}
+
+#[test]
+fn test_state_load_cache_expansion() {
+    // Load結果がObjectの場合、各フィールドがcacheに展開されることを確認
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // ENVClientのモック設定
+    let mut env_client = MockENVClient::new();
+    env_client.data.insert("DB_HOST".to_string(), "localhost".to_string());
+    env_client.data.insert("DB_PORT".to_string(), "3306".to_string());
+    env_client.data.insert("DB_DATABASE".to_string(), "test_db".to_string());
+
+    let mut load = Load::new();
+    load = load.with_env_client(&mut env_client);
+
+    let mut in_memory = MockInMemory::new();
+
+    let mut state = State::new(&mut manifest, load);
+    state = state.with_in_memory(&mut in_memory);
+
+    // 最初に connection.common 全体を取得
+    let result = state.get("connection.common");
+    println!("connection.common: {:?}", result);
+
+    assert!(result.is_some());
+    if let Some(Value::Object(obj)) = &result {
+        assert_eq!(obj.get("host"), Some(&json!("localhost")));
+        assert_eq!(obj.get("port"), Some(&json!("3306")));
+        assert_eq!(obj.get("database"), Some(&json!("test_db")));
+    }
+
+    // 次に connection.common.host を取得
+    // cache に展開されているので、再度 Load せずにキャッシュヒットするはず
+    let host = state.get("connection.common.host");
+    println!("connection.common.host: {:?}", host);
+
+    assert_eq!(host, Some(json!("localhost")));
+
+    // connection.common.port も同様
+    let port = state.get("connection.common.port");
+    println!("connection.common.port: {:?}", port);
+
+    assert_eq!(port, Some(json!("3306")));
 }

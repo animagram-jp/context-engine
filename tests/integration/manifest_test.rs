@@ -242,3 +242,84 @@ fn test_manifest_connection_tenant() {
     let tenant_db = manifest.get("connection.tenant.database", None);
     assert_eq!(tenant_db, json!({}));
 }
+
+#[test]
+fn test_manifest_get_meta_absolute_path_normalization_for_load_map() {
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // cache.user の _load.map のキーが絶対パスに正規化されることを確認
+    let meta = manifest.get_meta("cache.user");
+
+    assert!(meta.contains_key("_load"));
+
+    if let Some(load) = meta.get("_load") {
+        assert!(load.is_object());
+
+        if let Some(map) = load.get("map") {
+            assert!(map.is_object());
+
+            // 相対パス "id" → 絶対パス "cache.user.id"
+            assert!(map.get("cache.user.id").is_some());
+            assert_eq!(map.get("cache.user.id"), Some(&json!("id")));
+
+            // 相対パス "org_id" → 絶対パス "cache.user.org_id"
+            assert!(map.get("cache.user.org_id").is_some());
+            assert_eq!(map.get("cache.user.org_id"), Some(&json!("sso_org_id")));
+
+            // 相対パスのキーは存在しない
+            assert!(map.get("id").is_none());
+            assert!(map.get("org_id").is_none());
+        }
+    }
+}
+
+#[test]
+fn test_manifest_get_meta_absolute_path_for_nested_load_map() {
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // cache.tenant の _load.map も絶対パスに正規化される
+    let meta = manifest.get_meta("cache.tenant");
+
+    assert!(meta.contains_key("_load"));
+
+    if let Some(load) = meta.get("_load") {
+        if let Some(map) = load.get("map") {
+            assert!(map.is_object());
+
+            // 相対パス "name" → 絶対パス "cache.tenant.name"
+            assert!(map.get("cache.tenant.name").is_some());
+            assert_eq!(map.get("cache.tenant.name"), Some(&json!("name")));
+
+            // 相対パス "display_name" → 絶対パス "cache.tenant.display_name"
+            assert!(map.get("cache.tenant.display_name").is_some());
+            assert_eq!(map.get("cache.tenant.display_name"), Some(&json!("display_name")));
+
+            // 相対パスのキーは存在しない
+            assert!(map.get("name").is_none());
+            assert!(map.get("display_name").is_none());
+        }
+    }
+}
+
+#[test]
+fn test_manifest_get_meta_child_node_without_load_map() {
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // cache.user.tenant_id は _load を持つが map は持たない
+    // 親の _load.map は継承されるが、mapが存在しないため正規化は行われない
+    let meta = manifest.get_meta("cache.user.tenant_id");
+
+    assert!(meta.contains_key("_load"));
+
+    if let Some(load) = meta.get("_load") {
+        // tenant_id は client: State で key のみを持つ
+        assert_eq!(load.get("client"), Some(&json!("State")));
+        assert_eq!(load.get("key"), Some(&json!("${org_id}")));
+
+        // map は存在しない（親の map は継承されない設計）
+        assert!(load.get("map").is_none());
+    }
+}

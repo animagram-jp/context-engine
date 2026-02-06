@@ -305,7 +305,7 @@ impl<'a> StateTrait for State<'a> {
                 }
 
                 // placeholder 解決
-                let resolved_config = self.resolve_load_config(key, &load_config);
+                let mut resolved_config = self.resolve_load_config(key, &load_config);
 
                 // client: State の場合は key の値を直接返す（State内参照）
                 let client_value = resolved_config.get("client").and_then(|v| v.as_str());
@@ -323,6 +323,21 @@ impl<'a> StateTrait for State<'a> {
                     self.recursion_depth -= 1;
                     None
                 } else {
+                    // Load に渡す前に map を denormalize（絶対パス → 相対パス）
+                    if let Some(map_value) = resolved_config.get("map") {
+                        if let Value::Object(map_obj) = map_value {
+                            let mut denormalized_map = serde_json::Map::new();
+                            for (absolute_key, db_column) in map_obj {
+                                // 絶対パスから最後のセグメントを抽出（相対フィールド名）
+                                let segments: Vec<&str> = absolute_key.split('.').collect();
+                                if let Some(relative_key) = segments.last() {
+                                    denormalized_map.insert(relative_key.to_string(), db_column.clone());
+                                }
+                            }
+                            resolved_config.insert("map".to_string(), Value::Object(denormalized_map));
+                        }
+                    }
+
                     // Load 実行
                     if let Ok(loaded) = self.load.handle(&resolved_config) {
                         // ロード成功 → _store に保存
@@ -340,7 +355,16 @@ impl<'a> StateTrait for State<'a> {
                         }
 
                         // インスタンスキャッシュに保存
+                        // 辞書全体を保存
                         DotArrayAccessor::set(&mut self.cache, key, loaded.clone());
+
+                        // Load結果がObjectの場合、各フィールドも個別にキャッシュに展開
+                        if let Value::Object(obj) = &loaded {
+                            for (field, field_value) in obj {
+                                let absolute_key = format!("{}.{}", key, field);
+                                DotArrayAccessor::set(&mut self.cache, &absolute_key, field_value.clone());
+                            }
+                        }
 
                         Some(loaded)
                     } else {
