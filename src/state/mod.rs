@@ -91,16 +91,31 @@ impl<'a> State<'a> {
     /// 2. 絶対パス: ${org_id} → org_id
     ///
     /// placeholder内の文字列を一切気にせず、単純に parent + name と name で試行。
+    ///
+    /// 最適化: キャッシュを優先的にチェックして、ヒット時は重い処理をスキップ
     fn resolve_placeholder(&mut self, name: &str, context_key: &str) -> Option<Value> {
         // 1. 親層参照
         if let Some(parent) = context_key.rsplit_once('.').map(|(p, _)| p) {
             let parent_key = format!("{}.{}", parent, name);
+
+            // キャッシュを優先チェック（高速パス）
+            if let Some(cached) = self.dot_accessor.get(&self.cache, &parent_key) {
+                return Some(cached.clone());
+            }
+
+            // キャッシュミス時はフル処理
             if let Some(value) = self.get(&parent_key) {
                 return Some(value);
             }
         }
 
         // 2. 絶対パス
+        // キャッシュを優先チェック（高速パス）
+        if let Some(cached) = self.dot_accessor.get(&self.cache, name) {
+            return Some(cached.clone());
+        }
+
+        // キャッシュミス時はフル処理
         self.get(name)
     }
 
