@@ -45,7 +45,7 @@ pub trait DBClient: Send + Sync {
     /// クエリ実行
     fn execute(
         &self,
-        config: &ConnectionConfig,
+        connection: &Value,
         query: &str,
         params: &[Value],
     ) -> Result<u64, String>;
