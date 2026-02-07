@@ -3,7 +3,7 @@
 // _load 設定に従って各種ソースからデータをロードする。
 
 use crate::ports::required::{
-    APIClient, DBClient, DBConnectionConfigConverter, ENVClient, KVSClient,
+    APIClient, DBClient, ENVClient, KVSClient,
     InMemoryClient,
 };
 use serde_json::Value;
@@ -19,7 +19,6 @@ pub struct Load<'a> {
     in_memory: Option<&'a dyn InMemoryClient>,
     env_client: Option<&'a dyn ENVClient>,
     api_client: Option<&'a dyn APIClient>,
-    db_config_converter: Option<&'a dyn DBConnectionConfigConverter>,
 }
 
 impl<'a> Load<'a> {
@@ -31,7 +30,6 @@ impl<'a> Load<'a> {
             in_memory: None,
             env_client: None,
             api_client: None,
-            db_config_converter: None,
         }
     }
 
@@ -62,12 +60,6 @@ impl<'a> Load<'a> {
     /// APIClientを設定
     pub fn with_api_client(mut self, client: &'a dyn APIClient) -> Self {
         self.api_client = Some(client);
-        self
-    }
-
-    /// DBConnectionConfigConverterを設定
-    pub fn with_db_config_converter(mut self, converter: &'a dyn DBConnectionConfigConverter) -> Self {
-        self.db_config_converter = Some(converter);
         self
     }
 
@@ -171,10 +163,6 @@ impl<'a> Load<'a> {
             .db_client
             .ok_or("Load::load_from_db: DBClient not configured")?;
 
-        let db_config_converter = self
-            .db_config_converter
-            .ok_or("Load::load_from_db: DBConnectionConfigConverter not configured")?;
-
         let table = config
             .get("table")
             .and_then(|v| v.as_str())
@@ -187,32 +175,13 @@ impl<'a> Load<'a> {
             .and_then(|v| v.as_object())
             .ok_or("Load::load_from_db: 'map' not found")?;
 
-        // connection 解決: config.connection の値は placeholder 解決済み
-        // connection が Value::Object なら直接使用、Value::String なら error
-        let connection_config = if let Some(conn_value) = config.get("connection") {
-            // placeholder 解決後は Object になっているはず
-            if let Some(conn_map) = conn_value.as_object() {
-                // Map を HashMap に変換
-                let conn_hashmap: HashMap<String, Value> = conn_map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-
-                db_config_converter
-                    .to_config(&conn_hashmap)
-                    .ok_or("Load::load_from_db: failed to convert connection config")?
-            } else {
-                return Err(format!(
-                    "Load::load_from_db: connection must be an object after resolution, got: {:?}",
-                    conn_value
-                ));
-            }
-        } else {
-            return Err("Load::load_from_db: 'connection' not specified".to_string());
-        };
+        // connection 値を取得（String でも Object でも OK）
+        let connection = config
+            .get("connection")
+            .ok_or("Load::load_from_db: 'connection' not specified")?;
 
         let row = db_client
-            .fetch_one(&connection_config, table, where_clause)
+            .fetch_one(connection, table, where_clause)
             .ok_or_else(|| format!("Load::load_from_db: no data found in table '{}'", table))?;
 
         // mapに従ってフィールドをマッピング

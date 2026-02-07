@@ -16,6 +16,6 @@ pub use load::Load;
 
 // Re-export all Required Ports for app implementation
 pub use ports::required::{
-    APIClient, ConnectionConfig, DBClient, DBConnectionConfigConverter, ENVClient,
+    APIClient, DBClient, ENVClient,
     KVSClient, InMemoryClient,
 };

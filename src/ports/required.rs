@@ -15,33 +15,21 @@ pub trait InMemoryClient: Send + Sync {
     fn delete(&mut self, key: &str) -> bool;
 }
 
-/// DB接続設定
-#[derive(Debug, Clone)]
-pub struct ConnectionConfig {
-    pub host: String,
-    pub port: u16,
-    pub database: String,
-    pub username: String,
-    pub password: String,
-}
-
-/// DB接続設定コンバーター
-/// フレームワーク形式 ⇔ ConnectionConfig（標準形式）の相互変換
-pub trait DBConnectionConfigConverter: Send + Sync {
-    /// フレームワーク形式をConnectionConfigに変換
-    fn to_config(&self, framework_config: &HashMap<String, Value>) -> Option<ConnectionConfig>;
-
-    /// ConnectionConfigをフレームワーク形式に変換
-    fn from_config(&self, config: &ConnectionConfig) -> HashMap<String, Value>;
-}
-
 /// DBクライアント
 /// DB接続・クエリ実行（PDO相当）
+///
+/// # connection 引数について
+/// - Value::Object: 接続情報が含まれる Object (例: {host: "...", port: 3306, ...})
+/// - Value::String: 接続識別子 (例: "common", "tenant")
+///
+/// **重要:** DBClient 実装内で State を呼び出してはいけません。
+/// String 形式の connection を受け取った場合は、実装側で事前に用意した
+/// 接続マップから取得するか、エラーを返してください。
 pub trait DBClient: Send + Sync {
     /// 1レコード取得
     fn fetch_one(
         &self,
-        config: &ConnectionConfig,
+        connection: &Value,
         table: &str,
         where_clause: Option<&str>,
     ) -> Option<HashMap<String, Value>>;
@@ -49,7 +37,7 @@ pub trait DBClient: Send + Sync {
     /// 複数レコード取得
     fn fetch_all(
         &self,
-        config: &ConnectionConfig,
+        connection: &Value,
         table: &str,
         where_clause: Option<&str>,
     ) -> Option<Vec<HashMap<String, Value>>>;

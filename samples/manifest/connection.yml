@@ -13,6 +13,7 @@ common:
       username: 'DB_USERNAME'
       password: 'DB_PASSWORD'
 
+  driver: 'mysql'
   host:
     _state:
       type: string
@@ -34,12 +35,12 @@ tenant:
     type: map
   _store:
     client: InMemory
-    key: 'connection.tenant.${cache.user.tenant_id}'
+    key: 'connection.tenant${cache.user.tenant_id}'
   _load:
     client: DB
     connection: ${connection.common}
     table: 'tenants'
-    where: 'id=${tenant_id}'
+    where: 'id=${cache.user.tenant_id}'
     map:
       host: 'db_host'
       port: 'db_port'
@@ -47,6 +48,7 @@ tenant:
       username: 'db_username'
       password: 'db_password'
 
+  driver: 'mysql'
   host:
     _state:
       type: string
