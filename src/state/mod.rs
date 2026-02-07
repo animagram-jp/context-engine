@@ -1,4 +1,4 @@
-// State - 統一CRUD実装
+// State - get/set/delete指示に応じたステートのCRUD
 //
 // manifest の _state/_store/_load に従って状態を管理する。
 

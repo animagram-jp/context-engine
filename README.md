@@ -1,14 +1,11 @@
 # state-engine 0.0.1
 
-Declarative state management for multi-tenant, multi-service systems.
+Declarative state data management for multi-tenant, multi-service systems.
 Synchronizes process memory, KVS, and databases using YAML DSL.
-開発者が記述するYAML拡張DSL(ドメイン特化言語)を設計図に、高度要件のステートデータを自動管理するライブラリです。
 
-Automates complex state lifecycles through developer-defined YAML manifests.
-Enables multi-tenant DB apps without junction tables.
-Built on a reimagined web architecture (see [## background](#background)).
-このライブラリを導入し、段階的に適切なYAMLとAdapterクラスを整備すれば、例えばマルチテナントDBアプリに中間表が不要になります。
-state-engineは、[## background](#background)記載の新たなwebシステム構成を発想元として開発されています。
+- Automates complex state lifecycles through developer-defined YAML manifests.
+- Enables multi-tenant DB apps without junction tables.
+- Built on a reimagined web architecture (see [## background](#background)).
 
 ## Version
 
@@ -60,21 +57,15 @@ let user = state.get("cache.user")?;
 
 ## background
 
-reimagined web architecture / webシステムの構成再定義
+**reimagined web architecture**
 
-webシステムの構成再定義
-
-よりユーザーの主権を尊重し、資源と責務配置の合理性を追求したwebシステム構成を設計する。
-
-高効率なRust言語とWeb Assembly技術を踏まえて、以下の定義のterminal serverのビジネスロジックへの責務拡大、database serverの認証とCRUD処理への責務拡大を実現。
-conductorは中・大規模なシステムにおいてdatabaseとterminalの間を取り持ち、ユニークなDB接続情報などのステートを提供する。
-
-- computer: 電子計算機。ネットワーク通信機能を要するもの。
-- server: webシステムを構成するcomputerのうち、機能を人間(ユーザー)に提供するもの
-- orchestrator: webシステムを構成するcomputerのうち、システム内部の維持を管理するもの。OPTIONAL
-- database: serverのうち、保持期間を定めないデータを維持し、terminalやconductorにCRUDを受け付けるもの
-- terminal: serverのうち、人間が直接触るインターフェースを提供するもの。「端末」と同義
-- conductor: serverのうち、databaseとterminalの両方に対して相互に通信し、二者の同期通信が成立する状態を維持するもの(OPTIONAL)
+- computer: A network-capable node in the system.
+- server: A computer that serves human users.
+- orchestrator: A computer responsible for internal system coordination and maintenance. (optional)
+- database: A server that persists data without an inherent expiration and accepts CRUD operations.
+- terminal: A server that provides a direct human-facing interface.
+- conductor: A server that communicates independently with both a database and terminals,
+  and maintains a synchronized state between them. (optional)
 
 ```yaml
 # terms relationship
@@ -90,11 +81,12 @@ computer:
 
 ```
 /
-  README.md
+  README.md           # this file
   Cargo.toml
   docs/               # guide documents
-    DSL-guide.md
-    Architecture.md
+    en/
+    ja/
+      README.md       # ja translation
   src/
     ports/            # external interfaces
       provided.rs     # library provides
@@ -111,13 +103,13 @@ computer:
     integration/
 
   samples/
-    manifest/         # DSL samples using in tests
+    manifest/         # YAML samples
       connection.yml  # sample 1
       cache.yml       # sample 2
-    app/              # nodejs sample application
+    app/              # sample application
       index.js
       package.json
-    adapters/         # nodejs sample adapters
+    adapters/         # sample adapters
       in_memory.js
       env_client.js
       README.md
@@ -125,7 +117,7 @@ computer:
 
 ## Architecture
 
-see [Architecture.md](./docs/Architecture.md)
+see [Architecture.md](./docs/en/Architecture.md)
 
 ## Sample Application
 
