@@ -2,7 +2,7 @@ common:
   _state:
     type: map
   _store:
-    client: InMemory
+    client: InMemory  # プロセススコープでキャッシュ（K8s Pod 内で再利用）
     key: 'connection.common'
   _load:
     client: Env
@@ -13,7 +13,11 @@ common:
       username: 'DB_USERNAME'
       password: 'DB_PASSWORD'
 
-  driver: 'mysql'
+  # 完全な接続設定（Manifest static values）
+  # samples/app/.env の PostgreSQL 環境に合わせた設定
+  driver: 'postgres'
+  charset: 'UTF8'
+
   host:
     _state:
       type: string
@@ -34,11 +38,11 @@ tenant:
   _state:
     type: map
   _store:
-    client: InMemory
+    client: InMemory  # テナント毎の接続をプロセススコープでキャッシュ
     key: 'connection.tenant${cache.user.tenant_id}'
   _load:
     client: DB
-    connection: ${connection.common}
+    connection: ${connection.common}  # 共通接続を使ってテナント情報を取得
     table: 'tenants'
     where: 'id=${cache.user.tenant_id}'
     map:
@@ -48,7 +52,10 @@ tenant:
       username: 'db_username'
       password: 'db_password'
 
-  driver: 'mysql'
+  # 完全な接続設定（Manifest static values）
+  driver: 'postgres'
+  charset: 'UTF8'
+
   host:
     _state:
       type: string

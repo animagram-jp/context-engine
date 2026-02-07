@@ -18,17 +18,35 @@ class DBAdapter {
   /**
    * Create a connection pool
    * @param {string} name - Pool name
-   * @param {Object} config - Connection configuration
+   * @param {Object} config - Connection configuration (complete config object from State)
+   *
+   * Expected config structure:
+   * {
+   *   host: string,
+   *   port: number,
+   *   database: string,
+   *   username: string,
+   *   password: string,
+   *   driver: string,      // e.g., 'mysql', 'postgres'
+   *   charset: string,     // e.g., 'utf8mb4'
+   *   collation: string    // e.g., 'utf8mb4_unicode_ci'
+   * }
    */
   createPool(name, config) {
-    const pool = new Pool({
+    const poolConfig = {
       host: config.host || process.env.DB_HOST,
       port: config.port || process.env.DB_PORT || 5432,
       database: config.database || process.env.DB_DATABASE,
       user: config.username || process.env.DB_USERNAME,
       password: config.password || process.env.DB_PASSWORD,
-    });
+    };
 
+    // Add charset/collation if provided (for MySQL/MariaDB compatibility)
+    if (config.charset) {
+      poolConfig.charset = config.charset;
+    }
+
+    const pool = new Pool(poolConfig);
     this.pools.set(name, pool);
   }
 
@@ -46,10 +64,14 @@ class DBAdapter {
 
   /**
    * Fetch one record from database
-   * @param {Object} config - Connection config
+   * @param {Object} config - Complete connection config object from State (not string!)
    * @param {string} table - Table name
    * @param {string|null} whereClause - WHERE clause (e.g., "id=123")
    * @returns {Promise<Object|null>} Record or null if not found
+   *
+   * NOTE: This implementation expects config to be an Object.
+   * If you receive a string (connection name), you should maintain
+   * your own connection map instead of calling State.
    */
   async fetchOne(config, table, whereClause = null) {
     const poolName = this.getPoolName(config);

@@ -45,18 +45,36 @@ const user = await kvs.get('user:123');
 ```
 
 ### 4. DBClient
-**実装:** `db_client.js` (TODO)
+**実装:** `db_client.js`
 
 データベースへのアクセスを提供します。
 
-```javascript
-// Example (not implemented yet)
-const DBAdapter = require('./db_client');
-const db = new DBAdapter(config);
+**重要:** DBClient は完全な接続設定オブジェクトを受け取ります（文字列ではありません）。
 
-const user = await db.fetchOne('users', 'id=123');
-const users = await db.fetchAll('users', 'org_id=100');
+```javascript
+const DBAdapter = require('./db_client');
+const db = new DBAdapter();
+
+// config は State::get('connection.common') から取得された完全なオブジェクト
+// {
+//   host: 'localhost',
+//   port: 3306,
+//   database: 'mydb',
+//   username: 'user',
+//   password: 'pass',
+//   driver: 'mysql',
+//   charset: 'utf8mb4',
+//   collation: 'utf8mb4_0900_ai_ci'
+// }
+
+const user = await db.fetchOne(config, 'users', 'id=123');
+const users = await db.fetchAll(config, 'users', 'org_id=100');
 ```
+
+**注意事項:**
+- ❌ Adapter 内で State を呼び出してはいけません
+- ✅ YAML では `connection: ${connection.common}` と placeholder で解決
+- ✅ Library が State::get で完全な config オブジェクトに解決して渡します
 
 ### 5. APIClient
 **実装:** `api_client.js` (TODO)
