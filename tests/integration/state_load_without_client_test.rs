@@ -92,11 +92,11 @@ fn test_load_without_client_key_reference() {
     assert_eq!(org_id, Some(json!(100)));
 
     // cache.user.tenant_id を取得
-    // _load: { key: '${org_id}' } → org_id の値を参照
-    // これは client が無いので load を呼ばず、org_id の値をそのまま返す
+    // _load: {client: State, key: '${org_id}'} が定義されているが、
+    // Store (KVS) に既に tenant_id: 10 が保存されているため、Store の値が優先される
     let tenant_id = state.get("cache.user.tenant_id");
     println!("tenant_id: {:?}", tenant_id);
 
-    // org_id = 100 なので、tenant_id も 100 になる
-    assert_eq!(tenant_id, Some(json!(100)));
+    // Store の値 (10) が返される（_load は fallback なので、Store に値があれば Store 優先）
+    assert_eq!(tenant_id, Some(json!(10)));
 }

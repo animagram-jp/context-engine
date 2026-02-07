@@ -230,6 +230,54 @@ impl<'a> State<'a> {
             _ => false,
         }
     }
+
+    /// 親キーを取得
+    ///
+    /// "cache.user.org_id" → "cache.user"
+    /// "cache.user" → "cache"
+    /// "cache" → ""
+    fn get_parent_key(key: &str) -> String {
+        let segments: Vec<&str> = key.split('.').collect();
+        if segments.len() <= 1 {
+            return String::new();
+        }
+        segments[..segments.len() - 1].join(".")
+    }
+
+    /// Manifest の静的値とマージ
+    ///
+    /// Load/Store から取得した値に Manifest の静的値をマージする。
+    /// Load/Store の値が優先される（後から上書き）。
+    ///
+    /// # Arguments
+    /// * `manifest_key` - Manifest から取得するキー
+    /// * `data` - Load/Store から取得した値
+    ///
+    /// # Returns
+    /// マージ後の値（data が Object でない場合はそのまま返す）
+    fn merge_with_manifest_static_values(&mut self, manifest_key: &str, data: Value) -> Value {
+        // data が Object でない場合はマージ不要
+        let Value::Object(data_obj) = data else {
+            return data;
+        };
+
+        // Manifest から静的値を取得
+        let manifest_value = self.manifest.get(manifest_key, None);
+
+        // Manifest の値が Object でない場合はマージ不要
+        let manifest_obj = match manifest_value {
+            Value::Object(obj) => obj,
+            _ => return Value::Object(data_obj),
+        };
+
+        // Manifest の静的値を先に入れ、data で上書き（data が優先）
+        let mut merged = manifest_obj.clone();
+        for (key, value) in data_obj {
+            merged.insert(key, value);
+        }
+
+        Value::Object(merged)
+    }
 }
 
 impl<'a> StateTrait for State<'a> {
@@ -277,13 +325,25 @@ impl<'a> StateTrait for State<'a> {
                     let resolved_store_config = self.resolve_load_config(key, &store_config);
 
                     if let Some(value) = self.get_from_store(&resolved_store_config) {
-                        // 取得した値から子フィールドを抽出
-                        // key="cache.user.org_id" で _store.key="user:${id}" の場合、
-                        // storeに保存されているのは "cache.user" 全体なので、"org_id" を抽出する必要がある
-                        let extracted = Self::extract_field_from_value(key, value, &meta);
+                        // 親キーを計算
+                        let parent_key = Self::get_parent_key(key);
 
-                        // インスタンスキャッシュに保存
-                        DotArrayAccessor::set(&mut self.cache, key, extracted.clone());
+                        // Manifest の静的値とマージ
+                        let merged_value = self.merge_with_manifest_static_values(&parent_key, value);
+
+                        // マージ後の値から子フィールドを抽出
+                        let extracted = Self::extract_field_from_value(key, merged_value.clone(), &meta);
+
+                        // インスタンスキャッシュに保存（辞書全体）
+                        DotArrayAccessor::set(&mut self.cache, &parent_key, merged_value.clone());
+
+                        // Object の場合、各フィールドも個別にキャッシュに展開
+                        if let Value::Object(obj) = &merged_value {
+                            for (field, field_value) in obj {
+                                let absolute_key = format!("{}.{}", parent_key, field);
+                                DotArrayAccessor::set(&mut self.cache, &absolute_key, field_value.clone());
+                            }
+                        }
 
                         self.recursion_depth -= 1;
                         return Some(extracted);
@@ -340,7 +400,10 @@ impl<'a> StateTrait for State<'a> {
 
                     // Load 実行
                     if let Ok(loaded) = self.load.handle(&resolved_config) {
-                        // ロード成功 → _store に保存
+                        // Manifest の静的値とマージ
+                        let merged_loaded = self.merge_with_manifest_static_values(key, loaded);
+
+                        // ロード成功 → _store に保存（マージ後の値を保存）
                         if let Some(store_config_value) = meta.get("_store") {
                             if let Some(store_config_obj) = store_config_value.as_object() {
                                 let store_config: HashMap<String, Value> = store_config_obj
@@ -350,23 +413,23 @@ impl<'a> StateTrait for State<'a> {
 
                                 // store_config の placeholder も解決
                                 let resolved_store_config = self.resolve_load_config(key, &store_config);
-                                self.set_to_store(&resolved_store_config, loaded.clone(), None);
+                                self.set_to_store(&resolved_store_config, merged_loaded.clone(), None);
                             }
                         }
 
-                        // インスタンスキャッシュに保存
+                        // インスタンスキャッシュに保存（マージ後の値）
                         // 辞書全体を保存
-                        DotArrayAccessor::set(&mut self.cache, key, loaded.clone());
+                        DotArrayAccessor::set(&mut self.cache, key, merged_loaded.clone());
 
                         // Load結果がObjectの場合、各フィールドも個別にキャッシュに展開
-                        if let Value::Object(obj) = &loaded {
+                        if let Value::Object(obj) = &merged_loaded {
                             for (field, field_value) in obj {
                                 let absolute_key = format!("{}.{}", key, field);
                                 DotArrayAccessor::set(&mut self.cache, &absolute_key, field_value.clone());
                             }
                         }
 
-                        Some(loaded)
+                        Some(merged_loaded)
                     } else {
                         None
                     }
