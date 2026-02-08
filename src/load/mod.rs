@@ -180,9 +180,28 @@ impl<'a> Load<'a> {
             .get("connection")
             .ok_or("Load::load_from_db: 'connection' not specified")?;
 
-        let row = db_client
-            .fetch_one(connection, table, where_clause)
-            .ok_or_else(|| format!("Load::load_from_db: no data found in table '{}'", table))?;
+        // map から SELECT カラムを抽出
+        let columns: Vec<&str> = map
+            .values()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        if columns.is_empty() {
+            return Err("Load::load_from_db: no columns specified in map".to_string());
+        }
+
+        // DB から取得（常に Vec で返る）
+        let rows = db_client
+            .fetch(connection, table, &columns, where_clause)
+            .ok_or_else(|| format!("Load::load_from_db: fetch failed for table '{}'", table))?;
+
+        // 空チェック
+        if rows.is_empty() {
+            return Err(format!("Load::load_from_db: no data found in table '{}'", table));
+        }
+
+        // 1件目を取得（現状はレコード形式のみ対応）
+        let row = &rows[0];
 
         // mapに従ってフィールドをマッピング
         let mut result = serde_json::Map::new();

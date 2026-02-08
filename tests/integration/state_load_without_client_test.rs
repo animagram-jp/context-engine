@@ -64,10 +64,6 @@ impl KVSClient for MockKVS {
     fn delete(&mut self, key: &str) -> bool {
         self.data.remove(key).is_some()
     }
-
-    fn exists(&self, key: &str) -> bool {
-        self.data.contains_key(key)
-    }
 }
 
 #[test]

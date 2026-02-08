@@ -62,13 +62,17 @@ const db = new DBAdapter();
 //   database: 'mydb',
 //   username: 'user',
 //   password: 'pass',
-//   driver: 'mysql',
-//   charset: 'utf8mb4',
-//   collation: 'utf8mb4_0900_ai_ci'
+//   driver: 'postgres',
+//   charset: 'UTF8'
 // }
 
-const user = await db.fetchOne(config, 'users', 'id=123');
-const users = await db.fetchAll(config, 'users', 'org_id=100');
+// fetch(config, table, columns, whereClause)
+// columns は map から自動抽出される
+const rows = await db.fetch(config, 'users', ['name', 'email'], 'id=123');
+// → SELECT name, email FROM users WHERE id=123
+
+// 結果は常に配列（0件以上）
+// rows = [{name: 'John', email: 'john@example.com'}]
 ```
 
 **注意事項:**

@@ -26,29 +26,29 @@ pub trait InMemoryClient: Send + Sync {
 /// String 形式の connection を受け取った場合は、実装側で事前に用意した
 /// 接続マップから取得するか、エラーを返してください。
 pub trait DBClient: Send + Sync {
-    /// 1レコード取得
-    fn fetch_one(
+    /// レコード取得（単数でも複数でも対応）
+    ///
+    /// # Arguments
+    /// * `connection` - 接続情報 (Object or String)
+    /// * `table` - テーブル名
+    /// * `columns` - SELECT するカラム名の配列（map から自動抽出）
+    /// * `where_clause` - WHERE 条件（省略可）
+    ///
+    /// # Returns
+    /// * `Some(Vec<HashMap>)` - 取得成功（0件以上）
+    /// * `None` - エラー
+    ///
+    /// # SQL 生成例
+    /// ```sql
+    /// SELECT db_host, db_port, db_database FROM tenants WHERE id=1
+    /// ```
+    fn fetch(
         &self,
         connection: &Value,
         table: &str,
-        where_clause: Option<&str>,
-    ) -> Option<HashMap<String, Value>>;
-
-    /// 複数レコード取得
-    fn fetch_all(
-        &self,
-        connection: &Value,
-        table: &str,
+        columns: &[&str],
         where_clause: Option<&str>,
     ) -> Option<Vec<HashMap<String, Value>>>;
-
-    /// クエリ実行
-    fn execute(
-        &self,
-        connection: &Value,
-        query: &str,
-        params: &[Value],
-    ) -> Result<u64, String>;
 }
 
 /// KVSクライアント

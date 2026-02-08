@@ -63,17 +63,22 @@ class DBAdapter {
   }
 
   /**
-   * Fetch one record from database
+   * Fetch records from database
    * @param {Object} config - Complete connection config object from State (not string!)
    * @param {string} table - Table name
+   * @param {Array<string>} columns - Column names to SELECT (e.g., ['db_host', 'db_port'])
    * @param {string|null} whereClause - WHERE clause (e.g., "id=123")
-   * @returns {Promise<Object|null>} Record or null if not found
+   * @returns {Promise<Array>} Array of records (0 or more rows)
    *
    * NOTE: This implementation expects config to be an Object.
    * If you receive a string (connection name), you should maintain
    * your own connection map instead of calling State.
+   *
+   * SQL generation example:
+   * fetch(config, 'tenants', ['db_host', 'db_port'], 'id=1')
+   * → SELECT db_host, db_port FROM tenants WHERE id=1
    */
-  async fetchOne(config, table, whereClause = null) {
+  async fetch(config, table, columns, whereClause = null) {
     const poolName = this.getPoolName(config);
     if (!this.pools.has(poolName)) {
       this.createPool(poolName, config);
@@ -81,56 +86,16 @@ class DBAdapter {
 
     const pool = this.getPool(poolName);
 
-    let query = `SELECT * FROM ${table}`;
-    if (whereClause) {
-      query += ` WHERE ${whereClause}`;
-    }
-    query += ' LIMIT 1';
+    // Build SELECT clause
+    const columnList = columns.length > 0 ? columns.join(', ') : '*';
+    let query = `SELECT ${columnList} FROM ${table}`;
 
-    const result = await pool.query(query);
-    return result.rows.length > 0 ? result.rows[0] : null;
-  }
-
-  /**
-   * Fetch all records from database
-   * @param {Object} config - Connection config
-   * @param {string} table - Table name
-   * @param {string|null} whereClause - WHERE clause
-   * @returns {Promise<Array>} Array of records
-   */
-  async fetchAll(config, table, whereClause = null) {
-    const poolName = this.getPoolName(config);
-    if (!this.pools.has(poolName)) {
-      this.createPool(poolName, config);
-    }
-
-    const pool = this.getPool(poolName);
-
-    let query = `SELECT * FROM ${table}`;
     if (whereClause) {
       query += ` WHERE ${whereClause}`;
     }
 
     const result = await pool.query(query);
     return result.rows;
-  }
-
-  /**
-   * Execute a query
-   * @param {Object} config - Connection config
-   * @param {string} query - SQL query
-   * @param {Array} params - Query parameters
-   * @returns {Promise<number>} Number of affected rows
-   */
-  async execute(config, query, params = []) {
-    const poolName = this.getPoolName(config);
-    if (!this.pools.has(poolName)) {
-      this.createPool(poolName, config);
-    }
-
-    const pool = this.getPool(poolName);
-    const result = await pool.query(query, params);
-    return result.rowCount;
   }
 
   /**

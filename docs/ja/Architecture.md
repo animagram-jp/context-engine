@@ -44,7 +44,7 @@ Load:
     - 対象ストア: Key-Valueストア
     - Stateは_store.keyの定義されたkeyからの階層構造を、serialize/desirializeして格納します。
   3. **DBClient** - Database operations (optional, for Load layer)
-    - 必要なメソッド: `get()`/`set()`/`delete()`
+    - 必要なメソッド: `get()`
 
     - 渡される引数: `{'connection': YAML記載の_{store,load}.connection:の値, }`
   4. **ENVClient** - Environment variable retrieval (optional, for Load layer)
