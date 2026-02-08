@@ -34,13 +34,13 @@ Load:
 
   1. **InMemoryClient** - client:InMemory
     - 必要なメソッド: `get()`/`set()`/`delete()`
-    - 渡される引数: `{'key': Manifestの_{store,load}.key:の値}`
+    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`
     - 対象ストア: ローカルプロセスメモリ
     - 引数の各キーに対応した、プロセスメモリパスをマッピングして下さい。
     - インスタンスメモリのState::cacheにて、_store.clientの値に依らず、キャッシュが常にされている点に留意して下さい。
   2. **KVSClient**
     - 必要なメソッド: `get()`/`set()`/`delete()`
-    - 渡される引数: `{'key': Manifestの_{store,load}.key:の値, value: string(storeブロックのみ), ttl: Manifestの_{store,load}.ttl:の値(オプション)}`
+    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`, `value: string(storeブロックのみ)`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
     - 対象ストア: Key-Valueストア
     - Stateは_store.keyの定義されたkeyからの階層構造を、serialize/desirializeして格納します。
   3. **DBClient** - Database operations (optional, for Load layer)

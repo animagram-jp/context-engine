@@ -33,12 +33,15 @@ Application must implement the following traits to handle data stores:
 
   1. **InMemoryClient**
     - expected operations: `get()`/`set()`/`delete()`
-    - arguments: {`key`: } from `_{store,load}.key:...` by Manifest
+    - arguments: `'key':...` from `_{store,load}.key:...` by Manifest
     - target: Local process memory
     - please mapping eache key arguments to your any memory path
     - remind of State::cache instance memory State always caching regardless of client type.
-  2. **KVSClient** - Key-Value Store operations (e.g., Redis, Memcached)
-  3. **DBClient** - Database operations (optional, for Load layer)
+  2. **KVSClient**
+    - expected operations: `get()`/`set()`/`delete()`
+    - arguments: `'key':...` from `_{store,load}.key:...`, `value:...(scalar|string)`(only for `set()` operations) and `ttl:...` from `_{store,load}.ttl:...`(optional) by Manifest
+    - target: Key-Value Store
+  3. **DBClient** - Database operations (optional, for only _load )
   4. **ENVClient** - Environment variable retrieval (optional, for Load layer)
 
 ---
