@@ -7,6 +7,8 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 - Enables multi-tenant DB apps without junction tables.
 - Built on a reimagined web architecture (see [## background](#background)).
 
+- [also README(partial ja translation)](./docs/ja/README.md)
+
 ## Version
 
 - 0.1.0 scheduled (2026-2-8)
@@ -20,6 +22,10 @@ state-engine = "0.1"
 ```
 
 ## Quick Start
+
+0. [install state-engine](#Installation)
+
+1. Write a yaml file.
 
 ```yaml
 # manifest/cache.yml
@@ -80,7 +86,7 @@ computer:
 ## tree
 
 ```
-/
+./
   README.md           # this file
   Cargo.toml
   docs/               # guide documents
@@ -88,16 +94,19 @@ computer:
     ja/
       README.md       # ja translation
   src/
-    ports/            # external interfaces
-      provided.rs     # library provides
-      required.rs     # Library requires
-    common/           # pure logic utility
+    ports/            # library external interface traits
+      provided.rs     # library provides (Manifest, State)
+      required.rs     # Library requires (InMemoryClient, DBClient, KVSClient, ENVClient)
+
+    common/           # library common (pure logic)
       dot_array_accessor.rs
       placeholder_resolver.rs
-    manifest/         # Manifest source
-    state/            # State source
-      parameter_builder.rs
-    load/             # internal class
+      log_format.rs
+
+    manifest/         # Manifest impl
+    state/            # State impl
+    load/             # Load module (internal class for State module)
+
   tests/
     mocks/
     integration/
@@ -106,22 +115,16 @@ computer:
     manifest/         # YAML samples
       connection.yml  # sample 1
       cache.yml       # sample 2
-    app/              # sample application
+    app/
       index.js
       package.json
-    adapters/         # sample adapters
-      in_memory.js
-      env_client.js
-      README.md
+    adapters/
+
 ```
 
 ## Architecture
 
 see [Architecture.md](./docs/en/Architecture.md)
-
-## Sample Application
-
-see [samples/app/README.md](./samples/app/README.md)
 
 ## License
 

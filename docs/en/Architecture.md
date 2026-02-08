@@ -1,10 +1,28 @@
 # Architecture
 
-## Ports (Library Interface Class)
+## index
+
+```yaml
+# modules list
+Ports:
+  Provided: {Manifest, State}
+  Required: {InMemoryClient, DBClient, KVSClient, ENVClient}
+
+Common:
+  DotArrayAccessor:
+  PlaceholderResover:
+  LogFormat:
+
+Load:
+```
+
+## Ports
+
+Library External Interface Traits
 
 ### Provided
 
-1. **Manifest** - Read-only class from DSL files. It detects `_` prefix keys (meta blocks) and ignores them at `get()`, collects them at `getMeta()`
+1. **Manifest** - Read-only module from DSL files. It detects `_` prefix keys (meta blocks) and ignores them at `get()`, collects them at `getMeta()`
 2. **State** - get/set/delete class for state objects. It has Load function only at `get()`, Self-Reference and Serialize at `get()` and `set()`, Type casting at `get()` and `set()`, ...
 
 ### Required

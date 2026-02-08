@@ -1,4 +1,4 @@
-// Manifest - YAMLマニフェストファイルの読み込みと集計
+// Manifest impl
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;

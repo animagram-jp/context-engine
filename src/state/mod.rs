@@ -1,7 +1,4 @@
-// State - get/set/delete指示に応じたステートのCRUD
-//
-// manifest の _state/_store/_load に従って状態を管理する。
-
+// State impl
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
@@ -9,23 +6,23 @@ use crate::common::{DotArrayAccessor, PlaceholderResolver};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// State 実装
+/// State impl
 ///
-/// _state/_store/_load メタデータに基づいて状態を管理する。
-/// placeholder 解決、再帰制御、store管理を全て担当。
+/// depends on: Manifest YAML meta data(_state, _store, _load)
+/// func: placeholder resolution, self calling, store CRUD
 pub struct State<'a> {
+    dot_accessor: DotArrayAccessor,
     manifest: &'a mut dyn ManifestTrait,
     load: Load<'a>,
     in_memory: Option<&'a mut dyn InMemoryClient>,
     kvs_client: Option<&'a mut dyn KVSClient>,
     recursion_depth: usize,
     max_recursion: usize,
-    cache: Value,  // インスタンスメモリキャッシュ（階層構造）
-    dot_accessor: DotArrayAccessor,  // ドット記法アクセサ
+    cache: Value,  // instance cache（single collection object）
 }
 
 impl<'a> State<'a> {
-    /// 新しい State を作成
+    /// create a new State instance
     pub fn new(manifest: &'a mut dyn ManifestTrait, load: Load<'a>) -> Self {
         Self {
             manifest,
@@ -39,13 +36,13 @@ impl<'a> State<'a> {
         }
     }
 
-    /// InMemoryClient を設定
+    /// move InMemoryClient ownership
     pub fn with_in_memory(mut self, client: &'a mut dyn InMemoryClient) -> Self {
         self.in_memory = Some(client);
         self
     }
 
-    /// KVSClient を設定
+    /// move KVSClient ownership
     pub fn with_kvs_client(mut self, client: &'a mut dyn KVSClient) -> Self {
         self.kvs_client = Some(client);
         self
