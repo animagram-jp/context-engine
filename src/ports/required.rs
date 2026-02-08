@@ -62,9 +62,6 @@ pub trait KVSClient: Send + Sync {
 
     /// キーを削除
     fn delete(&mut self, key: &str) -> bool;
-
-    /// キーの存在確認
-    fn exists(&self, key: &str) -> bool;
 }
 
 /// ENVクライアント

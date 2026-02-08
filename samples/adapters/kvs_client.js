@@ -94,17 +94,6 @@ class KVSAdapter {
   }
 
   /**
-   * Check if key exists in KVS
-   * @param {string} key - The key to check
-   * @returns {Promise<boolean>} True if exists
-   */
-  async exists(key) {
-    await this.connect();
-    const result = await this.client.exists(key);
-    return result === 1;
-  }
-
-  /**
    * Get TTL for a key
    * @param {string} key - The key to check
    * @returns {Promise<number>} TTL in seconds, -1 if no TTL, -2 if key doesn't exist
