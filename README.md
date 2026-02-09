@@ -5,13 +5,13 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 
 - Automates complex state lifecycles through developer-defined YAML manifests.
 - Enables multi-tenant DB apps without junction tables.
-- Built on a reimagined web architecture (see [## background](#background)).
+- Built on a reimagined web architecture (see [## Background](#Background)).
 
 - [also README(partial ja translation)](./docs/ja/README.md)
 
 ## Version
 
-- 0.1.0 scheduled (2026-2-8)
+- 0.1.0 scheduled (2026-2-10)
 
 ## Installation
 
@@ -61,7 +61,7 @@ let user = state.get("cache.user")?;
 ✅ No manual cache invalidation
 
 
-## background
+## Background
 
 **reimagined web architecture**
 
@@ -81,6 +81,30 @@ computer:
     database:
     terminal:
     conductor:
+```
+
+## architecture
+
+```
+┌─────────────┐  ┌───────────────────┐
+│ Application │  │ manifestDir/*.yml │
+└──────┬──────┘  └───────────────────┘
+       │ uses             ▲ read
+       ▼                  │
+┌─────────────────────────┴───────────┐
+│     Provided Ports (Public API)     │
+├─────────────────────────────────────┤
+│                                     │
+│      State    -->    Manifest       │
+│                                     │
+└──────────┬──────────────────────────┘
+           │ depends on
+           ▼
+┌─────────────────────────────────────┐
+│    Required Ports (App Adapters)    │
+├─────────────────────────────────────┤
+│    InMemory, KVS, DB, ENV clients   │
+└─────────────────────────────────────┘
 ```
 
 ## tree
