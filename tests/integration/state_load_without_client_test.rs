@@ -40,7 +40,7 @@ impl InMemoryClient for MockInMemory {
 
 // Mock KVSClient
 struct MockKVS {
-    data: HashMap<String, Value>,
+    data: HashMap<String, String>,
 }
 
 impl MockKVS {
@@ -52,11 +52,11 @@ impl MockKVS {
 }
 
 impl KVSClient for MockKVS {
-    fn get(&self, key: &str) -> Option<Value> {
+    fn get(&self, key: &str) -> Option<String> {
         self.data.get(key).cloned()
     }
 
-    fn set(&mut self, key: &str, value: Value, _ttl: Option<u64>) -> bool {
+    fn set(&mut self, key: &str, value: String, _ttl: Option<u64>) -> bool {
         self.data.insert(key.to_string(), value);
         true
     }
@@ -75,7 +75,8 @@ fn test_load_without_client_key_reference() {
     let mut kvs = MockKVS::new();
 
     // 事前にデータをセット
-    kvs.set("user:123", json!({"id": 1, "org_id": 100, "tenant_id": 10}), None);
+    // KVSには辞書をJSON文字列として保存
+    kvs.set("user:123", r#"{"id":1,"org_id":100,"tenant_id":10}"#.to_string(), None);
     in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)

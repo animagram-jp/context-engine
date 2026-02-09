@@ -40,7 +40,7 @@ impl InMemoryClient for MockInMemory {
 
 // Mock KVSClient
 struct MockKVS {
-    data: HashMap<String, Value>,
+    data: HashMap<String, String>,
 }
 
 impl MockKVS {
@@ -52,11 +52,11 @@ impl MockKVS {
 }
 
 impl KVSClient for MockKVS {
-    fn get(&self, key: &str) -> Option<Value> {
+    fn get(&self, key: &str) -> Option<String> {
         self.data.get(key).cloned()
     }
 
-    fn set(&mut self, key: &str, value: Value, _ttl: Option<u64>) -> bool {
+    fn set(&mut self, key: &str, value: String, _ttl: Option<u64>) -> bool {
         self.data.insert(key.to_string(), value);
         true
     }

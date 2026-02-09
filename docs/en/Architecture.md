@@ -44,9 +44,18 @@ Application must implement the following traits to handle data stores:
     - remind of State::cache instance memory State always caching regardless of client type.
   2. **KVSClient**
     - expected operations: `get()`/`set()`/`delete()`
-    - arguments: `'key':...` from `_{store,load}.key:...`, `value:...(scalar|string)`(only for `set()` operations) and `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
-    - expected target: Key-Value Store
-    - State module serialize a collection following _store.key definitions in YAMLs and stores it as a single string.
+    - trait signature:
+      - `fn get(&self, key: &str) -> Option<String>`
+      - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
+      - `fn delete(&mut self, key: &str) -> bool`
+    - arguments: `'key':...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
+    - expected target: Key-Value Store (Redis, etc.)
+    - **Important**: KVSClient handles String only (primitive type). State layer performs serialize/deserialize:
+      - **serialize**: All values → JSON string (preserves type information: Number/String/Bool/Null/Array/Object)
+      - **deserialize**: JSON string → Value (accurately restores type)
+      - **Type preservation**: JSON format distinguishes types (e.g., `42` vs `"42"`, `true` vs `"true"`)
+      - KVS stores data as JSON strings. Individual fields are extracted after retrieval.
+      - Design intent: Stay faithful to YAML structure while keeping KVS primitive. JSON format ensures type information is preserved without depending on KVS-native types.
   3. **DBClient**
     - expected operations: `fetch()`
     - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest

@@ -158,7 +158,12 @@ impl<'a> State<'a> {
             "KVS" => {
                 let kvs_client = self.kvs_client.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
-                kvs_client.get(key)
+                let value_str = kvs_client.get(key)?;
+
+                // deserialize処理
+                // 全ての値はJSON形式で保存されている（型情報保持）
+                // JSON parse → Number/String/Bool/Null/Array/Objectを正確に復元
+                serde_json::from_str(&value_str).ok()
             }
             _ => None,
         }
@@ -189,9 +194,17 @@ impl<'a> State<'a> {
             "KVS" => {
                 if let Some(kvs_client) = self.kvs_client.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
+                        // serialize処理
+                        // 全ての値をJSON形式で保存（型情報を保持）
+                        // JSON内でNumber/String/Bool/Null/Array/Objectを区別
+                        let serialized = match serde_json::to_string(&value) {
+                            Ok(s) => s,
+                            Err(_) => return false,
+                        };
+
                         let final_ttl =
                             ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
-                        return kvs_client.set(key, value, final_ttl);
+                        return kvs_client.set(key, serialized, final_ttl);
                     }
                 }
                 false

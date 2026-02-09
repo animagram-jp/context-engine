@@ -53,12 +53,24 @@ pub trait DBClient: Send + Sync {
 
 /// KVSクライアント
 /// Redis等のKVS操作
+///
+/// KVSは文字列のみを扱う（primitive型）。
+/// serialize/deserializeはState層で行う。
 pub trait KVSClient: Send + Sync {
     /// キーから値を取得
-    fn get(&self, key: &str) -> Option<Value>;
+    ///
+    /// # Returns
+    /// * `Some(String)` - 取得成功
+    /// * `None` - キーが存在しない
+    fn get(&self, key: &str) -> Option<String>;
 
     /// キーに値を設定
-    fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool;
+    ///
+    /// # Arguments
+    /// * `key` - キー
+    /// * `value` - 値（文字列）
+    /// * `ttl` - TTL（秒）
+    fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool;
 
     /// キーを削除
     fn delete(&mut self, key: &str) -> bool;

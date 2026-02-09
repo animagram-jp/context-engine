@@ -149,9 +149,14 @@ impl<'a> Load<'a> {
             .ok_or("Load::load_from_kvs: 'key' not found")?;
 
         // placeholder はすでに resolved_config で解決済み
-        kvs_client
+        let value_str = kvs_client
             .get(key)
-            .ok_or_else(|| format!("Load::load_from_kvs: key '{}' not found", key))
+            .ok_or_else(|| format!("Load::load_from_kvs: key '{}' not found", key))?;
+
+        // deserialize処理
+        // 全ての値はJSON形式で保存されている（型情報保持）
+        serde_json::from_str(&value_str)
+            .map_err(|e| format!("Load::load_from_kvs: JSON parse error: {}", e))
     }
 
     /// DBから読み込み
