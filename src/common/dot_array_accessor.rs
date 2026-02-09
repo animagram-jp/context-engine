@@ -5,7 +5,7 @@
 // - missingKeys追跡機能
 // - 階層構造の自動作成（set時）
 // - インスタンスメソッド（get, getMissingKeys, clearMissingKeys）
-// - 静的メソッド（set, has, unset）
+// - 静的メソッド（set, merge, unset）
 
 use serde_json::Value;
 
@@ -121,32 +121,6 @@ impl DotArrayAccessor {
             // 次の階層へ移動（新しいスコープで借用）
             current = current.get_mut(*segment).expect("segment must exist");
         }
-    }
-
-    /// キーの存在確認（静的メソッド）
-    ///
-    /// 例: has(&data, "user.profile.name")
-    pub fn has(data: &Value, key: &str) -> bool {
-        // ドットが無い場合は単純なチェック
-        if !key.contains('.') {
-            if let Some(obj) = data.as_object() {
-                return obj.contains_key(key);
-            }
-            return false;
-        }
-
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
-        let mut current = data;
-
-        for segment in segments {
-            match current.get(segment) {
-                Some(next) => current = next,
-                None => return false,
-            }
-        }
-
-        true
     }
 
     /// 値をマージ（静的メソッド）
@@ -373,23 +347,6 @@ mod tests {
         DotArrayAccessor::set(&mut data, "user.name", json!("Bob"));
 
         assert_eq!(data["user"]["name"], json!("Bob"));
-    }
-
-    #[test]
-    fn test_has() {
-        let data = json!({
-            "user": {
-                "profile": {
-                    "name": "Alice"
-                }
-            }
-        });
-
-        assert!(DotArrayAccessor::has(&data, "user"));
-        assert!(DotArrayAccessor::has(&data, "user.profile"));
-        assert!(DotArrayAccessor::has(&data, "user.profile.name"));
-        assert!(!DotArrayAccessor::has(&data, "user.age"));
-        assert!(!DotArrayAccessor::has(&data, "unknown"));
     }
 
     #[test]

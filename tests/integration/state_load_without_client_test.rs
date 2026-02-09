@@ -2,68 +2,13 @@
 use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
 use state_engine::ports::required::{InMemoryClient, KVSClient};
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
+use crate::mocks::{MockInMemory, MockKVS};
 
 fn get_fixtures_path() -> String {
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("samples/manifest");
     manifest_path.to_str().unwrap().to_string()
-}
-
-// Mock InMemoryClient
-struct MockInMemory {
-    data: HashMap<String, Value>,
-}
-
-impl MockInMemory {
-    fn new() -> Self {
-        Self {
-            data: HashMap::new(),
-        }
-    }
-}
-
-impl InMemoryClient for MockInMemory {
-    fn get(&self, key: &str) -> Option<Value> {
-        self.data.get(key).cloned()
-    }
-
-    fn set(&mut self, key: &str, value: Value) {
-        self.data.insert(key.to_string(), value);
-    }
-
-    fn delete(&mut self, key: &str) -> bool {
-        self.data.remove(key).is_some()
-    }
-}
-
-// Mock KVSClient
-struct MockKVS {
-    data: HashMap<String, String>,
-}
-
-impl MockKVS {
-    fn new() -> Self {
-        Self {
-            data: HashMap::new(),
-        }
-    }
-}
-
-impl KVSClient for MockKVS {
-    fn get(&self, key: &str) -> Option<String> {
-        self.data.get(key).cloned()
-    }
-
-    fn set(&mut self, key: &str, value: String, _ttl: Option<u64>) -> bool {
-        self.data.insert(key.to_string(), value);
-        true
-    }
-
-    fn delete(&mut self, key: &str) -> bool {
-        self.data.remove(key).is_some()
-    }
 }
 
 #[test]

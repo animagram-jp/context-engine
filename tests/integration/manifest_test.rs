@@ -327,3 +327,53 @@ fn test_manifest_get_meta_child_node_without_load_map() {
         }
     }
 }
+
+#[test]
+fn test_manifest_yaml_extension_support() {
+    // .yaml 拡張子のファイルを作成してテスト
+    let fixtures_path = get_fixtures_path();
+    let yaml_file_path = std::path::Path::new(&fixtures_path).join("test_yaml.yaml");
+
+    // テスト用 .yaml ファイルを作成
+    std::fs::write(&yaml_file_path, r#"
+test_node:
+  _state:
+    type: string
+  value: "test value"
+"#).unwrap();
+
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // .yaml 拡張子のファイルを読み込めることを確認
+    let result = manifest.get("test_yaml.test_node.value", None);
+    assert_eq!(result, json!("test value"));
+
+    // クリーンアップ
+    std::fs::remove_file(&yaml_file_path).ok();
+}
+
+#[test]
+fn test_manifest_ambiguous_extension_error() {
+    // 同名で .yml と .yaml が両方存在する場合のエラーテスト
+    let fixtures_path = get_fixtures_path();
+    let yml_file_path = std::path::Path::new(&fixtures_path).join("ambiguous.yml");
+    let yaml_file_path = std::path::Path::new(&fixtures_path).join("ambiguous.yaml");
+
+    // 両方のファイルを作成
+    std::fs::write(&yml_file_path, "test: yml").unwrap();
+    std::fs::write(&yaml_file_path, "test: yaml").unwrap();
+
+    let mut manifest = Manifest::new(&fixtures_path);
+
+    // エラーが返されることを確認
+    let result = manifest.get("ambiguous.test", None);
+    assert_eq!(result, json!(null));
+
+    // missing_keys に記録されることを確認
+    let missing = manifest.get_missing_keys();
+    assert!(missing.contains(&"ambiguous.test".to_string()));
+
+    // クリーンアップ
+    std::fs::remove_file(&yml_file_path).ok();
+    std::fs::remove_file(&yaml_file_path).ok();
+}

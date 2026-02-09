@@ -77,6 +77,49 @@ impl LogFormat {
     }
 }
 
+/// ログマクロ: メソッド呼び出し
+///
+/// # Examples
+/// ```ignore
+/// use state_engine::log_method;
+///
+/// log_method!("State", "get", "cache.user");
+/// // Logs: State::get('cache.user')
+/// ```
+#[macro_export]
+macro_rules! log_method {
+    ($class:expr, $method:expr $(, $arg:expr)*) => {{
+        #[cfg(feature = "logging")]
+        {
+            let args: Vec<String> = vec![
+                $(
+                    $crate::common::log_format::LogFormat::format_str_arg($arg),
+                )*
+            ];
+            log::debug!("{}", $crate::common::log_format::LogFormat::method_call($class, $method, &args));
+        }
+    }};
+}
+
+/// ログマクロ: エラー
+///
+/// # Examples
+/// ```ignore
+/// use state_engine::log_err;
+///
+/// log_err!("State", "get", "metadata not found");
+/// // Logs: State::get: metadata not found
+/// ```
+#[macro_export]
+macro_rules! log_err {
+    ($class:expr, $method:expr, $msg:expr) => {{
+        #[cfg(feature = "logging")]
+        {
+            log::error!("{}", $crate::common::log_format::LogFormat::error($class, $method, $msg));
+        }
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

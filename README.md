@@ -97,9 +97,9 @@ computer:
 │                                     │
 │      State    -->    Manifest       │
 │                                     │
-└──────────┬──────────────────────────┘
-           │ depends on
-           ▼
+└───────┬─────────────────────────────┘
+        │ depends on
+        ▼
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
@@ -119,31 +119,33 @@ computer:
       README.md       # ja translation
   src/
     ports/            # library external interface traits
-      provided.rs     # library provides (Manifest, State)
-      required.rs     # Library requires (InMemoryClient, DBClient, KVSClient, ENVClient)
+      provided.rs     # library provides
+      required.rs     # Library requires
 
-    common/           # library common (pure logic)
+    common/           # library common (pure logic modules)
       dot_array_accessor.rs
       placeholder_resolver.rs
       log_format.rs
 
     manifest/         # Manifest impl
     state/            # State impl
-    load/             # Load module (internal class for State module)
+    load/             # Load module (internal module)
 
   tests/
     mocks/
     integration/
 
   samples/
-    manifest/         # YAML samples
+    manifest/         # manifest YAML samples
       connection.yml  # sample 1
       cache.yml       # sample 2
+      session.yml     # sample 3
+
+    adapters/
+
     app/
       index.js
       package.json
-    adapters/
-
 ```
 
 ## Architecture

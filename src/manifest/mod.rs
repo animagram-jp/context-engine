@@ -189,17 +189,37 @@ impl Manifest {
     }
 
     /// YAMLファイルをロード
+    /// .yml と .yaml の両方をサポート
+    /// 同名で両方の拡張子が存在する場合はエラー
     fn load_file(&mut self, file: &str) -> Result<(), String> {
         if self.cache.contains_key(file) {
             return Ok(());
         }
 
-        let file_path = self.manifest_dir.join(format!("{}.yml", file));
+        let yml_path = self.manifest_dir.join(format!("{}.yml", file));
+        let yaml_path = self.manifest_dir.join(format!("{}.yaml", file));
 
-        if !file_path.exists() {
+        let yml_exists = yml_path.exists();
+        let yaml_exists = yaml_path.exists();
+
+        // 両方存在する場合はエラー
+        if yml_exists && yaml_exists {
             self.cache.insert(file.to_string(), Value::Object(serde_json::Map::new()));
-            return Err(format!("File not found: {:?}", file_path));
+            return Err(format!(
+                "Ambiguous file: both '{}.yml' and '{}.yaml' exist. Please use only one extension.",
+                file, file
+            ));
         }
+
+        // どちらか存在する方を使用
+        let file_path = if yml_exists {
+            yml_path
+        } else if yaml_exists {
+            yaml_path
+        } else {
+            self.cache.insert(file.to_string(), Value::Object(serde_json::Map::new()));
+            return Err(format!("File not found: '{}.yml' or '{}.yaml'", file, file));
+        };
 
         let content = fs::read_to_string(&file_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
