@@ -1,3 +1,5 @@
+# We can name this 'session.yml' meaning relation to http requests.
+
 sso_user_id:
   _state:
     type: integer

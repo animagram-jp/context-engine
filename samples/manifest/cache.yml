@@ -1,8 +1,10 @@
+# We can name this 'cache.yml' meaning state stored in KVS.
+
 user:
   _store:
     client: KVS
-    key: 'user:${session.sso_user_id}' # absolute path reference
-    ttl: 14400
+    key: 'user:${session.sso_user_id}' # manifestDir path reference
+    ttl: 14400 # DBClient impl defines ttl unit
   _load:
     client: DB
     connection: ${connection.tenant}
@@ -37,11 +39,7 @@ tenant:
     where: 'id=${cache.user.tenant_id}'
     map:
       name: 'name'
-      display_name: 'display_name'
 
   name:
-    _state:
-      type: string
-  display_name:
     _state:
       type: string
