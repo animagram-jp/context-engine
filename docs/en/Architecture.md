@@ -8,13 +8,18 @@ Ports:
   Provided: {Manifest, State}
   Required: {InMemoryClient, DBClient, KVSClient, ENVClient}
 
+Manifest:
+State:
+
+Load:
+
 Common:
   DotArrayAccessor:
   PlaceholderResover:
   LogFormat:
-
-Load:
 ```
+
+---
 
 ## Ports
 
@@ -33,22 +38,30 @@ Application must implement the following traits to handle data stores:
 
   1. **InMemoryClient**
     - expected operations: `get()`/`set()`/`delete()`
-    - arguments: `'key':...` from `_{store,load}.key:...` by Manifest
-    - target: Local process memory
+    - arguments: `'key':...` from `_{store,load}.key:...` in Manifest
+    - expected target: Local process memory
     - please mapping eache key arguments to your any memory path
     - remind of State::cache instance memory State always caching regardless of client type.
   2. **KVSClient**
     - expected operations: `get()`/`set()`/`delete()`
-    - arguments: `'key':...` from `_{store,load}.key:...`, `value:...(scalar|string)`(only for `set()` operations) and `ttl:...` from `_{store,load}.ttl:...`(optional) by Manifest
-    - target: Key-Value Store
-  3. **DBClient** - Database operations (optional, for only _load )
-  4. **ENVClient** - Environment variable retrieval (optional, for Load layer)
+    - arguments: `'key':...` from `_{store,load}.key:...`, `value:...(scalar|string)`(only for `set()` operations) and `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
+    - expected target: Key-Value Store
+    - State module serialize a collection following _store.key definitions in YAMLs and stores it as a single string.
+  3. **DBClient**
+    - expected operations: `fetch()`
+    - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
+    - only for _load.client
+  4. **ENVClient**
+    - expected operations: `get()`
+    - arguments: `'key':...` from `_{store,load}.map.*:...` in Manifest
+    - expected target: environment variables
+    - only for _load.client
 
 ---
 
-## Manifest::class
+## Manifest
 
-### Manifest::get('filename.node')
+1. Manifest::get('filename.node')
 
 Read node structure from manifest/*.yml, ignoring `_` prefix blocks (meta blocks).
 
@@ -63,7 +76,7 @@ Read node structure from manifest/*.yml, ignoring `_` prefix blocks (meta blocks
 
 ---
 
-### Manifest::getMeta('filename.node')
+2. Manifest::getMeta('filename.node')
 
 Return metadata blocks for the specified node.
 
@@ -93,7 +106,7 @@ user:
 
 ---
 
-## State::class
+## State
 
 ### State::get('filename.node')
 

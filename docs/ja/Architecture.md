@@ -3,19 +3,23 @@
 ## index
 
 ```yaml
+# modules list
 Ports:
   Provided: {Manifest, State}
   Required: {InMemoryClient, DBClient, KVSClient, ENVClient}
+
+Manifest:
+State:
+
+Load:
 
 Common:
   DotArrayAccessor:
   PlaceholderResover:
   LogFormat:
-
-Manifest:
-State:
-Load:
 ```
+
+---
 
 ## Ports
 
@@ -35,19 +39,32 @@ Load:
   1. **InMemoryClient** - client:InMemory
     - 必要なメソッド: `get()`/`set()`/`delete()`
     - 渡される引数: `'key': Manifestの_{store,load}.key:の値`
-    - 対象ストア: ローカルプロセスメモリ
+    - 想定対象ストア: ローカルプロセスメモリ
     - 引数の各キーに対応した、プロセスメモリパスをマッピングして下さい。
     - インスタンスメモリのState::cacheにて、_store.clientの値に依らず、キャッシュが常にされている点に留意して下さい。
   2. **KVSClient**
     - 必要なメソッド: `get()`/`set()`/`delete()`
     - 渡される引数: `'key': Manifestの_{store,load}.key:の値`, `value: string(storeブロックのみ)`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
-    - 対象ストア: Key-Valueストア
-    - Stateは_store.keyの定義されたkeyからの階層構造を、serialize/desirializeして格納します。
-  3. **DBClient** - Database operations (optional, for Load layer)
+    - 想定対象ストア: Key-Valueストア
+    - Stateは_store.keyの定義されたkeyからのcollection objを、serialize/desirializeして1つのstringとして格納します。
+  3. **DBClient**
+    - 必要なメソッド: `fetch()`
+    - 渡される引数: `'connection': YAML記載の_{store,load}.connection:の値`, `'table': YAML記載の_{store,load}.table:の値}`, `'columns': YAML記載の_{store,load}.map.*:の値`, `'where_clause': YAML記載の_{store,load}.where:の値`
+    - 想定対象ストア: SQLデータベース
+    - _load.client: のみに使用対応
+  4. **ENVClient**
     - 必要なメソッド: `get()`
+    - 渡される引数: `'key': Manifestの_{store,load}.map.*:の値`
+    - 想定対象ストア: 環境変数
+    - _load.client: のみに使用対応
 
-    - 渡される引数: `{'connection': YAML記載の_{store,load}.connection:の値, }`
-  4. **ENVClient** - Environment variable retrieval (optional, for Load layer)
+## Manifest
+
+1. Manifest::get('filename.key.key.,...')
+
+
+
+2. Manifest::getMeta('filename.key.key.,...')
 
 
 
