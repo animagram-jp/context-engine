@@ -66,5 +66,11 @@ Common:
 
 2. Manifest::getMeta('filename.key.key.,...')
 
+## State
+
+1. State::get('filename.key.key.,...', )
+
+2. 
+
 
 
