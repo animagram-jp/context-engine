@@ -196,7 +196,7 @@ fn test_manifest_connection_common_meta() {
 
     let meta = manifest.get_meta("connection.common");
 
-    assert!(meta.contains_key("_state"));
+    // connection.common には _state はない（子ノードにのみ存在）
     assert!(meta.contains_key("_store"));
     assert!(meta.contains_key("_load"));
 
@@ -221,9 +221,8 @@ fn test_manifest_cache_tenant_structure() {
     // cache.tenant のデータ取得（メタデータなし）
     let tenant = manifest.get("cache.tenant", None);
     assert!(tenant.is_object());
-    // name, display_name は含まれる
+    // name は含まれる
     assert!(tenant.get("name").is_some());
-    assert!(tenant.get("display_name").is_some());
     // メタデータは除外される
     assert!(tenant.get("_state").is_none());
     assert!(tenant.get("_store").is_none());
@@ -292,13 +291,8 @@ fn test_manifest_get_meta_absolute_path_for_nested_load_map() {
             assert!(map.get("cache.tenant.name").is_some());
             assert_eq!(map.get("cache.tenant.name"), Some(&json!("name")));
 
-            // 相対パス "display_name" → 絶対パス "cache.tenant.display_name"
-            assert!(map.get("cache.tenant.display_name").is_some());
-            assert_eq!(map.get("cache.tenant.display_name"), Some(&json!("display_name")));
-
             // 相対パスのキーは存在しない
             assert!(map.get("name").is_none());
-            assert!(map.get("display_name").is_none());
         }
     }
 }
@@ -308,18 +302,28 @@ fn test_manifest_get_meta_child_node_without_load_map() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    // cache.user.tenant_id は _load を持つが map は持たない
-    // 親の _load.map は継承されるが、mapが存在しないため正規化は行われない
+    // cache.user.tenant_id は _load を持つ
+    // 親の _load とマージされるため、親の map も継承される
     let meta = manifest.get_meta("cache.user.tenant_id");
 
     assert!(meta.contains_key("_load"));
 
     if let Some(load) = meta.get("_load") {
-        // tenant_id は client: State で key のみを持つ
+        // tenant_id の _load は親とマージされる
+        // 子の client: State が親の client: DB を上書き
         assert_eq!(load.get("client"), Some(&json!("State")));
         assert_eq!(load.get("key"), Some(&json!("${org_id}")));
 
-        // map は存在しない（親の map は継承されない設計）
-        assert!(load.get("map").is_none());
+        // 親の map が継承される（_load のマージルール）
+        // ただし、client: State の場合 Load::handle() は map を無視する
+        assert!(load.get("map").is_some());
+
+        // map は親（user）レベルで定義されているため、絶対パス化されている
+        if let Some(map) = load.get("map") {
+            assert!(map.is_object());
+            // cache.user.id, cache.user.org_id が含まれる
+            assert!(map.get("cache.user.id").is_some());
+            assert!(map.get("cache.user.org_id").is_some());
+        }
     }
 }

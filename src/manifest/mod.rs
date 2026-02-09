@@ -91,7 +91,7 @@ impl Manifest {
 
         // すべてのNodeから_始まりのキーを抽出
         // 各 node の階層パスを構築しながら処理
-        let mut meta = HashMap::new();
+        let mut meta: HashMap<String, Value> = HashMap::new();
         let mut load_map_owner_path: Option<String> = None; // _load.map を持つ node のパス
         let segments: Vec<&str> = if path.is_empty() {
             vec![]
@@ -119,9 +119,31 @@ impl Manifest {
             // metadata を収集
             for (k, v) in obj {
                 if k.starts_with('_') {
-                    meta.insert(k.clone(), v.clone());
+                    // メタブロックのマージ/上書きルール
+                    // ルートのメタキー (_load, _store) → マージ
+                    // 子のメタキー (client, map,...) → 上書き
+                    if let Some(existing_value) = meta.get(k).cloned() {
+                        // 既存のメタキーがある場合
+                        if existing_value.is_object() && v.is_object() {
+                            // 両方がObjectの場合はマージ（子が親を上書き）
+                            if let (Value::Object(existing_obj), Value::Object(new_obj)) = (&existing_value, v) {
+                                let mut merged = existing_obj.clone();
+                                for (child_key, child_value) in new_obj {
+                                    merged.insert(child_key.clone(), child_value.clone());
+                                }
+                                meta.insert(k.clone(), Value::Object(merged));
+                            }
+                        } else {
+                            // それ以外は上書き
+                            meta.insert(k.clone(), v.clone());
+                        }
+                    } else {
+                        // 新規のメタキーは追加
+                        meta.insert(k.clone(), v.clone());
+                    }
 
                     // _load.map を持つ node のパスを記録（最も深い階層を優先）
+                    // ループ中に上書きされる → 最も深い階層が残る
                     if k == "_load" {
                         if let Value::Object(load_obj) = v {
                             if load_obj.contains_key("map") {
@@ -134,26 +156,20 @@ impl Manifest {
         }
 
         // _load.map のキーを絶対パスに正規化
-        if let Some(load_value) = meta.get("_load") {
-            if let Value::Object(load_obj) = load_value {
-                if let Some(map_value) = load_obj.get("map") {
-                    if let Value::Object(map_obj) = map_value {
-                        if let Some(owner_path) = load_map_owner_path {
-                            let mut normalized_map = serde_json::Map::new();
+        if let (Some(Value::Object(load_obj)), Some(owner_path)) = (meta.get("_load"), &load_map_owner_path) {
+            if let Some(Value::Object(map_obj)) = load_obj.get("map") {
+                let mut normalized_map = serde_json::Map::new();
 
-                            // map のキーを絶対パスに変換
-                            for (relative_key, db_column) in map_obj {
-                                let absolute_key = format!("{}.{}", owner_path, relative_key);
-                                normalized_map.insert(absolute_key, db_column.clone());
-                            }
-
-                            // _load を更新
-                            let mut new_load = load_obj.clone();
-                            new_load.insert("map".to_string(), Value::Object(normalized_map));
-                            meta.insert("_load".to_string(), Value::Object(new_load));
-                        }
-                    }
+                // map のキーを絶対パスに変換
+                for (relative_key, db_column) in map_obj {
+                    let absolute_key = format!("{}.{}", owner_path, relative_key);
+                    normalized_map.insert(absolute_key, db_column.clone());
                 }
+
+                // _load を更新
+                let mut new_load = load_obj.clone();
+                new_load.insert("map".to_string(), Value::Object(normalized_map));
+                meta.insert("_load".to_string(), Value::Object(new_load));
             }
         }
 

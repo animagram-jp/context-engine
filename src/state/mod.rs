@@ -322,25 +322,27 @@ impl<'a> StateTrait for State<'a> {
                     let resolved_store_config = self.resolve_load_config(key, &store_config);
 
                     if let Some(value) = self.get_from_store(&resolved_store_config) {
-                        // 親キーを計算
-                        let parent_key = Self::get_parent_key(key);
+                        // map の最初のキーから owner_key を逆算
+                        let owner_key = meta.get("_load")
+                            .and_then(|v| v.as_object())
+                            .and_then(|obj| obj.get("map"))
+                            .and_then(|v| v.as_object())
+                            .and_then(|map| map.keys().next())
+                            .map(|first_key| Self::get_parent_key(first_key))
+                            .unwrap_or_else(|| Self::get_parent_key(key));
 
-                        // Manifest の静的値とマージ
-                        let merged_value = self.merge_with_manifest_static_values(&parent_key, value);
+                        // owner_key で Manifest の静的値とマージ
+                        let merged_value = self.merge_with_manifest_static_values(&owner_key, value);
 
-                        // マージ後の値から子フィールドを抽出
-                        let extracted = Self::extract_field_from_value(key, merged_value.clone(), &meta);
+                        // owner_key で cache にマージ
+                        DotArrayAccessor::merge(&mut self.cache, &owner_key, merged_value.clone());
 
-                        // インスタンスキャッシュに保存（辞書全体）
-                        DotArrayAccessor::set(&mut self.cache, &parent_key, merged_value.clone());
-
-                        // Object の場合、各フィールドも個別にキャッシュに展開
-                        if let Value::Object(obj) = &merged_value {
-                            for (field, field_value) in obj {
-                                let absolute_key = format!("{}.{}", parent_key, field);
-                                DotArrayAccessor::set(&mut self.cache, &absolute_key, field_value.clone());
-                            }
-                        }
+                        // 要求されたフィールドを抽出
+                        let extracted = if key == owner_key {
+                            merged_value
+                        } else {
+                            Self::extract_field_from_value(key, merged_value, &meta)
+                        };
 
                         self.recursion_depth -= 1;
                         return Some(extracted);
@@ -397,8 +399,18 @@ impl<'a> StateTrait for State<'a> {
 
                     // Load 実行
                     if let Ok(loaded) = self.load.handle(&resolved_config) {
-                        // Manifest の静的値とマージ
-                        let merged_loaded = self.merge_with_manifest_static_values(key, loaded);
+                        // map の最初のキーから owner_key を逆算
+                        // declare-e L120-130: map から所有者キーを算出
+                        let owner_key = meta.get("_load")
+                            .and_then(|v| v.as_object())
+                            .and_then(|obj| obj.get("map"))
+                            .and_then(|v| v.as_object())
+                            .and_then(|map| map.keys().next())
+                            .map(|first_key| Self::get_parent_key(first_key))
+                            .unwrap_or_else(|| key.to_string());
+
+                        // owner_key で Manifest の静的値とマージ
+                        let merged_loaded = self.merge_with_manifest_static_values(&owner_key, loaded);
 
                         // ロード成功 → _store に保存（マージ後の値を保存）
                         if let Some(store_config_value) = meta.get("_store") {
@@ -414,19 +426,17 @@ impl<'a> StateTrait for State<'a> {
                             }
                         }
 
-                        // インスタンスキャッシュに保存（マージ後の値）
-                        // 辞書全体を保存
-                        DotArrayAccessor::set(&mut self.cache, key, merged_loaded.clone());
+                        // owner_key で cache にマージ
+                        DotArrayAccessor::merge(&mut self.cache, &owner_key, merged_loaded.clone());
 
-                        // Load結果がObjectの場合、各フィールドも個別にキャッシュに展開
-                        if let Value::Object(obj) = &merged_loaded {
-                            for (field, field_value) in obj {
-                                let absolute_key = format!("{}.{}", key, field);
-                                DotArrayAccessor::set(&mut self.cache, &absolute_key, field_value.clone());
-                            }
+                        // 要求されたフィールドを抽出して返す
+                        if key == owner_key {
+                            // 親辞書そのものを取得した場合
+                            Some(merged_loaded)
+                        } else {
+                            // 子フィールドを取得した場合
+                            Some(Self::extract_field_from_value(key, merged_loaded, &meta))
                         }
-
-                        Some(merged_loaded)
                     } else {
                         None
                     }

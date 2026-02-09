@@ -149,6 +149,83 @@ impl DotArrayAccessor {
         true
     }
 
+    /// 値をマージ（静的メソッド）
+    ///
+    /// 例: merge(&mut data, "user.profile", json!({"age": 30}))
+    ///
+    /// 注意: マージ処理の各レベルで、既存値と新しい値の少なくとも一方がスカラー（非オブジェクト）である場合、上書き処理がされる。
+    /// state object では、末尾のノードは値に null を持って、末尾の値と区別されている。
+    /// このため、scalar と list の object は、自動的に上書き処理してよい。
+    pub fn merge(data: &mut Value, key: &str, value: Value) {
+        // ドットが無い場合
+        if !key.contains('.') {
+            // data[key] と value の両方がオブジェクトの場合は再帰マージ
+            if let Some(obj) = data.as_object_mut() {
+                let should_merge = if let Some(existing) = obj.get(key) {
+                    existing.is_object() && value.is_object()
+                } else {
+                    false
+                };
+
+                if should_merge {
+                    // 両方がオブジェクト → 再帰的にマージ
+                    if let Some(value_obj) = value.as_object() {
+                        for (k, v) in value_obj {
+                            if let Some(existing) = obj.get_mut(key) {
+                                let should_recurse = if let Some(existing_obj) = existing.as_object() {
+                                    existing_obj.contains_key(k) && existing_obj[k].is_object() && v.is_object()
+                                } else {
+                                    false
+                                };
+
+                                if should_recurse {
+                                    // 既存のキーがあり、両方がオブジェクト → 再帰呼び出し
+                                    Self::merge(existing, k, v.clone());
+                                } else {
+                                    // それ以外は上書き
+                                    if let Some(existing_obj_mut) = existing.as_object_mut() {
+                                        existing_obj_mut.insert(k.clone(), v.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+                // 既存値がない、またはどちらかがオブジェクトでない → 上書き
+                obj.insert(key.to_string(), value);
+            } else {
+                // data がオブジェクトでない場合、新しいオブジェクトを作成
+                let mut new_obj = serde_json::Map::new();
+                new_obj.insert(key.to_string(), value);
+                *data = Value::Object(new_obj);
+            }
+            return;
+        }
+
+        // ドット記法のパスを分解
+        let segments: Vec<&str> = key.split('.').collect();
+        let first_segment = segments[0];
+        let remaining_key = segments[1..].join(".");
+
+        // data がオブジェクトでない場合、新しいオブジェクトを作成
+        if !data.is_object() {
+            *data = Value::Object(serde_json::Map::new());
+        }
+
+        // 最初のセグメントが存在しない場合は作成
+        if let Some(obj) = data.as_object_mut() {
+            if !obj.contains_key(first_segment) {
+                obj.insert(first_segment.to_string(), Value::Object(serde_json::Map::new()));
+            }
+
+            // 再帰的にマージ
+            if let Some(next) = obj.get_mut(first_segment) {
+                Self::merge(next, &remaining_key, value);
+            }
+        }
+    }
+
     /// 値を削除（静的メソッド）
     ///
     /// 例: unset(&mut data, "user.profile.name")
@@ -364,6 +441,116 @@ mod tests {
         assert_eq!(data, json!({
             "user": {
                 "name": "Alice"
+            }
+        }));
+    }
+
+    #[test]
+    fn test_merge_simple_key() {
+        let mut data = json!({
+            "name": "Alice"
+        });
+
+        DotArrayAccessor::merge(&mut data, "age", json!(30));
+
+        assert_eq!(data, json!({
+            "name": "Alice",
+            "age": 30
+        }));
+    }
+
+    #[test]
+    fn test_merge_overwrites_scalar() {
+        let mut data = json!({
+            "name": "Alice"
+        });
+
+        DotArrayAccessor::merge(&mut data, "name", json!("Bob"));
+
+        assert_eq!(data, json!({
+            "name": "Bob"
+        }));
+    }
+
+    #[test]
+    fn test_merge_overwrites_list() {
+        let mut data = json!({
+            "tags": ["php", "web"]
+        });
+
+        DotArrayAccessor::merge(&mut data, "tags", json!(["api", "rest"]));
+
+        assert_eq!(data, json!({
+            "tags": ["api", "rest"]
+        }));
+    }
+
+    #[test]
+    fn test_merge_nested_objects() {
+        let mut data = json!({
+            "user": {
+                "name": "Alice",
+                "profile": {
+                    "age": 25
+                }
+            }
+        });
+
+        DotArrayAccessor::merge(&mut data, "user", json!({
+            "email": "alice@example.com",
+            "profile": {
+                "age": 30,
+                "city": "Tokyo"
+            }
+        }));
+
+        assert_eq!(data, json!({
+            "user": {
+                "name": "Alice",
+                "email": "alice@example.com",
+                "profile": {
+                    "age": 30,
+                    "city": "Tokyo"
+                }
+            }
+        }));
+    }
+
+    #[test]
+    fn test_merge_with_dot_notation() {
+        let mut data = json!({
+            "connection": {
+                "driver": "postgres",
+                "charset": "UTF8"
+            }
+        });
+
+        DotArrayAccessor::merge(&mut data, "connection", json!({
+            "host": "localhost",
+            "port": 5432
+        }));
+
+        assert_eq!(data, json!({
+            "connection": {
+                "driver": "postgres",
+                "charset": "UTF8",
+                "host": "localhost",
+                "port": 5432
+            }
+        }));
+    }
+
+    #[test]
+    fn test_merge_creates_path() {
+        let mut data = json!({});
+
+        DotArrayAccessor::merge(&mut data, "user.profile.name", json!("Alice"));
+
+        assert_eq!(data, json!({
+            "user": {
+                "profile": {
+                    "name": "Alice"
+                }
             }
         }));
     }
