@@ -30,7 +30,7 @@ Common:
 ライブラリ提供moduleのtraits
 
   1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。'_'始まりのキー以下(メタブロック)を認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
-  2. **State** - Manifest::getMeta()から取得する_storeブロックの記述に基づいて格納されるステートデータ(state obj)を対象に、`get()` / `set()` / `delete()`操作を行うmodule。`get()`では、key miss hitをトリガーとして、同じく取得した`_load`ブロックの記述に基づいてロード試行を自動的に行う。`set()`は指定のkeyに値をsetする。自動ロードは引き起こさない。`delete()`は指定のkeyと、そのvalue全てを削除する。Stateは、インスタンスメモリの`State::cache`にYAMLファイル記述に従ったcollection型でstate objをキャッシュし、動作中、同期処理を行う。ロードを引き起こさないmiss/hit key判定の`exists()`も提供している。
+  2. **State** - Manifest::getMeta()から取得する_storeブロックの記述に基づいて格納されるステートデータ(state obj)を対象に、`get()` / `set()` / `delete()`操作を行うmodule。`get()`では、key miss hitをトリガーとして、同じく取得した`_load`ブロックの記述に基づいてロード試行を自動的に行う。`set()`は指定のkeyに値をsetする。自動ロードは引き起こさない。`delete()`は指定のkeyと、そのvalue全てを削除する。Stateは、インスタンスメモリの`State.cache`にYAMLファイル記述に従ったcollection型でstate objをキャッシュし、動作中、同期処理を行う。ロードを引き起こさないmiss/hit key判定の`exists()`も提供している。
 
 2. Required Ports
 
@@ -83,7 +83,7 @@ Common:
 2. `_store` 設定からストア種別を判定 (KVS/InMemory)
 3. プレースホルダーを解決 (`${session.sso_user_id}` など)
 4. ストアキーを構築
-5. **State::cache (インスタンスHashMap) をチェック** ← 最優先
+5. **State.cache (インスタンスHashMap) をチェック** ← 最優先
 6. ストア (KVS/InMemoryClient) から値を取得
 7. データから個別フィールドを抽出
 8. **miss時、`Load::handle()` で自動ロード**
@@ -108,7 +108,7 @@ tenant_id:
 
 **動作:**
 - 永続ストア (KVS/InMemoryClient) に保存
-- State::cache にも保存（高速化のため）
+- State.cache にも保存（高速化のため）
 - ストアがKVSの場合、TTLを設定可能
 
 **TTL動作:**
@@ -124,7 +124,7 @@ tenant_id:
 
 **動作:**
 - 永続ストア (KVS/InMemoryClient) から削除
-- State::cache からも削除
+- State.cache からも削除
 - 削除後、そのノードは miss hit を示す
 
 ---
@@ -134,7 +134,7 @@ tenant_id:
 自動ロードをトリガーせずに、キーの存在確認を行う。
 
 **動作:**
-- 最初に State::cache をチェック（最速）
+- 最初に State.cache をチェック（最速）
 - 次に永続ストア (KVS/InMemoryClient) をチェック
 - **自動ロードをトリガーしない** (`get()` とは異なる)
 - 真偽値を返す (存在する場合true、それ以外false)

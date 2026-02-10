@@ -30,7 +30,7 @@ Library External Interface Traits
 Library provides the following modules to handle YAMLs and state data:
 
   1. **Manifest** - A module reading YAML files and returning processed obj. It detects `_` prefix keys (meta blocks) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `'filename.key1.key2.,...,.*'` (absolute path).
-  2. **State** - A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The `get()` method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. The `exists()` method checks key existence without triggering auto-load (lightweight check). It caches the state in the instance memory, `State::cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
+  2. **State** - A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The `get()` method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. The `exists()` method checks key existence without triggering auto-load (lightweight check). It caches the state in the instance memory, `State.cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
 
 2. Required
 
@@ -41,7 +41,7 @@ Application must implement the following traits to handle data stores:
     - arguments: `'key':...` from `_{store,load}.key:...` in Manifest
     - expected target: Local process memory
     - please mapping eache key arguments to your any memory path
-    - remind of State::cache instance memory State always caching regardless of client type.
+    - remind of State.cache instance memory State always caching regardless of client type.
   2. **KVSClient**
     - expected operations: `get()`/`set()`/`delete()`
     - trait signature:
@@ -126,7 +126,7 @@ Reference the state represented by the specified node, returning value or collec
 2. Determine store type from `_store` config (KVS/InMemory)
 3. Resolve placeholders (`${session.sso_user_id}`, etc.)
 4. Build store key
-5. **Check State::cache (instance HashMap)** ← Priority
+5. **Check State.cache (instance HashMap)** ← Priority
 6. Retrieve from store (KVS/InMemoryClient)
 7. Extract individual field from data
 8. **On miss, auto-load via `Load::handle()`**
@@ -151,7 +151,7 @@ Set a value to the state represented by the specified node.
 
 **Behavior:**
 - Save to persistent store (KVS/InMemoryClient)
-- Also save to State::cache (for speed)
+- Also save to State.cache (for speed)
 - If store is KVS, TTL can be set
 
 **TTL behavior:**
@@ -167,7 +167,7 @@ Delete the {key:value} record represented by the specified node.
 
 **Behavior:**
 - Delete from persistent store (KVS/InMemoryClient)
-- Also delete from State::cache
+- Also delete from State.cache
 - After deletion, the node shows miss hit
 
 ---
@@ -177,7 +177,7 @@ Delete the {key:value} record represented by the specified node.
 Check if a key exists without triggering auto-load.
 
 **Behavior:**
-- Check State::cache first (fastest)
+- Check State.cache first (fastest)
 - Then check persistent store (KVS/InMemoryClient)
 - **Does NOT trigger auto-load** (unlike `get()`)
 - Returns boolean (true if exists, false otherwise)
@@ -271,7 +271,7 @@ This is an explicit designation to reference another key within State without in
 
 ---
 
-## State::cache (Instance Memory Cache)
+## State.cache (Instance Memory Cache)
 
 The State struct maintains an instance-level cache (`cache: HashMap<String, Value>`) separate from persistent stores (KVS/InMemoryClient).
 
@@ -289,13 +289,13 @@ The State struct maintains an instance-level cache (`cache: HashMap<String, Valu
 2. Get type info from _state
 3. Get storage destination from _store
 4. Resolve placeholders
-5. ★ Check State::cache (absolute key) ← First check
+5. ★ Check State.cache (absolute key) ← First check
    if self.cache.contains_key(key) {
        return cast_type(self.cache[key], key);
    }
 6. Build storeKey
 7. Retrieve from persistent store (KVS/InMemoryClient)
-8. On miss, auto-load → After loading, save to State::cache
+8. On miss, auto-load → After loading, save to State.cache
 ```
 
 **Cache key:**
@@ -315,7 +315,7 @@ The State struct maintains an instance-level cache (`cache: HashMap<String, Valu
 - State instance drop: Destroyed (memory released)
 
 **Important design intent:**
-- State::cache is checked with higher priority than persistent stores (KVS/InMemoryClient)
+- State.cache is checked with higher priority than persistent stores (KVS/InMemoryClient)
 - This realizes a design that comprehensively handles external stores
 - Even with multiple accesses to the same data, only 1 store access + N HashMap accesses are needed
 
