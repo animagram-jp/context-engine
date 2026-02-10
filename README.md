@@ -67,9 +67,9 @@ user:
 ```
 
 | case | sample |
-| cache in KVS|[cache.yml](.samples/manifest/cache.yml)|
-| database connection config |[connection.yml](./samples/manifest/connection.yml)|
-| request scope |[session.yml](./samples/manifest/session.yml)|
+| cache in KVS | [cache.yml](.samples/manifest/cache.yml) |
+| database connection config | [connection.yml](./samples/manifest/connection.yml) |
+| request scope | [session.yml](./samples/manifest/session.yml) |
 
 2. Implement crud modules for your stores.
 
