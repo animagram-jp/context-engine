@@ -12,7 +12,8 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 ## Version
 
 | Version | Status | Date | description |
-| 0.1.0 |  Scheduled | 2026-2-10 |  |
+|---------|--------|------|-------------|
+| 0.1.0 |  Scheduled | 2026-2-10 | 1st |
 
 ## Provided Functions
 
@@ -70,7 +71,7 @@ user:
 |------|--------|
 | cache in KVS | [cache.yml](.samples/manifest/cache.yml) |
 | database connection config | [connection.yml](./samples/manifest/connection.yml) |
-| request scope | [session.yml](./samples/manifest/session.yml) | 
+| request scope | [session.yml](./samples/manifest/session.yml) |
 
 2. Implement crud modules for your stores.
 
