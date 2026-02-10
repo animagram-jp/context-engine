@@ -11,7 +11,7 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 
 ## Version
 
-- 0.1.0 (2026-2-10)
+- 0.1.0 (2026-2-10) scheduled
 
 ## Installation
 
@@ -61,29 +61,8 @@ let user = state.get("cache.user")?;
 ✅ No manual cache invalidation
 
 
-## Background
 
-**reimagined web architecture**
-
-- computer: A network-capable node in the system.
-- server: A computer that serves human users.
-- orchestrator: A computer responsible for internal system coordination and maintenance. (optional)
-- database: A server that persists data without an inherent expiration and accepts CRUD operations.
-- terminal: A server that provides a direct human-facing interface.
-- conductor: A server that communicates independently with both a database and terminals,
-  and maintains a synchronized state between them. (optional)
-
-```yaml
-# terms relationship
-computer:
-  orchestrator:
-  server:
-    database:
-    terminal:
-    conductor:
-```
-
-## architecture
+## Architecture
 
 ```
 ┌─────────────┐  ┌───────────────────┐
@@ -106,6 +85,8 @@ computer:
 │    InMemory, KVS, DB, ENV clients   │
 └─────────────────────────────────────┘
 ```
+
+see for details [Architecture.md](./docs/en/Architecture.md)
 
 ## tree
 
@@ -148,9 +129,27 @@ computer:
       package.json
 ```
 
-## Architecture
+## Background
 
-see [Architecture.md](./docs/en/Architecture.md)
+**reimagined web architecture**
+
+- computer: A network-capable node in the system.
+- server: A computer that serves human users.
+- orchestrator: A computer responsible for internal system coordination and maintenance. (optional)
+- database: A server that persists data without an inherent expiration and accepts CRUD operations.
+- terminal: A server that provides a direct human-facing interface.
+- conductor: A server that communicates independently with both a database and terminals,
+  and maintains a synchronized state between them. (optional)
+
+```yaml
+# terms relationship
+computer:
+  orchestrator:
+  server:
+    database:
+    terminal:
+    conductor:
+```
 
 ## License
 
