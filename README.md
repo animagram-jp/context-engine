@@ -13,31 +13,6 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 
 - 0.1.0 (2026-2-10) scheduled
 
-## Installation
-
-```toml
-# Cargo.toml
-[dependencies]
-state-engine = "0.1"
-```
-
-## Quick Start
-
-0. [install state-engine](#Installation)
-
-1. Write a yaml file.
-
-```yaml
-# manifest/cache.yml
-user:
-  _store:
-    client: KVS
-    key: "user:${id}"
-  _load:
-    client: DB
-    table: users
-```
-
 ## Why state-engine?
 
 **Before:**
@@ -56,11 +31,34 @@ let user = redis.get(&cache_key).or_else(|| {
 let user = state.get("cache.user")?;
 ```
 
-✅ Multi-tenant DB without junction tables
-✅ Automatic KVS/DB synchronization
-✅ No manual cache invalidation
+- ✅ Multi-tenant DB without junction tables
+- ✅ Automatic KVS/DB synchronization
+- ✅ No manual cache invalidation
 
+## Installation
 
+```toml
+# Cargo.toml
+[dependencies]
+state-engine = "0.1"
+```
+
+## Quick Start
+
+after [Installation](#Installation), 
+
+1. Write a yaml file.
+
+```yaml
+# manifest/cache.yml
+user:
+  _store:
+    client: KVS
+    key: "user:${id}"
+  _load:
+    client: DB
+    table: users
+```
 
 ## Architecture
 
