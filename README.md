@@ -7,11 +7,19 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 - Enables multi-tenant DB apps without junction tables.
 - Built on a reimagined web architecture (see [## Background](#Background)).
 
-- [also README(partial ja translation)](./docs/ja/README.md)
+- [also README(patch translation for ja-JP )](./docs/ja/README.md)
 
 ## Version
 
-- 0.1.0 (2026-2-10) scheduled
+| Version | Status | Date | description |
+| 0.1.0 |  Scheduled | 2026-2-10 |  |
+
+## Provided Functions
+
+| Module | description | methods |
+|-------|------|---------|
+| **Manifest** | reads static YAMLs and returns processed obj | `get()`, `getMeta()` |
+| **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
 
 ## Why state-engine?
 
@@ -45,8 +53,6 @@ state-engine = "0.1"
 
 ## Quick Start
 
-After [Installation](#Installation) 
-
 1. Write a yaml file.
 
 ```yaml
@@ -59,6 +65,23 @@ user:
     client: DB
     table: users
 ```
+
+| case | sample |
+| cache in KVS|[cache.yml](.samples/manifest/cache.yml)|
+| database connection config |[connection.yml](./samples/manifest/connection.yml)|
+| request scope |[session.yml](./samples/manifest/session.yml)|
+
+2. Implement crud modules for your stores.
+
+| Interface | expected store | methods | sample |
+|-----------|-------|--|--------|
+| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/Adapters/in_memory.js) |
+| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/Adapters/in_memory.js) |
+| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./samples/Adapters/db_client.js) |
+| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./samples/Adapters/env_client.js) |
+
+'DB' and 'Env' will be used only in Loading(Read)
+It's not essential to implement all *Client.
 
 ## Architecture
 
@@ -94,8 +117,12 @@ see for details [Architecture.md](./docs/en/Architecture.md)
   Cargo.toml
   docs/               # guide documents
     en/
+      Architecture.md
+      YAML-guide.md
     ja/
-      README.md       # ja translation
+      README.md
+      Architecture.md
+      YAML-guide.md
   src/
     ports/            # library external interface traits
       provided.rs     # library provides
@@ -110,10 +137,6 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     state/            # State impl
     load/             # Load module (internal module)
 
-  tests/
-    mocks/
-    integration/
-
   samples/
     manifest/         # manifest YAML samples
       connection.yml  # sample 1
@@ -125,6 +148,10 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     app/
       index.js
       package.json
+
+  tests/
+    mocks/
+    integration/
 ```
 
 ## Background
