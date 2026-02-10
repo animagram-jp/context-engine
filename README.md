@@ -45,7 +45,7 @@ state-engine = "0.1"
 
 ## Quick Start
 
-after [Installation](#Installation), 
+After [Installation](#Installation) 
 
 1. Write a yaml file.
 
