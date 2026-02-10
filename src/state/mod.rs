@@ -528,6 +528,34 @@ impl<'a> StateTrait for State<'a> {
 
         result
     }
+
+    fn exists(&mut self, key: &str) -> bool {
+        // 1. インスタンスキャッシュをチェック（最優先・最速）
+        if self.dot_accessor.get(&self.cache, key).is_some() {
+            return true;
+        }
+
+        // 2. メタデータ取得
+        let meta = self.manifest.get_meta(key);
+        if meta.is_empty() {
+            return false;
+        }
+
+        // 3. _store 設定取得
+        let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
+            Some(config) => config,
+            None => return false,
+        };
+
+        let store_config_map: HashMap<String, Value> =
+            store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+        // 4. store_config 内の placeholder 解決
+        let resolved_store_config = self.resolve_load_config(key, &store_config_map);
+
+        // 5. _store から値を取得（自動ロードなし）
+        self.get_from_store(&resolved_store_config).is_some()
+    }
 }
 
 #[cfg(test)]

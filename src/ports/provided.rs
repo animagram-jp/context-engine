@@ -63,4 +63,17 @@ pub trait State {
     /// * `true` - 削除成功
     /// * `false` - 削除失敗またはキーが存在しない
     fn delete(&mut self, key: &str) -> bool;
+
+    /// キーの存在確認（自動ロードなし）
+    ///
+    /// get()と異なり、自動ロードをトリガーしない。
+    /// キャッシュとストアのみをチェックする。
+    ///
+    /// # Arguments
+    /// * `key` - manifest key ("filename.node.field")
+    ///
+    /// # Returns
+    /// * `true` - キーが存在する（キャッシュまたはストアに存在）
+    /// * `false` - キーが存在しない
+    fn exists(&mut self, key: &str) -> bool;
 }
