@@ -1,4 +1,4 @@
-# state-engine 0.0.1
+# state-engine 0.1.0
 
 Declarative state data management for multi-tenant, multi-service systems.
 Synchronizes process memory, KVS, and databases using YAML DSL.
@@ -11,7 +11,7 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 
 ## Version
 
-- 0.1.0 scheduled (2026-2-10)
+- 0.1.0 (2026-2-10)
 
 ## Installation
 

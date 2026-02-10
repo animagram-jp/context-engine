@@ -30,7 +30,7 @@ Library External Interface Traits
 Library provides the following modules to handle YAMLs and state data:
 
   1. **Manifest** - A module reading YAML files and return processed obj. It detects `_` prefix keys (meta blocks) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `'filename.key1.key2.,...,.*'` (absolute path).
-  2. **State** - A module performing `get()`/`set()`/`delete()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The get() method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. It caches the state in the instance memory, `State::cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
+  2. **State** - A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The `get()` method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. The `exists()` method checks key existence without triggering auto-load (lightweight check). It caches the state in the instance memory, `State::cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
 
 2. Required
 
@@ -169,6 +169,27 @@ Delete the {key:value} record represented by the specified node.
 - Delete from persistent store (KVS/InMemoryClient)
 - Also delete from State::cache
 - After deletion, the node shows miss hit
+
+---
+
+### State::exists('filename.node')
+
+Check if a key exists without triggering auto-load.
+
+**Behavior:**
+- Check State::cache first (fastest)
+- Then check persistent store (KVS/InMemoryClient)
+- **Does NOT trigger auto-load** (unlike `get()`)
+- Returns boolean (true if exists, false otherwise)
+
+**Use case:**
+- Lightweight existence check before expensive operations
+- Conditional logic without triggering database loads
+- Performance-sensitive checks
+
+**Comparison with get():**
+- `get()`: Returns value, triggers auto-load on miss
+- `exists()`: Returns boolean, never triggers auto-load
 
 ---
 
