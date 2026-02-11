@@ -1,122 +1,58 @@
-# Adapters - Required Ports Implementations
+# Required Ports Implementations
 
-このディレクトリには、state-engineの**Required Ports**の実装例が含まれています。
+Implementations of Required Ports are referred to as adapters in Hexagonal Architecture.
 
-## Required Ports一覧
+**!caution:**
+- Do Not Call STATE module in adapters not to cause circular dependency.
 
-### 1. InMemoryClient
-**実装:** `in_memory.js`
+## 1. InMemoryAdapter
 
-プロセスメモリ内のKey-Value操作を提供します。
-
-```javascript
-const InMemoryAdapter = require('./in_memory');
-const pm = new InMemoryAdapter();
-
-pm.set('userkey.sso_user_id', 'user123');
-const userId = pm.get('userkey.sso_user_id');
-pm.delete('userkey.sso_user_id');
+```Rust
+impl InMemoryClient for InMemoryAdapter
 ```
 
-### 2. ENVClient
-**実装:** `env_client.js`
+### 2. KVSAdapter
 
-環境変数へのアクセスを提供します。
-
-```javascript
-const ENVAdapter = require('./env_client');
-const env = new ENVAdapter();
-
-const dbHost = env.get('DB_HOST');
+```Rust
+impl KVSClient for KVSAdapter
 ```
 
-### 3. KVSClient
-**実装:** `kvs_client.js` (TODO)
+### 3. DBAdapter
 
-Redis等のKVSへのアクセスを提供します。
-
-```javascript
-// Example (not implemented yet)
-const KVSAdapter = require('./kvs_client');
-const kvs = new KVSAdapter({ host: 'localhost', port: 6379 });
-
-await kvs.set('user:123', { id: 123, name: 'John' }, 3600);
-const user = await kvs.get('user:123');
+```Rust
+impl DBClient for DBAdapter
 ```
 
-### 4. DBClient
-**実装:** `db_client.js`
+## 4. ENVAdapter
 
-データベースへのアクセスを提供します。
-
-**重要:** DBClient は完全な接続設定オブジェクトを受け取ります（文字列ではありません）。
-
-```javascript
-const DBAdapter = require('./db_client');
-const db = new DBAdapter();
-
-// config は State::get('connection.common') から取得された完全なオブジェクト
-// {
-//   host: 'localhost',
-//   port: 3306,
-//   database: 'mydb',
-//   username: 'user',
-//   password: 'pass',
-//   driver: 'postgres',
-//   charset: 'UTF8'
-// }
-
-// fetch(config, table, columns, whereClause)
-// columns は map から自動抽出される
-const rows = await db.fetch(config, 'users', ['name', 'email'], 'id=123');
-// → SELECT name, email FROM users WHERE id=123
-
-// 結果は常に配列（0件以上）
-// rows = [{name: 'John', email: 'john@example.com'}]
+```Rust
+impl ENVClient for ENVAdapter
 ```
 
-**注意事項:**
-- ❌ Adapter 内で State を呼び出してはいけません
-- ✅ YAML では `connection: ${connection.common}` と placeholder で解決
-- ✅ Library が State::get で完全な config オブジェクトに解決して渡します
+### 4. DBAdapter
 
-### 5. APIClient
-**実装:** `api_client.js` (TODO)
-
-外部APIへのアクセスを提供します。
-
-```javascript
-// Example (not implemented yet)
-const APIAdapter = require('./api_client');
-const api = new APIAdapter();
-
-const data = await api.get('https://api.example.com/users/123');
-await api.post('https://api.example.com/users', { name: 'John' });
+```Rust
+impl DBClient for DBAdapter
 ```
 
-## 実装ガイド
+**!important**: 
+You can choose 3 ways of getting `connection: &Value` for your `DBAdapter::fetch()` - 
+  1: just a string
+  2: state-engine resolved collection 
+  3: state-engine resolved collection, and just use connection['configKey'], because your app already has connectionConfig stored in your InMemory or KVS.
 
-各adapterは以下の責務を持ちます:
-
-1. **インターフェース準拠** - Rust trait定義に従う
-2. **エラーハンドリング** - 適切なエラー処理
-3. **非同期対応** - 必要に応じてPromise/async-await使用
-4. **テスト可能** - モック可能な設計
-
-## 使用例
-
-```javascript
-const InMemory = require('./adapters/in_memory');
-const ENV = require('./adapters/env_client');
-
-// Setup
-const pm = new InMemory();
-const env = new ENV();
-
-// Set user context
-pm.set('userkey.sso_user_id', 'user123');
-pm.set('userkey.tenant_id', 42);
-
-// Load from environment
-const dbHost = env.get('DB_HOST');
+```yaml
+node:
+  _load:
+    client: DB
+    connection: 'connectionName'
 ```
+
+```yaml
+node:
+  _load:
+    client: DB
+    connection: ${connection.tenant} # It means "connection: State::get('connection.tenant')"
+```
+
+

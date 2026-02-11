@@ -25,7 +25,7 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 ## Why state-engine?
 
 **Before:**
-```rust
+```Rust
 // Manual cache management
 let cache_key = format!("user:{}", id);
 let user = redis.get(&cache_key).or_else(|| {
@@ -36,7 +36,7 @@ let user = redis.get(&cache_key).or_else(|| {
 ```
 
 **After:**
-```rust
+```Rust
 let user = state.get("cache.user")?;
 ```
 

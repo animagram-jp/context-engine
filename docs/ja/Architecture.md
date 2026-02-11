@@ -6,7 +6,7 @@
 # modules list
 Ports:
   Provided: {Manifest, State}
-  Required: {InMemoryClient, DBClient, KVSClient, ENVClient}
+  Required: {InMemoryClient, KVSClient, DBClient, ENVClient}
 
 Manifest:
 State:
@@ -197,3 +197,18 @@ tenant_id:
   - エラータイミング: Manifest moduleが該当2ファイルを読んで題意を検知した時
   - 理由: ドット区切りを階層表現とするManifestは、拡張子を無視するため、該当の同名ファイルを区別出来ないため
   - 備考: 同拡張子の同名ファイルはOSレベルでの非許容を想定して確認していない
+
+---
+
+## tests
+
+1. cargo test:
+```bash
+cargo test --features=logging -- --nocapture
+```
+
+2. example application test:
+```bash
+cd examples/app
+docker compose up --build
+```

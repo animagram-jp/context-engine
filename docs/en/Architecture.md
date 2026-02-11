@@ -283,7 +283,7 @@ The State struct maintains an instance-level cache (`cache: Value`) separate fro
 3. **Design to avoid duplicate loads** (don't load the same key multiple times)
 
 **Check order (important):**
-```rust
+```Rust
 // State::get() flow
 1. Get metadata
 2. Get type info from _state
@@ -354,7 +354,7 @@ return self.get('org_id'); // → State::get('org_id')
 When retrieving data, individual fields may need to be extracted.
 
 **extractField logic:**
-```rust
+```Rust
 fn extract_field(data: Value, key: &str) -> Value {
     // If not an object, return as-is
     if !data.is_object() {
@@ -423,3 +423,18 @@ Currently counter-based (MAX_RECURSION=10):
 **TODO:**
 - Complete individual field deletion implementation
 - Or finalize specification as dictionary-only deletion
+
+---
+
+## tests
+
+1. cargo test:
+```bash
+cargo test --features=logging -- --nocapture
+```
+
+2. example application test:
+```bash
+cd examples/app
+docker compose up --build
+```
