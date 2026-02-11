@@ -9,8 +9,8 @@ description = "A Declarative State Data Management for Rust & WebAssembly"
 repository = "https://github.com/animagram-jp/state-engine"
 homepage = "https://github.com/animagram-jp/"
 readme = "README.md"
-keywords = ["web", "yaml", "state-management", "declarative", "domain-specific-language", "animagram"]
-categories = ["Caching", "Data structures", "Web programming"]
+keywords = ["web", "yaml", "state-management", "declarative", "domain-specific-language"]
+categories = ["caching", "data-structures", "web-programming"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
