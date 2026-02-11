@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: state-engine-postgres
     environment:
       POSTGRES_USER: state_user
@@ -32,8 +30,8 @@ services:
 
   app:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: samples/app/Dockerfile
     container_name: state-engine-app
     depends_on:
       postgres:
@@ -48,11 +46,6 @@ services:
       - DB_PASSWORD=state_pass
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - NODE_ENV=development
-    volumes:
-      - .:/app
-      - /app/node_modules
-    command: npm start
 
 volumes:
   postgres_data:

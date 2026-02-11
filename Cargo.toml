@@ -4,11 +4,11 @@ version = "0.1.0"
 authors = ["Medetashi <qebju@animagram.jp>"]
 edition = "2024"
 license = "MIT"
-description = """
-conduct-engine: A Declarative Data-State Engine for Rust & WebAssembly
-"""
+description = "A Declarative State Data Management for Rust & WebAssembly"
 
-repository = ""
+repository = "https://github.com/animagram-jp/state-engine"
+homepage = "https://github.com/animagram-jp/"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

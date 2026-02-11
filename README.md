@@ -77,10 +77,10 @@ user:
 
 | Interface | expected store | methods | sample |
 |-----------|-------|--|--------|
-| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/Adapters/in_memory.js) |
-| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/Adapters/in_memory.js) |
-| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./samples/Adapters/db_client.js) |
-| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./samples/Adapters/env_client.js) |
+| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/adapters/in_memory.rs) |
+| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/adapters/kvs_client.rs) |
+| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./samples/adapters/db_client.rs) |
+| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./samples/adapters/env_client.rs) |
 
 'DB' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
@@ -148,8 +148,11 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     adapters/
 
     app/
-      index.js
-      package.json
+      db/
+      src/
+      Cargo.toml
+      Dockerfile
+      docker-compose.yml
 
   tests/
     mocks/

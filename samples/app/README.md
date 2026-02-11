@@ -88,15 +88,19 @@ docker compose down
 
 ```
 samples/
-  ├── app/
+  ├── adapters/             # Required Ports implementations (shared)
+  │   ├── in_memory.js      # InMemoryClient
+  │   ├── env_client.js     # ENVClient
+  │   ├── kvs_client.js     # KVSClient
+  │   ├── db_client.js      # DBClient
+  │   └── README.md
+  ├── app/                  # Sample application
   │   ├── package.json      # Node.js dependencies
   │   ├── index.js          # Main application
+  │   ├── Dockerfile
+  │   ├── docker-compose.yml
   │   └── README.md         # このファイル
-  ├── adapters/             # Required Ports implementations
-  │   ├── in_memory.js # InMemoryClient
-  │   ├── env_client.js     # ENVClient
-  │   └── README.md
-  └── manifest/             # YAML definitions
+  └── manifest/             # YAML definitions (shared)
       ├── cache.yml         # KVS state definitions
       └── connection.yml    # DB connection definitions
 ```
