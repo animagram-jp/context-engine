@@ -200,6 +200,34 @@ impl DotArrayAccessor {
         }
     }
 
+    /// キーが存在するかチェック（静的メソッド）
+    ///
+    /// 例: has(&data, "user.profile.name")
+    ///
+    /// ドット記法でのパスを辿り、最後のキーまで存在するか確認する
+    pub fn has(data: &Value, key: &str) -> bool {
+        // ドットが無い場合は単純なキー存在チェック
+        if !key.contains('.') {
+            if let Some(obj) = data.as_object() {
+                return obj.contains_key(key);
+            }
+            return false;
+        }
+
+        // ドット記法のパスを分解
+        let segments: Vec<&str> = key.split('.').collect();
+        let mut current = data;
+
+        for segment in segments {
+            match current.get(segment) {
+                Some(next) => current = next,
+                None => return false,
+            }
+        }
+
+        true
+    }
+
     /// 値を削除（静的メソッド）
     ///
     /// 例: unset(&mut data, "user.profile.name")
@@ -510,5 +538,78 @@ mod tests {
                 }
             }
         }));
+    }
+
+    #[test]
+    fn test_has_simple_key() {
+        let data = json!({
+            "name": "Alice",
+            "age": 30
+        });
+
+        assert!(DotArrayAccessor::has(&data, "name"));
+        assert!(DotArrayAccessor::has(&data, "age"));
+        assert!(!DotArrayAccessor::has(&data, "email"));
+    }
+
+    #[test]
+    fn test_has_nested_key() {
+        let data = json!({
+            "user": {
+                "profile": {
+                    "name": "Alice",
+                    "age": 30
+                }
+            }
+        });
+
+        assert!(DotArrayAccessor::has(&data, "user"));
+        assert!(DotArrayAccessor::has(&data, "user.profile"));
+        assert!(DotArrayAccessor::has(&data, "user.profile.name"));
+        assert!(DotArrayAccessor::has(&data, "user.profile.age"));
+        assert!(!DotArrayAccessor::has(&data, "user.profile.email"));
+        assert!(!DotArrayAccessor::has(&data, "user.settings"));
+        assert!(!DotArrayAccessor::has(&data, "unknown"));
+    }
+
+    #[test]
+    fn test_has_with_null_value() {
+        let data = json!({
+            "user": {
+                "name": "Alice",
+                "deleted_at": null
+            }
+        });
+
+        // null値でもキーは存在する
+        assert!(DotArrayAccessor::has(&data, "user.deleted_at"));
+        assert!(!DotArrayAccessor::has(&data, "user.created_at"));
+    }
+
+    #[test]
+    fn test_has_with_non_object_value() {
+        let data = json!({
+            "tags": ["php", "rust"],
+            "count": 42
+        });
+
+        // スカラー値や配列も存在チェック可能
+        assert!(DotArrayAccessor::has(&data, "tags"));
+        assert!(DotArrayAccessor::has(&data, "count"));
+
+        // 配列の要素にはドット記法でアクセスできない
+        assert!(!DotArrayAccessor::has(&data, "tags.0"));
+    }
+
+    #[test]
+    fn test_has_empty_key() {
+        let data = json!({
+            "user": {
+                "name": "Alice"
+            }
+        });
+
+        // 空文字列は存在しない
+        assert!(!DotArrayAccessor::has(&data, ""));
     }
 }

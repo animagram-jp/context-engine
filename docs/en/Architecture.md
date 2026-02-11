@@ -126,7 +126,7 @@ Reference the state represented by the specified node, returning value or collec
 2. Determine store type from `_store` config (KVS/InMemory)
 3. Resolve placeholders (`${session.sso_user_id}`, etc.)
 4. Build store key
-5. **Check State.cache (instance HashMap)** ← Priority
+5. **Check State.cache (a single collection object)** ← Priority
 6. Retrieve from store (KVS/InMemoryClient)
 7. Extract individual field from data
 8. **On miss, auto-load via `Load::handle()`**
@@ -273,9 +273,9 @@ This is an explicit designation to reference another key within State without in
 
 ## State.cache (Instance Memory Cache)
 
-The State struct maintains an instance-level cache (`cache: HashMap<String, Value>`) separate from persistent stores (KVS/InMemoryClient).
+The State struct maintains an instance-level cache (`cache: Value`) separate from persistent stores (KVS/InMemoryClient).
 
-**Important:** This is NOT InMemoryClient. It's a simple HashMap member variable of the State instance itself.
+**Important:** This is NOT InMemoryClient. It's a variable of the State instance itself.
 
 **Purpose:**
 1. **Speed up duplicate `State::get()` calls within the same request**
@@ -321,7 +321,7 @@ The State struct maintains an instance-level cache (`cache: HashMap<String, Valu
 
 ---
 
-## Placeholder Resolution Rules (Namespace)
+## Placeholder Resolution Rules
 
 Placeholder resolution priority.
 

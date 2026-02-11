@@ -141,7 +141,8 @@ fn test_manifest_get_cache_tenant_id_meta() {
     if let Some(load) = meta.get("_load") {
         // client: State の場合はloadを呼ばずkeyの値を使用（親の_load継承を防ぐため明示）
         assert_eq!(load.get("client"), Some(&json!("State")));
-        assert_eq!(load.get("key"), Some(&json!("${org_id}")));
+        // placeholder正規化により ${org_id} → ${cache.user.org_id} に変換される
+        assert_eq!(load.get("key"), Some(&json!("${cache.user.org_id}")));
     }
 }
 
@@ -312,7 +313,8 @@ fn test_manifest_get_meta_child_node_without_load_map() {
         // tenant_id の _load は親とマージされる
         // 子の client: State が親の client: DB を上書き
         assert_eq!(load.get("client"), Some(&json!("State")));
-        assert_eq!(load.get("key"), Some(&json!("${org_id}")));
+        // placeholder正規化により ${org_id} → ${cache.user.org_id} に変換される
+        assert_eq!(load.get("key"), Some(&json!("${cache.user.org_id}")));
 
         // 親の map が継承される（_load のマージルール）
         // ただし、client: State の場合 Load::handle() は map を無視する

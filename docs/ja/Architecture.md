@@ -83,7 +83,7 @@ Common:
 2. `_store` 設定からストア種別を判定 (KVS/InMemory)
 3. プレースホルダーを解決 (`${session.sso_user_id}` など)
 4. ストアキーを構築
-5. **State.cache (インスタンスHashMap) をチェック** ← 最優先
+5. **State.cache (インスタンスcollection object) をチェック** ← 最優先
 6. ストア (KVS/InMemoryClient) から値を取得
 7. データから個別フィールドを抽出
 8. **miss時、`Load::handle()` で自動ロード**
@@ -108,7 +108,7 @@ tenant_id:
 
 **動作:**
 - 永続ストア (KVS/InMemoryClient) に保存
-- State.cache にも保存（高速化のため）
+- State.cache にも保存
 - ストアがKVSの場合、TTLを設定可能
 
 **TTL動作:**
@@ -134,7 +134,7 @@ tenant_id:
 自動ロードをトリガーせずに、キーの存在確認を行う。
 
 **動作:**
-- 最初に State.cache をチェック（最速）
+- 最初に State.cache をチェック
 - 次に永続ストア (KVS/InMemoryClient) をチェック
 - **自動ロードをトリガーしない** (`get()` とは異なる)
 - 真偽値を返す (存在する場合true、それ以外false)

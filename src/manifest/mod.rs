@@ -26,7 +26,9 @@ impl Manifest {
     /// 形式: "filename.path.to.key"
     /// 例: "connection.common.host"
     pub fn get(&mut self, key: &str, default: Option<Value>) -> Value {
-        let (file, path) = self.parse_key(key);
+        let mut parts = key.splitn(2, '.');
+        let file = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("").to_string();
 
         if let Err(_e) = self.load_file(&file) {
             self.missing_keys.push(key.to_string());
@@ -46,8 +48,7 @@ impl Manifest {
 
         match value {
             Some(v) => {
-                // メタデータ（_始まり）をフィルタリング
-                self.filter_meta(&v)
+                self.remove_meta(&v)
             }
             None => {
                 self.missing_keys.push(key.to_string());
@@ -58,9 +59,13 @@ impl Manifest {
 
     /// メタデータを取得
     /// 指定されたキーのパス上のすべての_始まりキーを収集
-    /// _load.mapのキーは絶対パスに正規化される
+    /// _load.mapのキーとplaceholderを完全修飾パスに変換
     pub fn get_meta(&mut self, key: &str) -> HashMap<String, Value> {
-        let (file, path) = self.parse_key(key);
+        use regex::Regex;
+
+        let mut parts = key.splitn(2, '.');
+        let file = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("").to_string();
 
         if self.load_file(&file).is_err() {
             self.missing_keys.push(key.to_string());
@@ -80,7 +85,6 @@ impl Manifest {
                 current = match accessor.get(current, segment) {
                     Some(node) => node,
                     None => {
-                        // fail fast: キーが存在しない場合は即座に失敗
                         self.missing_keys.push(key.to_string());
                         return HashMap::new();
                     }
@@ -89,16 +93,17 @@ impl Manifest {
             }
         }
 
-        // すべてのNodeから_始まりのキーを抽出
-        // 各 node の階層パスを構築しながら処理
         let mut meta: HashMap<String, Value> = HashMap::new();
-        let mut load_map_owner_path: Option<String> = None; // _load.map を持つ node のパス
         let segments: Vec<&str> = if path.is_empty() {
             vec![]
         } else {
             path.split('.').collect()
         };
 
+        // 完全修飾用のパス情報を記録
+        let mut meta_paths: HashMap<String, String> = HashMap::new();
+
+        // すべてのNodeから_始まりのキーを抽出してメタデータを構築
         for (depth, node) in nodes.iter().enumerate() {
             let Value::Object(obj) = node else {
                 continue;
@@ -120,12 +125,8 @@ impl Manifest {
             for (k, v) in obj {
                 if k.starts_with('_') {
                     // メタブロックのマージ/上書きルール
-                    // ルートのメタキー (_load, _store) → マージ
-                    // 子のメタキー (client, map,...) → 上書き
                     if let Some(existing_value) = meta.get(k).cloned() {
-                        // 既存のメタキーがある場合
                         if existing_value.is_object() && v.is_object() {
-                            // 両方がObjectの場合はマージ（子が親を上書き）
                             if let (Value::Object(existing_obj), Value::Object(new_obj)) = (&existing_value, v) {
                                 let mut merged = existing_obj.clone();
                                 for (child_key, child_value) in new_obj {
@@ -134,20 +135,17 @@ impl Manifest {
                                 meta.insert(k.clone(), Value::Object(merged));
                             }
                         } else {
-                            // それ以外は上書き
                             meta.insert(k.clone(), v.clone());
                         }
                     } else {
-                        // 新規のメタキーは追加
                         meta.insert(k.clone(), v.clone());
                     }
 
-                    // _load.map を持つ node のパスを記録（最も深い階層を優先）
-                    // ループ中に上書きされる → 最も深い階層が残る
+                    // パス情報を記録: _load.map のパスを記録
                     if k == "_load" {
                         if let Value::Object(load_obj) = v {
                             if load_obj.contains_key("map") {
-                                load_map_owner_path = Some(node_path.clone());
+                                meta_paths.insert("_load.map".to_string(), node_path.clone());
                             }
                         }
                     }
@@ -155,37 +153,85 @@ impl Manifest {
             }
         }
 
-        // _load.map のキーを絶対パスに正規化
-        if let (Some(Value::Object(load_obj)), Some(owner_path)) = (meta.get("_load"), &load_map_owner_path) {
-            if let Some(Value::Object(map_obj)) = load_obj.get("map") {
-                let mut normalized_map = serde_json::Map::new();
-
-                // map のキーを絶対パスに変換
-                for (relative_key, db_column) in map_obj {
-                    let absolute_key = format!("{}.{}", owner_path, relative_key);
-                    normalized_map.insert(absolute_key, db_column.clone());
+        // _load.map のキーを完全修飾
+        if let Some(map_parent) = meta_paths.get("_load.map") {
+            if let Some(Value::Object(load_obj)) = meta.get_mut("_load") {
+                if let Some(Value::Object(map_obj)) = load_obj.get("map").cloned() {
+                    let mut qualified_map = serde_json::Map::new();
+                    for (relative_key, db_column) in map_obj {
+                        qualified_map.insert(format!("{}.{}", map_parent, relative_key), db_column);
+                    }
+                    load_obj.insert("map".to_string(), Value::Object(qualified_map));
                 }
-
-                // _load を更新
-                let mut new_load = load_obj.clone();
-                new_load.insert("map".to_string(), Value::Object(normalized_map));
-                meta.insert("_load".to_string(), Value::Object(new_load));
             }
+        }
+
+        // placeholder を完全修飾
+        self.load_file(&file).ok();
+        let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+        let parent_path = path.rfind('.').map_or(String::new(), |pos| path[..pos].to_string());
+
+        for (_meta_key, meta_value) in meta.iter_mut() {
+            self.qualify_value(meta_value, &re, &file, &parent_path);
         }
 
         meta
     }
 
-    /// キーを "filename" と "path.to.key" に分解
-    fn parse_key(&self, key: &str) -> (String, String) {
-        let parts: Vec<&str> = key.splitn(2, '.').collect();
-        let file = parts[0].to_string();
-        let path = if parts.len() > 1 {
-            parts[1].to_string()
-        } else {
-            String::new()
-        };
-        (file, path)
+    /// Value内のplaceholderを再帰的に完全修飾（get_meta内でインライン使用）
+    fn qualify_value(
+        &mut self,
+        value: &mut Value,
+        re: &regex::Regex,
+        owner_file: &str,
+        parent_path: &str,
+    ) {
+        match value {
+            Value::String(s) => {
+                *s = re.replace_all(s, |caps: &regex::Captures| {
+                    let placeholder = &caps[1];
+
+                    // owner file内に存在するか
+                    if let Some(owner_data) = self.cache.get(owner_file) {
+                        if DotArrayAccessor::has(owner_data, placeholder) {
+                            return caps[0].to_string();
+                        }
+                    }
+
+                    // 別ファイル参照か
+                    let mut ph_parts = placeholder.splitn(2, '.');
+                    let ph_file = ph_parts.next().unwrap_or("").to_string();
+                    let ph_path = ph_parts.next().unwrap_or("").to_string();
+                    self.load_file(&ph_file).ok();
+
+                    if let Some(ph_data) = self.cache.get(&ph_file) {
+                        if let Some(obj) = ph_data.as_object() {
+                            if !obj.is_empty() && (ph_path.is_empty() || DotArrayAccessor::has(ph_data, &ph_path)) {
+                                return caps[0].to_string();
+                            }
+                        }
+                    }
+
+                    // 相対パス → 完全修飾
+                    if parent_path.is_empty() {
+                        caps[0].to_string()
+                    } else {
+                        format!("${{{}.{}.{}}}", owner_file, parent_path, placeholder)
+                    }
+                }).to_string();
+            }
+            Value::Object(obj) => {
+                for (_k, v) in obj.iter_mut() {
+                    self.qualify_value(v, re, owner_file, parent_path);
+                }
+            }
+            Value::Array(arr) => {
+                for v in arr.iter_mut() {
+                    self.qualify_value(v, re, owner_file, parent_path);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// YAMLファイルをロード
@@ -227,57 +273,26 @@ impl Manifest {
         let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)
             .map_err(|e| format!("Failed to parse YAML: {}", e))?;
 
-        let json_value = self.yaml_to_json(&yaml);
+        let json_value = serde_json::to_value(&yaml)
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
         self.cache.insert(file.to_string(), json_value);
 
         Ok(())
     }
 
-    /// serde_yaml_ng::Value を serde_json::Value に変換
-    fn yaml_to_json(&self, yaml: &serde_yaml_ng::Value) -> Value {
-        match yaml {
-            serde_yaml_ng::Value::Null => Value::Null,
-            serde_yaml_ng::Value::Bool(b) => Value::Bool(*b),
-            serde_yaml_ng::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Value::Number(serde_json::Number::from(i))
-                } else if let Some(f) = n.as_f64() {
-                    Value::Number(serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)))
-                } else {
-                    Value::Null
-                }
-            }
-            serde_yaml_ng::Value::String(s) => Value::String(s.clone()),
-            serde_yaml_ng::Value::Sequence(seq) => {
-                Value::Array(seq.iter().map(|v| self.yaml_to_json(v)).collect())
-            }
-            serde_yaml_ng::Value::Mapping(map) => {
-                let mut obj = serde_json::Map::new();
-                for (k, v) in map {
-                    if let serde_yaml_ng::Value::String(key) = k {
-                        obj.insert(key.clone(), self.yaml_to_json(v));
-                    }
-                }
-                Value::Object(obj)
-            }
-            _ => Value::Null,
-        }
-    }
-
-    /// メタデータ（_始まりのキー）をフィルタリング
-    fn filter_meta(&self, value: &Value) -> Value {
+    fn remove_meta(&self, value: &Value) -> Value {
         match value {
             Value::Object(obj) => {
                 let mut filtered = serde_json::Map::new();
                 for (k, v) in obj {
                     if !k.starts_with('_') {
-                        filtered.insert(k.clone(), self.filter_meta(v));
+                        filtered.insert(k.clone(), self.remove_meta(v));
                     }
                 }
                 Value::Object(filtered)
             }
             Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| self.filter_meta(v)).collect())
+                Value::Array(arr.iter().map(|v| self.remove_meta(v)).collect())
             }
             _ => value.clone(),
         }
