@@ -3,9 +3,9 @@ use state_engine::Manifest;
 use serde_json::json;
 
 fn get_fixtures_path() -> String {
-    // samples/manifest を使用（raw と同様）
+    // examples/manifest を使用（raw と同様）
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("samples/manifest");
+        .join("examples/manifest");
     manifest_path.to_str().unwrap().to_string()
 }
 

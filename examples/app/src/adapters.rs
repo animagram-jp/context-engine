@@ -1,4 +1,4 @@
-/// Re-export adapters from samples/adapters/
+/// Re-export adapters from examples/adapters/
 ///
 /// This allows the app to use the shared adapter implementations.
 

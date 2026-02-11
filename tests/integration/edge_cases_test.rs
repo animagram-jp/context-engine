@@ -7,7 +7,7 @@ use state_engine::ports::required::InMemoryClient;
 
 fn get_fixtures_path() -> String {
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("samples/manifest");
+        .join("examples/manifest");
     manifest_path.to_str().unwrap().to_string()
 }
 

@@ -69,18 +69,18 @@ user:
 
 | case | sample |
 |------|--------|
-| cache in KVS | [cache.yml](.samples/manifest/cache.yml) |
-| database connection config | [connection.yml](./samples/manifest/connection.yml) |
-| request scope | [session.yml](./samples/manifest/session.yml) |
+| cache in KVS | [cache.yml](.examples/manifest/cache.yml) |
+| database connection config | [connection.yml](./examples/manifest/connection.yml) |
+| request scope | [session.yml](./examples/manifest/session.yml) |
 
 2. Implement crud modules for your stores.
 
 | Interface | expected store | methods | sample |
 |-----------|-------|--|--------|
-| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/adapters/in_memory.rs) |
-| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./samples/adapters/kvs_client.rs) |
-| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./samples/adapters/db_client.rs) |
-| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./samples/adapters/env_client.rs) |
+| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
+| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/kvs_client.rs) |
+| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./examples/adapters/db_client.rs) |
+| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./examples/adapters/env_client.rs) |
 
 'DB' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
@@ -139,8 +139,8 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     state/            # State impl
     load/             # Load module (internal module)
 
-  samples/
-    manifest/         # manifest YAML samples
+  examples/
+    manifest/         # manifest YAML examples
       connection.yml  # sample 1
       cache.yml       # sample 2
       session.yml     # sample 3

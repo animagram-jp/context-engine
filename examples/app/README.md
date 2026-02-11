@@ -20,7 +20,7 @@ state-engineを使用したサンプルアプリケーションです。
 PostgreSQL + Redis + アプリを一括起動:
 
 ```bash
-cd samples/app
+cd examples/app
 docker compose up -d
 ```
 
@@ -52,7 +52,7 @@ docker compose down
 ```
 === state-engine Sample App ===
 
-1. Loading manifests from: /path/to/samples/manifest
+1. Loading manifests from: /path/to/examples/manifest
    - connection.yml loaded
    - cache.yml loaded
 
@@ -87,7 +87,7 @@ docker compose down
 ## 構成
 
 ```
-samples/
+examples/
   ├── adapters/             # Required Ports implementations (shared)
   │   ├── in_memory.js      # InMemoryClient
   │   ├── env_client.js     # ENVClient

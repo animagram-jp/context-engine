@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn test_state_set_and_get() {
         let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("samples/manifest");
+            .join("examples/manifest");
         let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
 
         let load = Load::new();
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn test_state_delete() {
         let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("samples/manifest");
+            .join("examples/manifest");
         let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
 
         let load = Load::new();

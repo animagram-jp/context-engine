@@ -31,7 +31,7 @@ services:
   app:
     build:
       context: ../..
-      dockerfile: samples/app/Dockerfile
+      dockerfile: examples/app/Dockerfile
     container_name: state-engine-app
     depends_on:
       postgres:
