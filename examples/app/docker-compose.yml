@@ -12,7 +12,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U state_user"]
+      test: ["CMD-SHELL", "pg_isready -U state_user -d state_engine_dev"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,6 +20,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: state-engine-redis
+    command: redis-server --save 60 1 --loglevel warning
     ports:
       - "6379:6379"
     healthcheck:
