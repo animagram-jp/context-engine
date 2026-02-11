@@ -58,13 +58,17 @@ state-engine = "0.1"
 
 ```yaml
 # manifest/cache.yml
-user:
+some-state:
+  _state:
+    type: integer
   _store:
     client: KVS
-    key: "user:${id}"
+    key: "some"
   _load:
     client: DB
-    table: users
+    table: some
+    where: 'id=1' # Please update this '$(user.id)' to use this library effectively after.
+    columns: 
 ```
 
 | case | sample |
@@ -73,10 +77,10 @@ user:
 | database connection config | [connection.yml](./examples/manifest/connection.yml) |
 | request scope | [session.yml](./examples/manifest/session.yml) |
 
-2. Implement crud modules for your stores.
+2. Implement some Required Ports for your stores.
 
 | Interface | expected store | methods | sample |
-|-----------|-------|--|--------|
+|-----------|----------------|---------|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
 | `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/kvs_client.rs) |
 | `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./examples/adapters/db_client.rs) |
@@ -84,6 +88,36 @@ user:
 
 'DB' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
+
+3. Initialize State with your adapters and use it.
+
+```rust
+use state_engine::{Manifest, State, Load};
+
+// Initialize Manifest
+let mut manifest = Manifest::new('./manifest');
+
+// Create adapter instances
+let mut in_memory = InMemoryAdapter::new();
+let mut kvs = KVSAdapter::new()?;
+let db = DBAdapter::new()?;
+
+// Build Load with adapters
+let load = Load::new()
+    .with_in_memory(&in_memory)
+    .with_kvs_client(&mut kvs)
+    .with_db_client(&db);
+
+// Build State with adapters
+let mut state = State::new(&mut manifest, load)
+    .with_in_memory(&mut in_memory)
+    .with_kvs_client(&mut kvs);
+
+// Use state-engine
+let user = state.get('some-state')?;
+```
+
+Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 
 ## Architecture
 
