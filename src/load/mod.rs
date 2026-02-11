@@ -3,7 +3,7 @@
 // _load 設定に従って各種ソースからデータをロードする。
 
 use crate::ports::required::{
-    APIClient, DBClient, ENVClient, KVSClient,
+    DBClient, ENVClient, KVSClient,
     InMemoryClient,
 };
 use serde_json::Value;
@@ -18,7 +18,6 @@ pub struct Load<'a> {
     kvs_client: Option<&'a dyn KVSClient>,
     in_memory: Option<&'a dyn InMemoryClient>,
     env_client: Option<&'a dyn ENVClient>,
-    api_client: Option<&'a dyn APIClient>,
 }
 
 impl<'a> Load<'a> {
@@ -29,7 +28,6 @@ impl<'a> Load<'a> {
             kvs_client: None,
             in_memory: None,
             env_client: None,
-            api_client: None,
         }
     }
 
@@ -57,12 +55,6 @@ impl<'a> Load<'a> {
         self
     }
 
-    /// APIClientを設定
-    pub fn with_api_client(mut self, client: &'a dyn APIClient) -> Self {
-        self.api_client = Some(client);
-        self
-    }
-
     /// placeholder 解決済みの config でデータをロード
     ///
     /// # Arguments
@@ -82,7 +74,6 @@ impl<'a> Load<'a> {
             "InMemory" => self.load_from_in_memory(config),
             "KVS" => self.load_from_kvs(config),
             "DB" => self.load_from_db(config),
-            "API" => self.load_from_api(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -221,31 +212,31 @@ impl<'a> Load<'a> {
         Ok(Value::Object(result))
     }
 
-    /// APIから読み込み
-    fn load_from_api(
-        &self,
-        config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
-        let api_client = self
-            .api_client
-            .ok_or("Load::load_from_api: APIClient not configured")?;
+    // feature function: load with API Cleint
+    // fn load_from_api(
+    //     &self,
+    //     config: &HashMap<String, Value>,
+    // ) -> Result<Value, String> {
+    //     let api_client = self
+    //         .api_client
+    //         .ok_or("Load::load_from_api: APIClient not configured")?;
 
-        let url = config
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_api: 'url' not found")?;
+    //     let url = config
+    //         .get("url")
+    //         .and_then(|v| v.as_str())
+    //         .ok_or("Load::load_from_api: 'url' not found")?;
 
-        // placeholder はすでに resolved_config で解決済み
+    //     // placeholder はすでに resolved_config で解決済み
 
-        // headers処理（optional）
-        let headers = config.get("headers").and_then(|v| v.as_object()).map(|h| {
-            h.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect::<HashMap<String, String>>()
-        });
+    //     // headers処理（optional）
+    //     let headers = config.get("headers").and_then(|v| v.as_object()).map(|h| {
+    //         h.iter()
+    //             .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+    //             .collect::<HashMap<String, String>>()
+    //     });
 
-        api_client.get(url, headers.as_ref())
-    }
+    //     api_client.get(url, headers.as_ref())
+    // }
 }
 
 #[cfg(test)]

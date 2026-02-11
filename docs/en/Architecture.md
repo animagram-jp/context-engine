@@ -15,7 +15,7 @@ Load:
 
 Common:
   DotArrayAccessor:
-  PlaceholderResover:
+  PlaceholderResolver:
   LogFormat:
 ```
 
@@ -130,18 +130,20 @@ Reference the state represented by the specified node, returning value or collec
 6. Retrieve from store (KVS/InMemoryClient)
 7. Extract individual field from data
 8. **On miss, auto-load via `Load::handle()`**
-9. Type cast according to `_state.type`
+9. Return value (no type casting currently implemented)
 
 **Auto-load:**
 - If the specified node's state key misses, attempt auto-retrieval via `Load::handle()`
 - On `Load::handle()` error, return `None`
 
-**Type casting:**
+**Note on _state.type:**
 ```yaml
 tenant_id:
   _state:
-    type: integer  # Automatically cast to int
+    type: integer  # Metadata only - validation/casting not yet implemented
 ```
+
+The `_state.type` field is currently metadata-only and not enforced by State operations. Future versions may implement type validation and casting.
 
 ---
 
@@ -264,9 +266,7 @@ This is an explicit designation to reference another key within State without in
    ├─→ Save to persistent store (setToStore)
    └─→ Save to in-memory cache
    ↓
-10. Type casting
-   ↓
-11. Return value
+10. Return value
 ```
 
 ---
@@ -423,18 +423,3 @@ Currently counter-based (MAX_RECURSION=10):
 **TODO:**
 - Complete individual field deletion implementation
 - Or finalize specification as dictionary-only deletion
-
----
-
-## tests
-
-1. cargo test:
-```bash
-cargo test --features=logging -- --nocapture
-```
-
-2. example application test:
-```bash
-cd examples/app
-docker compose up --build
-```

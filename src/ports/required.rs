@@ -83,17 +83,17 @@ pub trait ENVClient: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
 }
 
-/// APIクライアント
-/// 外部API呼び出し
-pub trait APIClient: Send + Sync {
-    /// GETリクエスト
-    fn get(&self, url: &str, headers: Option<&HashMap<String, String>>) -> Result<Value, String>;
+// future function: API Client
+// /// 外部API呼び出し
+// pub trait APIClient: Send + Sync {
+//     /// GETリクエスト
+//     fn get(&self, url: &str, headers: Option<&HashMap<String, String>>) -> Result<Value, String>;
 
-    /// POSTリクエスト
-    fn post(
-        &self,
-        url: &str,
-        body: &Value,
-        headers: Option<&HashMap<String, String>>,
-    ) -> Result<Value, String>;
-}
+//     /// POSTリクエスト
+//     fn post(
+//         &self,
+//         url: &str,
+//         body: &Value,
+//         headers: Option<&HashMap<String, String>>,
+//     ) -> Result<Value, String>;
+// }

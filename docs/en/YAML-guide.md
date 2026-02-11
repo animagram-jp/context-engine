@@ -39,24 +39,63 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get('user.tenant_id')
 ```
 
-Path Resolution Rules:
+**How placeholders are normalized:**
 
-1. Try relative path first: cache.user.tenant_id
-2. If not exists, try absolute path: user.tenant_id
+During `Manifest::getMeta()`, relative placeholders are automatically converted to absolute paths:
+
+```yaml
+# cache.yml
+user:
+  org_id:
+    _load:
+      where: "id=${tenant_id}"  # Relative reference
+```
+
+Manifest converts `${tenant_id}` to `${cache.user.tenant_id}` (absolute path).
+
+By the time State sees the placeholder, it's already normalized to an absolute path.
 
 #### 3. Client Types
 
+**For _store** (where to save):
 ```yaml
 _store:
   client: InMemory  # Process memory
-_load:
-  client: ENV       # Environment variables
   client: KVS       # Redis, Memcached
-  client: DB        # Database
-  client: API       # External API
 ```
 
-You must implement adapter for each client (see Required Ports).
+**For _load** (where to load from):
+```yaml
+_load:
+  client: ENV       # Environment variables
+  client: InMemory  # Process memory
+  client: KVS       # Redis, Memcached
+  client: DB        # Database
+  client: State     # Reference another State key
+```
+
+You must implement adapter for each client you use (see Required Ports).
+
+### State Methods
+
+**State::get(key)**
+- Retrieves value from cache/store
+- Triggers auto-load on miss if `_load` is defined
+- Returns the value or None
+
+**State::set(key, value, ttl)**
+- Saves value to persistent store and cache
+- Does NOT trigger auto-load
+- TTL parameter is optional (KVS only)
+
+**State::delete(key)**
+- Removes key from both persistent store and cache
+- Key will show as miss after deletion
+
+**State::exists(key)**
+- Checks if key exists without triggering auto-load
+- Returns boolean (true/false)
+- Lightweight existence check for conditional logic
 
 ### Advanced Examples
 
@@ -64,15 +103,15 @@ You must implement adapter for each client (see Required Ports).
 # example.yml
 
 _store:
-  client: # {InMemory, ENV, KVS, DB, API}. Make adapter logic class for each client
+  client: # {InMemory, KVS}. Make adapter logic class for each client
 _load:
-  client: # {InMemory, ENV, KVS, DB, API}
+  client: # {ENV, InMemory, KVS, DB, State}
 
 node_A:
-  _state: # optional
-    type: {integer, float, string, boolean, list, map} # auto-check at State::set() optionally.
-  _store: # required at least in file root. It's succeeded to child nodes and can be overrrided by child's same key.
-    client: {InMemory, ENV, KVS, DB, API}
+  _state: # optional, metadata only (type validation not yet implemented)
+    type: {integer, float, string, boolean, list, map}
+  _store: # required at least in file root. Inherited by child nodes, can be overridden.
+    client: {InMemory, KVS}  # Only InMemory and KVS are valid for _store
   _load:
     client: DB
     connection: ${connection.tenant} # reserved ${} means State::get(). State try 'example.node_A.connection.tenant'(relative path) 1st and if not exists, 'connection.tenant'(absolute path) 2nd.

@@ -15,7 +15,7 @@ Load:
 
 Common:
   DotArrayAccessor:
-  PlaceholderResover:
+  PlaceholderResolver:
   LogFormat:
 ```
 
@@ -44,9 +44,18 @@ Common:
     - インスタンスメモリのState::cacheにて、_store.clientの値に依らず、キャッシュが常にされている点に留意して下さい。
   2. **KVSClient**
     - 必要なメソッド: `get()`/`set()`/`delete()`
-    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`, `value: string(storeブロックのみ)`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
-    - 想定対象ストア: Key-Valueストア
-    - Stateは_store.keyの定義されたkeyからのcollection objを、serialize/desirializeして1つのstringとして格納します。
+    - traitシグネチャ:
+      - `fn get(&self, key: &str) -> Option<String>`
+      - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
+      - `fn delete(&mut self, key: &str) -> bool`
+    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
+    - 想定対象ストア: Key-Valueストア（Redis等）
+    - **重要**: KVSClientはString型のみを扱う（プリミティブ型）。State層がserialize/deserializeを実行:
+      - **serialize**: 全ての値 → JSON文字列（型情報を保持: Number/String/Bool/Null/Array/Object）
+      - **deserialize**: JSON文字列 → Value（型を正確に復元）
+      - **型保持**: JSON形式で型を区別（例: `42` vs `"42"`, `true` vs `"true"`）
+      - KVSにはJSON文字列としてデータを保存。個別フィールドは取得後に抽出。
+      - 設計意図: YAML構造に忠実でありながら、KVSはプリミティブに保つ。JSON形式でKVSネイティブ型に依存せず型情報を保持。
   3. **DBClient**
     - 必要なメソッド: `fetch()`
     - 渡される引数: `'connection': YAML記載の_{store,load}.connection:の値`, `'table': YAML記載の_{store,load}.table:の値}`, `'columns': YAML記載の_{store,load}.map.*:の値`, `'where_clause': YAML記載の_{store,load}.where:の値`
@@ -87,18 +96,20 @@ Common:
 6. ストア (KVS/InMemoryClient) から値を取得
 7. データから個別フィールドを抽出
 8. **miss時、`Load::handle()` で自動ロード**
-9. `_state.type` に従って型キャスト
+9. 値を返却（型キャストは現在未実装）
 
 **自動ロード:**
 - 指定されたノードのステートキーがmissした場合、`Load::handle()` で自動取得を試みる
 - `Load::handle()` がエラーの場合、`None` を返す
 
-**型キャスト:**
+**_state.typeについての注意:**
 ```yaml
 tenant_id:
   _state:
-    type: integer  # 自動的にintにキャスト
+    type: integer  # メタデータのみ - 検証/キャストは未実装
 ```
+
+`_state.type`フィールドは現在メタデータのみで、State操作では強制されません。将来のバージョンで型検証とキャストを実装する可能性があります。
 
 ---
 
@@ -191,24 +202,199 @@ tenant_id:
 
 ---
 
+## State::get() 詳細フロー
+
+```
+1. Manifest::getMeta(key) → メタデータ取得
+   ↓
+2. _state から型情報を取得
+   ↓
+3. _store から保存先を取得 (client: KVS/InMemory)
+   ↓
+4. store_config内のプレースホルダーを解決
+   ↓
+5. ★ インメモリキャッシュをチェック (絶対キー) ← 最優先
+   if cache.contains_key(key) { return; }
+   ↓
+6. storeKeyを構築
+   ↓
+7. ストアから値を取得 (getFromStore)
+   ↓
+8. データから個別フィールドを抽出
+   ↓
+9. miss時、自動ロード
+   ├─→ Load::handle(loadConfig)
+   │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
+   │    ├─→ client: KVS → KVSClient::get()
+   │    ├─→ client: ENV → ENVClient::get()
+   │    ├─→ client: InMemory → InMemoryClient::get()
+   │    └─→ client: State → 指定キー値を直接返す（再帰）
+   ├─→ 永続ストアに保存 (setToStore)
+   └─→ インメモリキャッシュに保存
+   ↓
+10. 値を返却
+```
+
+---
+
+## State.cache (インスタンスメモリキャッシュ)
+
+State構造体は、永続ストア（KVS/InMemoryClient）とは別に、インスタンスレベルのキャッシュ（`cache: Value`）を保持します。
+
+**重要:** これはInMemoryClientではありません。Stateインスタンス自体の変数です。
+
+**目的:**
+1. **同一リクエスト内での重複`State::get()`呼び出しを高速化**
+2. **KVS/InMemoryClientへのアクセス回数を削減**
+3. **重複ロードを回避する設計**（同じキーを複数回ロードしない）
+
+**チェック順序（重要）:**
+```Rust
+// State::get() フロー
+1. メタデータ取得
+2. _state から型情報を取得
+3. _store から保存先を取得
+4. プレースホルダー解決
+5. ★ State.cache をチェック (絶対キー) ← 最初にチェック
+   if self.cache.contains_key(key) {
+       return self.cache[key];
+   }
+6. storeKey構築
+7. 永続ストア (KVS/InMemoryClient) から取得
+8. miss時、自動ロード → ロード後、State.cacheに保存
+```
+
+**キャッシュキー:**
+- **絶対パス**で保存 (`cache.user.tenant_id`)
+- ドット記法そのまま
+
+**保存タイミング:**
+- `State::get()`でロード成功時: `self.cache.insert(key, extracted)`
+- `State::set()`時: `self.cache.insert(key, value)`
+
+**削除タイミング:**
+- `State::delete()`時: `self.cache.remove(key)`
+
+**ライフサイクル:**
+- Stateインスタンス生成: 空
+- State稼働中: 蓄積
+- Stateインスタンス破棄: 破棄（メモリ解放）
+
+**重要な設計意図:**
+- State.cacheは永続ストア（KVS/InMemoryClient）より高優先でチェックされる
+- これにより外部ストアを包括的に扱う設計を実現
+- 同一データへの複数アクセスでも、1回のストアアクセス + N回のHashMapアクセスで済む
+
+---
+
+## プレースホルダー解決ルール
+
+プレースホルダー解決の優先順位。
+
+**解決順序:**
+1. **同一ディクショナリ参照（相対パス）**: `${org_id}` → `cache.user.org_id`
+2. **絶対パス**: `${org_id}` → `org_id`
+
+**例（contextKey: 'cache.user.tenant_id._load.key'）:**
+```
+// ディクショナリスコープを抽出
+dictScope = 'cache.user'; // メタキー(_load)より前まで
+
+// 1. 同一ディクショナリ内を検索
+scopedKey = 'cache.user.org_id';
+value = self.get(scopedKey); // → State::get('cache.user.org_id')
+if value.is_some() { return value; }
+
+// 2. 絶対パスを検索
+return self.get('org_id'); // → State::get('org_id')
+```
+
+**注意:**
+- ディクショナリスコープはメタキー（`_load`, `_store`等）または最後のフィールドまで辿る
+- `cache.user`がディクショナリ、`org_id`/`tenant_id`がフィールドという想定
+
+---
+
+## フィールド抽出
+
+データ取得時、個別フィールドの抽出が必要な場合があります。
+
+**extractField ロジック:**
+```Rust
+fn extract_field(data: Value, key: &str) -> Value {
+    // オブジェクトでない場合、そのまま返す
+    if !data.is_object() {
+        return data;
+    }
+
+    // キーの最後のセグメントを取得
+    // cache.user.id → id
+    let segments: Vec<&str> = key.split('.').collect();
+    let field_name = segments.last().unwrap();
+
+    // ディクショナリからフィールドを抽出
+    data.get(field_name).cloned().unwrap_or(Value::Null)
+}
+```
+
+---
+
+## 内部実装
+
+### PlaceholderResolver
+
+純粋な文字列処理（依存関係なし）。
+
+**メソッド:**
+- `extract_placeholders(template)` - テンプレートから変数名を抽出
+- `replace(template, params)` - 値で置換
+- `resolve_typed(value, resolver)` - JSON値内のプレースホルダーを再帰的に解決
+
+**型保持:**
+- 単一プレースホルダーかつ文字列全体が`${...}`形式 → 型を保持
+- 複数または文字列内プレースホルダー → 文字列置換
+
+### DotArrayAccessor
+
+ドット記法での配列アクセスを提供。
+
+**メソッド:**
+- `get(data, path)` - ドット記法で値を取得
+- 例: `get(data, "user.profile.name")`
+
+---
+
+## 既知の議論点 / TODO
+
+### 1. TTL動作
+
+`State::set()`でのTTL処理:
+- 引数指定 > YAML設定 > 現在値を維持
+- この優先順位は適切か？
+- 未指定時は常にYAMLデフォルトで上書きすべきか？
+
+### 2. 無限再帰検出
+
+現在はカウンターベース（MAX_RECURSION=10）:
+- 事前に静的解析で検出すべきか？
+- 呼び出しパスを記録してループ検出すべきか？
+- エラーメッセージにパスを含めるべきか？
+
+### 3. State::delete() 実装
+
+**現状:**
+- 現在はディクショナリ全体を削除する実装
+- TODOコメント: 「個別フィールド削除には、ディクショナリをロード、フィールド削除、再保存が必要」
+
+**TODO:**
+- 個別フィールド削除実装を完成させる
+- またはディクショナリのみ削除の仕様として確定する
+
+---
+
 ## error case
 
 - manifestDir/{*.yml,*.yaml}の中に、拡張子違いの2つの同名ファイルが存在する
   - エラータイミング: Manifest moduleが該当2ファイルを読んで題意を検知した時
   - 理由: ドット区切りを階層表現とするManifestは、拡張子を無視するため、該当の同名ファイルを区別出来ないため
   - 備考: 同拡張子の同名ファイルはOSレベルでの非許容を想定して確認していない
-
----
-
-## tests
-
-1. cargo test:
-```bash
-cargo test --features=logging -- --nocapture
-```
-
-2. example application test:
-```bash
-cd examples/app
-docker compose up --build
-```

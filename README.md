@@ -193,6 +193,21 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     integration/
 ```
 
+## tests
+
+39 unit tests, 49 intergeration tests and example application test passed
+
+1. cargo test:
+```bash
+cargo test --features=logging -- --nocapture
+```
+
+2. example application test:
+```bash
+cd examples/app
+docker compose up --build
+```
+
 ## Background
 
 **reimagined web architecture**

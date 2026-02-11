@@ -28,9 +28,9 @@ user:
     # Inherits _store from parent (client: KVS, key: user:${sso_user_id})
 ```
 
-#### 2. Placeholder Resolution
+#### 2. プレースホルダー解決
 
-State engine resolves ${...} by calling State::get():
+State engineは`${...}`を`State::get()`呼び出しで解決します:
 
 ```yaml
 tenant:
@@ -39,40 +39,79 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get('user.tenant_id')
 ```
 
-Path Resolution Rules:
+**プレースホルダーの正規化方法:**
 
-1. Try relative path first: cache.user.tenant_id
-2. If not exists, try absolute path: user.tenant_id
-
-#### 3. Client Types
+`Manifest::getMeta()`実行時、相対プレースホルダーは自動的に絶対パスに変換されます:
 
 ```yaml
-_store:
-  client: InMemory  # Process memory
-_load:
-  client: ENV       # Environment variables
-  client: KVS       # Redis, Memcached
-  client: DB        # Database
-  client: API       # External API
+# cache.yml
+user:
+  org_id:
+    _load:
+      where: "id=${tenant_id}"  # 相対参照
 ```
 
-You must implement adapter for each client (see Required Ports).
+Manifestは`${tenant_id}`を`${cache.user.tenant_id}`（絶対パス）に変換します。
 
-### Advanced Examples
+Stateがプレースホルダーを見る時点で、既に絶対パスに正規化されています。
+
+#### 3. クライアント種別
+
+**_store用（保存先）:**
+```yaml
+_store:
+  client: InMemory  # プロセスメモリ
+  client: KVS       # Redis, Memcached等
+```
+
+**_load用（読込元）:**
+```yaml
+_load:
+  client: ENV       # 環境変数
+  client: InMemory  # プロセスメモリ
+  client: KVS       # Redis, Memcached等
+  client: DB        # データベース
+  client: State     # 別のStateキーを参照
+```
+
+使用する各クライアントのアダプターを実装する必要があります（Required Ports参照）。
+
+### Stateメソッド
+
+**State::get(key)**
+- キャッシュ/ストアから値を取得
+- `_load`が定義されている場合、miss時に自動ロードをトリガー
+- 値またはNoneを返す
+
+**State::set(key, value, ttl)**
+- 永続ストアとキャッシュに値を保存
+- 自動ロードはトリガーしない
+- ttlパラメータはオプション（KVSのみ）
+
+**State::delete(key)**
+- 永続ストアとキャッシュの両方からキーを削除
+- 削除後、キーはmissを示す
+
+**State::exists(key)**
+- 自動ロードをトリガーせずにキーの存在を確認
+- 真偽値（true/false）を返す
+- 条件分岐用の軽量な存在確認
+
+### 高度な例
 
 ```yaml
 # example.yml
 
 _store:
-  client: # {InMemory, ENV, KVS, DB, API}. Make adapter logic class for each client
+  client: # {InMemory, KVS}. 各クライアント用のアダプタークラスを作成
 _load:
-  client: # {InMemory, ENV, KVS, DB, API}
+  client: # {ENV, InMemory, KVS, DB, State}
 
 node_A:
-  _state: # optional
-    type: {integer, float, string, boolean, list, map} # auto-check at State::set() optionally.
-  _store: # required at least in file root. It's succeeded to child nodes and can be overrrided by child's same key.
-    client: {InMemory, ENV, KVS, DB, API}
+  _state: # オプション、メタデータのみ（型検証は未実装）
+    type: {integer, float, string, boolean, list, map}
+  _store: # ファイルルートで最低1つ必要。子ノードに継承され、上書き可能。
+    client: {InMemory, KVS}  # _storeで有効なのはInMemoryとKVSのみ
   _load:
     client: DB
     connection: ${connection.tenant} # reserved ${} means State::get(). State try 'example.node_A.connection.tenant'(relative path) 1st and if not exists, 'connection.tenant'(absolute path) 2nd.
