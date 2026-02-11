@@ -1,5 +1,6 @@
 **/tmp/**
 **/target/**
+Cargo.lock
 **/Cargo.lock
 
 CLAUDE.md
