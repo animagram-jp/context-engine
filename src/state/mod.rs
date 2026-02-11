@@ -81,32 +81,11 @@ impl<'a> State<'a> {
         value
     }
 
-    /// placeholder を namespace ルールで解決
+    /// placeholder を解決
     ///
-    /// 解決順序:
-    /// 1. 親層参照: ${org_id} → {parent}.org_id
-    /// 2. 絶対パス: ${org_id} → org_id
-    ///
-    /// placeholder内の文字列を一切気にせず、単純に parent + name と name で試行。
-    ///
-    /// 最適化: キャッシュを優先的にチェックして、ヒット時は重い処理をスキップ
-    fn resolve_placeholder(&mut self, name: &str, context_key: &str) -> Option<Value> {
-        // 1. 親層参照
-        if let Some(parent) = context_key.rsplit_once('.').map(|(p, _)| p) {
-            let parent_key = format!("{}.{}", parent, name);
-
-            // キャッシュを優先チェック（高速パス）
-            if let Some(cached) = self.dot_accessor.get(&self.cache, &parent_key) {
-                return Some(cached.clone());
-            }
-
-            // キャッシュミス時はフル処理
-            if let Some(value) = self.get(&parent_key) {
-                return Some(value);
-            }
-        }
-
-        // 2. 絶対パス
+    /// Manifestが既に完全修飾パス(manifestDir path)を返すため、
+    /// nameをそのままkeyとして使用
+    fn resolve_placeholder(&mut self, name: &str) -> Option<Value> {
         // キャッシュを優先チェック（高速パス）
         if let Some(cached) = self.dot_accessor.get(&self.cache, name) {
             return Some(cached.clone());
@@ -117,27 +96,12 @@ impl<'a> State<'a> {
     }
 
     /// load_config 内の placeholder を解決
-    fn resolve_load_config(
-        &mut self,
-        context_key: &str,
-        load_config: &HashMap<String, Value>,
-    ) -> HashMap<String, Value> {
-        // config を Value に変換
-        let config_map: serde_json::Map<String, Value> = load_config
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        let config_value = Value::Object(config_map);
-
-        // placeholder resolver
+    fn resolve_load_config(&mut self, load_config: &HashMap<String, Value>) -> HashMap<String, Value> {
+        let config_value = Value::Object(load_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
         let mut resolver = |placeholder_name: &str| -> Option<Value> {
-            self.resolve_placeholder(placeholder_name, context_key)
+            self.resolve_placeholder(placeholder_name)
         };
-
-        // PlaceholderResolver で型付き解決
         let resolved_value = PlaceholderResolver::resolve_typed(config_value, &mut resolver);
-
-        // HashMap に戻す
         if let Value::Object(map) = resolved_value {
             map.into_iter().collect()
         } else {
@@ -332,7 +296,7 @@ impl<'a> StateTrait for State<'a> {
                         store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
                     // store_config 内の placeholder を解決
-                    let resolved_store_config = self.resolve_load_config(key, &store_config);
+                    let resolved_store_config = self.resolve_load_config(&store_config);
 
                     if let Some(value) = self.get_from_store(&resolved_store_config) {
                         // map の最初のキーから owner_key を逆算
@@ -377,7 +341,7 @@ impl<'a> StateTrait for State<'a> {
                 }
 
                 // placeholder 解決
-                let mut resolved_config = self.resolve_load_config(key, &load_config);
+                let mut resolved_config = self.resolve_load_config(&load_config);
 
                 // client: State の場合は key の値を直接返す（State内参照）
                 let client_value = resolved_config.get("client").and_then(|v| v.as_str());
@@ -434,7 +398,7 @@ impl<'a> StateTrait for State<'a> {
                                     .collect();
 
                                 // store_config の placeholder も解決
-                                let resolved_store_config = self.resolve_load_config(key, &store_config);
+                                let resolved_store_config = self.resolve_load_config(&store_config);
                                 self.set_to_store(&resolved_store_config, merged_loaded.clone(), None);
                             }
                         }
@@ -486,7 +450,7 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(key, &store_config_map);
+        let resolved_store_config = self.resolve_load_config(&store_config_map);
 
         // _store に保存
         let result = self.set_to_store(&resolved_store_config, value.clone(), ttl);
@@ -516,7 +480,7 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(key, &store_config_map);
+        let resolved_store_config = self.resolve_load_config(&store_config_map);
 
         // _store から削除
         let result = self.delete_from_store(&resolved_store_config);
@@ -551,7 +515,7 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // 4. store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(key, &store_config_map);
+        let resolved_store_config = self.resolve_load_config(&store_config_map);
 
         // 5. _store から値を取得（自動ロードなし）
         self.get_from_store(&resolved_store_config).is_some()
