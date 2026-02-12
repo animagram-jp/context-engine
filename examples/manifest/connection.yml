@@ -13,6 +13,7 @@ common:
       username: 'DB_USERNAME'
       password: 'DB_PASSWORD'
 
+  name: 'common'
   driver: 'postgres'
   charset: 'UTF8'
 
@@ -42,12 +43,16 @@ tenant:
     table: 'tenants'
     where: 'id=${cache.user.tenant_id}'
     map:
+      name: 'id'
       host: 'db_host'
       port: 'db_port'
       database: 'db_database'
       username: 'db_username'
       password: 'db_password'
 
+  name:
+    _state:
+      type: string
   driver: 'postgres'
   charset: 'UTF8'
 

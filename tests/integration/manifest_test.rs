@@ -28,10 +28,10 @@ fn test_manifest_get_with_path() {
     let mut manifest = Manifest::new(&fixtures_path);
 
     // ドット記法でネストされた値を取得
-    // YAMLにデータ値はなく、_state定義のみなので空オブジェクトが返る
+    // YAMLにデータ値はなく、_state定義のみなのでnullが返る（空collectionはnullに変換）
     let result = manifest.get("connection.common.host", None);
 
-    assert_eq!(result, json!({}));
+    assert_eq!(result, json!(null));
 }
 
 #[test]
@@ -39,15 +39,15 @@ fn test_manifest_get_nested_value() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    // YAMLにはメタデータのみでデータ値はないため、空オブジェクトが返る
+    // YAMLにはメタデータのみでデータ値はないため、nullが返る（空collectionはnullに変換）
     let host = manifest.get("connection.common.host", None);
-    assert_eq!(host, json!({}));
+    assert_eq!(host, json!(null));
 
     let port = manifest.get("connection.common.port", None);
-    assert_eq!(port, json!({}));
+    assert_eq!(port, json!(null));
 
     let database = manifest.get("connection.common.database", None);
-    assert_eq!(database, json!({}));
+    assert_eq!(database, json!(null));
 }
 
 #[test]
@@ -235,12 +235,12 @@ fn test_manifest_connection_tenant() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    // YAMLにはデータ値がなくメタデータのみなので空オブジェクトが返る
+    // YAMLにはデータ値がなくメタデータのみなのでnullが返る（空collectionはnullに変換）
     let tenant_host = manifest.get("connection.tenant.host", None);
-    assert_eq!(tenant_host, json!({}));
+    assert_eq!(tenant_host, json!(null));
 
     let tenant_db = manifest.get("connection.tenant.database", None);
-    assert_eq!(tenant_db, json!({}));
+    assert_eq!(tenant_db, json!(null));
 }
 
 #[test]

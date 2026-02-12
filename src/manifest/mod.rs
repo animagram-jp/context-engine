@@ -289,10 +289,21 @@ impl Manifest {
                         filtered.insert(k.clone(), self.remove_meta(v));
                     }
                 }
-                Value::Object(filtered)
+                // Empty object (metadata-only node) should be treated as null
+                if filtered.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Object(filtered)
+                }
             }
             Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| self.remove_meta(v)).collect())
+                let filtered: Vec<Value> = arr.iter().map(|v| self.remove_meta(v)).collect();
+                // Empty array (all elements were metadata or became null) should be treated as null
+                if filtered.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Array(filtered)
+                }
             }
             _ => value.clone(),
         }
