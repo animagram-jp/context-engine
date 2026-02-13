@@ -20,15 +20,31 @@ impl DBAdapter {
     }
 
     /// Extract connection name from config
-    /// Returns error if name field is missing
+    /// Returns error if tag field is missing
+    ///
+    /// Note: This reconstructs the store key pattern (connection.{tag}{id})
+    /// to match InMemoryAdapter's storage format. Ideally, the actual store_key
+    /// should be passed from the caller in the future.
     fn get_connection_name(config: &Value) -> Result<String, String> {
-        config.get("name")
-            .and_then(|v| match v {
-                Value::String(s) => Some(s.clone()),
-                Value::Number(n) => Some(n.to_string()),
-                _ => None,
-            })
-            .ok_or_else(|| "Missing 'name' field in connection config".to_string())
+        let tag = config.get("tag")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing 'tag' field in connection config".to_string())?;
+
+        // Build connection name based on tag
+        if tag == "common" {
+            Ok(format!("connection.{}", tag))  // "connection.common"
+        } else if tag == "tenant" {
+            let id = config.get("id")
+                .and_then(|v| match v {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                })
+                .ok_or_else(|| "Missing 'id' field for tenant connection".to_string())?;
+            Ok(format!("connection.{}{}", tag, id))  // "connection.tenant123"
+        } else {
+            Err(format!("Unsupported tag: {}", tag))
+        }
     }
 
     /// Create database connection from config
