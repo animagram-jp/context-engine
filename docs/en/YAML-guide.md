@@ -76,6 +76,49 @@ _load:
 
 You must implement adapter for each client you use (see Required Ports).
 
+#### Client-Specific Parameters
+
+**_load.client: DB**
+```yaml
+_load:
+  client: DB
+  connection: ${connection.tenant}  # (Value) Connection config object or reference
+  table: 'users'                    # (string) Table name
+  where: 'id=${user.id}'            # (string, optional) WHERE clause
+  map:                               # (object, required) Column mapping
+    yaml_key: 'db_column'
+```
+
+**_load.client: ENV**
+```yaml
+_load:
+  client: ENV
+  map:                               # (object, required) Environment variable mapping
+    yaml_key: 'ENV_VAR_NAME'
+```
+
+**_load.client: State**
+```yaml
+_load:
+  client: State
+  key: '${org_id}'                   # (string) Reference to another state key
+```
+
+**_store.client: KVS**
+```yaml
+_store:
+  client: KVS
+  key: 'user:${id}'                  # (string) Storage key (placeholders allowed)
+  ttl: 3600                          # (integer, optional) TTL in seconds
+```
+
+**_store.client: InMemory**
+```yaml
+_store:
+  client: InMemory
+  key: 'session:${token}'            # (string) Storage key (placeholders allowed)
+```
+
 ### State Methods
 
 **State::get(key)**

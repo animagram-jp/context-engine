@@ -76,6 +76,49 @@ _load:
 
 使用する各クライアントのアダプターを実装する必要があります（Required Ports参照）。
 
+#### クライアント固有のパラメータ
+
+**_load.client: DB**
+```yaml
+_load:
+  client: DB
+  connection: ${connection.tenant}  # (Value) 接続設定オブジェクトまたは参照
+  table: 'users'                    # (string) テーブル名
+  where: 'id=${user.id}'            # (string, optional) WHERE句
+  map:                               # (object, required) カラムマッピング
+    yaml_key: 'db_column'
+```
+
+**_load.client: ENV**
+```yaml
+_load:
+  client: ENV
+  map:                               # (object, required) 環境変数マッピング
+    yaml_key: 'ENV_VAR_NAME'
+```
+
+**_load.client: State**
+```yaml
+_load:
+  client: State
+  key: '${org_id}'                   # (string) 別のStateキーへの参照
+```
+
+**_store.client: KVS**
+```yaml
+_store:
+  client: KVS
+  key: 'user:${id}'                  # (string) ストレージキー（プレースホルダー可）
+  ttl: 3600                          # (integer, optional) TTL（秒）
+```
+
+**_store.client: InMemory**
+```yaml
+_store:
+  client: InMemory
+  key: 'session:${token}'            # (string) ストレージキー（プレースホルダー可）
+```
+
 ### Stateメソッド
 
 **State::get(key)**

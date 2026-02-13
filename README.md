@@ -58,22 +58,24 @@ state-engine = "0.1"
 
 ```yaml
 # manifest/cache.yml
-some-state:
-  _state:
-    type: integer
+user:
   _store:
     client: KVS
-    key: "some"
+    key: 'user:1'
   _load:
     client: DB
-    table: some
-    where: 'id=1' # Please update this '$(user.id)' to use this library effectively after.
-    columns: 
+    table: 'users'
+    where: 'id=1'
+    map:
+      name: 'name'
+  name:
+    _state:
+      type: string
 ```
 
 | case | sample |
 |------|--------|
-| cache in KVS | [cache.yml](.examples/manifest/cache.yml) |
+| cache in KVS | [cache.yml](./examples/manifest/cache.yml) |
 | database connection config | [connection.yml](./examples/manifest/connection.yml) |
 | request scope | [session.yml](./examples/manifest/session.yml) |
 
@@ -95,7 +97,7 @@ It's not essential to implement all *Client.
 use state_engine::{Manifest, State, Load};
 
 // Initialize Manifest
-let mut manifest = Manifest::new('./manifest');
+let mut manifest = Manifest::new("./manifest");
 
 // Create adapter instances
 let mut in_memory = InMemoryAdapter::new();
@@ -114,7 +116,7 @@ let mut state = State::new(&mut manifest, load)
     .with_kvs_client(&mut kvs);
 
 // Use state-engine
-let user = state.get('some-state')?;
+let user = state.get("cache.user.name")?;
 ```
 
 Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
