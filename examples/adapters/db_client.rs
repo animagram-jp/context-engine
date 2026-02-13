@@ -8,15 +8,27 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub struct DBAdapter {
-    // Use Mutex for interior mutability with Send + Sync
-    pool: Mutex<Option<tokio_postgres::Client>>,
+    // Connection pool: key = connection.name (as string), value = DB client
+    pool: Mutex<HashMap<String, tokio_postgres::Client>>,
 }
 
 impl DBAdapter {
     pub fn new() -> Self {
         Self {
-            pool: Mutex::new(None),
+            pool: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Extract connection name from config
+    /// Returns error if name field is missing
+    fn get_connection_name(config: &Value) -> Result<String, String> {
+        config.get("name")
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            })
+            .ok_or_else(|| "Missing 'name' field in connection config".to_string())
     }
 
     /// Create database connection from config
@@ -72,14 +84,17 @@ impl DBClient for DBAdapter {
         let runtime = tokio::runtime::Runtime::new().ok()?;
 
         runtime.block_on(async {
-            // Ensure we have a connection
+            // Get connection name from config
+            let conn_name = Self::get_connection_name(connection).ok()?;
+
+            // Ensure we have a connection in the pool
             let mut pool_lock = self.pool.lock().unwrap();
-            if pool_lock.is_none() {
+            if !pool_lock.contains_key(&conn_name) {
                 let client = Self::connect_from_config(connection).await.ok()?;
-                *pool_lock = Some(client);
+                pool_lock.insert(conn_name.clone(), client);
             }
 
-            let client = pool_lock.as_ref()?;
+            let client = pool_lock.get(&conn_name)?;
 
             // Build SELECT clause
             let column_list = if columns.is_empty() {
