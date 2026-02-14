@@ -1,4 +1,4 @@
-# state-engine 0.1
+# state-engine
 
 Declarative state data management for multi-tenant, multi-service systems.
 Synchronizes process memory, KVS, and databases using YAML DSL.
