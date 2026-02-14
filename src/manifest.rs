@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::common::DotArrayAccessor;
+use crate::common::{DotMapAccessor, DotString};
 use crate::ports::provided;
 
 pub struct Manifest {
@@ -41,8 +41,9 @@ impl Manifest {
         } else {
             // ドット記法でアクセス
             self.cache.get(&file).and_then(|data| {
-                let mut accessor = DotArrayAccessor::new();
-                accessor.get(data, &path).cloned()
+                let mut accessor = DotMapAccessor::new();
+                let path_dot = DotString::new(&path);
+                accessor.get(data, &path_dot).cloned()
             })
         };
 
@@ -78,11 +79,14 @@ impl Manifest {
 
         // ルートから指定Nodeまでのパス上のすべてのNodeを収集
         let mut nodes = vec![root.clone()];
+        let dot_string = DotString::new(&path);
+
         if !path.is_empty() {
-            let mut accessor = DotArrayAccessor::new();
+            let mut accessor = DotMapAccessor::new();
             let mut current = root;
-            for segment in path.split('.') {
-                current = match accessor.get(current, segment) {
+            for segment in dot_string.iter() {
+                let segment_dot = DotString::new(segment);
+                current = match accessor.get(current, &segment_dot) {
                     Some(node) => node,
                     None => {
                         self.missing_keys.push(key.to_string());
@@ -94,11 +98,6 @@ impl Manifest {
         }
 
         let mut meta: HashMap<String, Value> = HashMap::new();
-        let segments: Vec<&str> = if path.is_empty() {
-            vec![]
-        } else {
-            path.split('.').collect()
-        };
 
         // 完全修飾用のパス情報を記録
         let mut meta_paths: HashMap<String, String> = HashMap::new();
@@ -112,12 +111,18 @@ impl Manifest {
             // この node のパスを構築
             let node_path = if depth == 0 {
                 file.clone()
+            } else if depth > dot_string.len() {
+                file.clone()
             } else {
-                let node_segments: Vec<&str> = segments.iter().copied().take(depth).collect();
-                if node_segments.is_empty() {
+                let node_segments = &dot_string[..depth];
+                let joined = node_segments.iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(".");
+                if joined.is_empty() {
                     file.clone()
                 } else {
-                    format!("{}.{}", file, node_segments.join("."))
+                    format!("{}.{}", file, joined)
                 }
             };
 
@@ -193,7 +198,8 @@ impl Manifest {
 
                     // owner file内に存在するか
                     if let Some(owner_data) = self.cache.get(owner_file) {
-                        if DotArrayAccessor::has(owner_data, placeholder) {
+                        let placeholder_dot = DotString::new(placeholder);
+                        if DotMapAccessor::has(owner_data, &placeholder_dot) {
                             return caps[0].to_string();
                         }
                     }
@@ -206,7 +212,8 @@ impl Manifest {
 
                     if let Some(ph_data) = self.cache.get(&ph_file) {
                         if let Some(obj) = ph_data.as_object() {
-                            if !obj.is_empty() && (ph_path.is_empty() || DotArrayAccessor::has(ph_data, &ph_path)) {
+                            let ph_path_dot = DotString::new(&ph_path);
+                            if !obj.is_empty() && (ph_path.is_empty() || DotMapAccessor::has(ph_data, &ph_path_dot)) {
                                 return caps[0].to_string();
                             }
                         }
@@ -316,6 +323,75 @@ impl Manifest {
     pub fn clear_missing_keys(&mut self) {
         self.missing_keys.clear();
     }
+
+    /// キーから値のみを取得（メタデータと null を除く）
+    pub fn get_value(&mut self, key: &DotString) -> Value {
+        let key_str = key.as_str();
+        let mut parts = key_str.splitn(2, '.');
+        let file = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("").to_string();
+
+        if let Err(_e) = self.load_file(&file) {
+            self.missing_keys.push(key_str.to_string());
+            return Value::Null;
+        }
+
+        let value = if path.is_empty() {
+            // ファイル全体を返す
+            self.cache.get(&file).cloned()
+        } else {
+            // ドット記法でアクセス
+            self.cache.get(&file).and_then(|data| {
+                let mut accessor = DotMapAccessor::new();
+                let path_dot = DotString::new(&path);
+                accessor.get(data, &path_dot).cloned()
+            })
+        };
+
+        match value {
+            Some(v) => {
+                // メタデータとnullを同時に除外
+                self.remove_meta_and_nulls(&v)
+            }
+            None => {
+                self.missing_keys.push(key_str.to_string());
+                Value::Null
+            }
+        }
+    }
+
+    /// メタデータ(_始まりキー)とnull値を同時に除外
+    fn remove_meta_and_nulls(&self, value: &Value) -> Value {
+        match value {
+            Value::Object(obj) => {
+                let filtered: serde_json::Map<String, Value> = obj
+                    .iter()
+                    .filter(|(k, v)| !k.starts_with('_') && !v.is_null())
+                    .map(|(k, v)| (k.clone(), self.remove_meta_and_nulls(v)))
+                    .collect();
+
+                if filtered.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Object(filtered)
+                }
+            }
+            Value::Array(arr) => {
+                let filtered: Vec<Value> = arr
+                    .iter()
+                    .map(|v| self.remove_meta_and_nulls(v))
+                    .filter(|v| !v.is_null())
+                    .collect();
+
+                if filtered.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Array(filtered)
+                }
+            }
+            _ => value.clone(),
+        }
+    }
 }
 
 // Provided::Manifest trait の実装
@@ -334,6 +410,10 @@ impl provided::Manifest for Manifest {
 
     fn clear_missing_keys(&mut self) {
         Manifest::clear_missing_keys(self)
+    }
+
+    fn get_value(&mut self, key: &DotString) -> Value {
+        Manifest::get_value(self, key)
     }
 }
 

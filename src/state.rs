@@ -2,7 +2,7 @@
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
-use crate::common::{DotArrayAccessor, PlaceholderResolver};
+use crate::common::{DotMapAccessor, DotString, PlaceholderResolver};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -11,13 +11,13 @@ use std::collections::HashMap;
 /// depends on: Manifest YAML meta data(_state, _store, _load)
 /// func: placeholder resolution, self calling, store CRUD
 pub struct State<'a> {
-    dot_accessor: DotArrayAccessor,
+    dot_accessor: DotMapAccessor,
     manifest: &'a mut dyn ManifestTrait,
     load: Load<'a>,
     in_memory: Option<&'a mut dyn InMemoryClient>,
     kvs_client: Option<&'a mut dyn KVSClient>,
-    recursion_depth: usize,
     max_recursion: usize,
+    called_keys: Vec<DotString>,  // call stack の DotString（recursion_depth は len() で代用）
     cache: Value,  // instance cache（single collection object）
 }
 
@@ -29,10 +29,10 @@ impl<'a> State<'a> {
             load,
             in_memory: None,
             kvs_client: None,
-            recursion_depth: 0,
             max_recursion: 10,
+            called_keys: Vec::new(),
             cache: Value::Object(serde_json::Map::new()),
-            dot_accessor: DotArrayAccessor::new(),
+            dot_accessor: DotMapAccessor::new(),
         }
     }
 
@@ -52,7 +52,7 @@ impl<'a> State<'a> {
     ///
     /// key="cache.user.org_id" で _store が "cache.user" レベルで定義されている場合、
     /// storeには user オブジェクト全体が保存されているため、"org_id" フィールドを抽出する。
-    fn extract_field_from_value(key: &str, value: Value, meta: &HashMap<String, Value>) -> Value {
+    fn extract_field_from_value(key: &DotString, value: Value, meta: &HashMap<String, Value>) -> Value {
         // metaに _store が含まれている場合、直接マッチしたので値をそのまま返す
         // （cache.user を取得した場合）
         if let Some(store_meta) = meta.get("_store") {
@@ -62,14 +62,12 @@ impl<'a> State<'a> {
                 // cache.user → value全体を返す
                 // cache.user.org_id → valueから org_id を抽出
 
-                // keyの階層を分解
-                let parts: Vec<&str> = key.split('.').collect();
-                if parts.len() < 2 {
+                if key.len() < 2 {
                     return value;
                 }
 
                 // 最後の部分が value の中のフィールドとして存在するか確認
-                let last_field = parts[parts.len() - 1];
+                let last_field = &key[key.len() - 1];
                 if let Some(field_value) = value.get(last_field) {
                     // 子フィールドが存在する → 抽出して返す
                     return field_value.clone();
@@ -87,7 +85,8 @@ impl<'a> State<'a> {
     /// nameをそのままkeyとして使用
     fn resolve_placeholder(&mut self, name: &str) -> Option<Value> {
         // キャッシュを優先チェック（高速パス）
-        if let Some(cached) = self.dot_accessor.get(&self.cache, name) {
+        let name_dot = DotString::new(name);
+        if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
             return Some(cached.clone());
         }
 
@@ -210,12 +209,11 @@ impl<'a> State<'a> {
     /// "cache.user.org_id" → "cache.user"
     /// "cache.user" → "cache"
     /// "cache" → ""
-    fn get_parent_key(key: &str) -> String {
-        let segments: Vec<&str> = key.split('.').collect();
-        if segments.len() <= 1 {
+    fn get_parent_key(dot_string: &DotString) -> String {
+        if dot_string.len() <= 1 {
             return String::new();
         }
-        segments[..segments.len() - 1].join(".")
+        dot_string[..dot_string.len() - 1].join(".")
     }
 
     /// Manifest の静的値とマージ
@@ -235,12 +233,14 @@ impl<'a> State<'a> {
             return data;
         };
 
-        // Manifest から静的値を取得
-        let manifest_value = self.manifest.get(manifest_key, None);
+        // Manifest から静的値を取得（メタデータとnullを除外）
+        let manifest_key_dotstring = DotString::new(manifest_key);
+        let manifest_value = self.manifest.get_value(&manifest_key_dotstring);
 
         // Manifest の値が Object でない場合はマージ不要
         let manifest_obj = match manifest_value {
             Value::Object(obj) => obj,
+            Value::Null => return Value::Object(data_obj),
             _ => return Value::Object(data_obj),
         };
 
@@ -257,7 +257,7 @@ impl<'a> State<'a> {
 impl<'a> StateTrait for State<'a> {
     fn get(&mut self, key: &str) -> Option<Value> {
         // 再帰深度チェック
-        if self.recursion_depth >= self.max_recursion {
+        if self.called_keys.len() >= self.max_recursion {
             eprintln!(
                 "State::get: max recursion depth ({}) reached for key '{}'",
                 self.max_recursion, key
@@ -265,18 +265,20 @@ impl<'a> StateTrait for State<'a> {
             return None;
         }
 
-        self.recursion_depth += 1;
+        // DotString を生成して call stack に追加
+        self.called_keys.push(DotString::new(key));
 
         // 1. インスタンスキャッシュをチェック（最優先）
-        if let Some(cached) = self.dot_accessor.get(&self.cache, key) {
-            self.recursion_depth -= 1;
+        let current_key = self.called_keys.last().unwrap();
+        if let Some(cached) = self.dot_accessor.get(&self.cache, current_key) {
+            self.called_keys.pop();
             return Some(cached.clone());
         }
 
         // 2. メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
-            self.recursion_depth -= 1;
+            self.called_keys.pop();
             return None;
         }
 
@@ -305,23 +307,31 @@ impl<'a> StateTrait for State<'a> {
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| Self::get_parent_key(first_key))
-                            .unwrap_or_else(|| Self::get_parent_key(key));
+                            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+                            .unwrap_or_else(|| {
+                                if let Some(current_key) = self.called_keys.last() {
+                                    Self::get_parent_key(current_key)
+                                } else {
+                                    String::new()
+                                }
+                            });
 
                         // owner_key で Manifest の静的値とマージ
                         let merged_value = self.merge_with_manifest_static_values(&owner_key, value);
 
                         // owner_key で cache にマージ
-                        DotArrayAccessor::merge(&mut self.cache, &owner_key, merged_value.clone());
+                        let owner_key_dot = DotString::new(&owner_key);
+                        DotMapAccessor::merge(&mut self.cache, &owner_key_dot, merged_value.clone());
 
                         // 要求されたフィールドを抽出
                         let extracted = if key == owner_key {
                             merged_value
                         } else {
-                            Self::extract_field_from_value(key, merged_value, &meta)
+                            let current_key = self.called_keys.last().unwrap();
+                            Self::extract_field_from_value(current_key, merged_value, &meta)
                         };
 
-                        self.recursion_depth -= 1;
+                        self.called_keys.pop();
                         return Some(extracted);
                     }
                 }
@@ -336,7 +346,7 @@ impl<'a> StateTrait for State<'a> {
 
                 // client が無い場合は自動ロードしない
                 if !load_config.contains_key("client") {
-                    self.recursion_depth -= 1;
+                    self.called_keys.pop();
                     return None;
                 }
 
@@ -351,12 +361,13 @@ impl<'a> StateTrait for State<'a> {
                     if let Some(key_value) = resolved_config.get("key") {
                         // key_value は既に resolve_load_config で値に解決されている
                         // インスタンスキャッシュに保存
-                        DotArrayAccessor::set(&mut self.cache, key, key_value.clone());
+                        let current_key = self.called_keys.last().unwrap();
+                        DotMapAccessor::set(&mut self.cache, current_key, key_value.clone());
 
-                        self.recursion_depth -= 1;
+                        self.called_keys.pop();
                         return Some(key_value.clone());
                     }
-                    self.recursion_depth -= 1;
+                    self.called_keys.pop();
                     None
                 } else {
                     // Load に渡す前に map を denormalize（絶対パス → 相対パス）
@@ -365,8 +376,9 @@ impl<'a> StateTrait for State<'a> {
                             let mut denormalized_map = serde_json::Map::new();
                             for (absolute_key, db_column) in map_obj {
                                 // 絶対パスから最後のセグメントを抽出（相対フィールド名）
-                                let segments: Vec<&str> = absolute_key.split('.').collect();
-                                if let Some(relative_key) = segments.last() {
+                                let dot_key = DotString::new(absolute_key);
+                                if dot_key.len() > 0 {
+                                    let relative_key = &dot_key[dot_key.len() - 1];
                                     denormalized_map.insert(relative_key.to_string(), db_column.clone());
                                 }
                             }
@@ -383,8 +395,14 @@ impl<'a> StateTrait for State<'a> {
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| Self::get_parent_key(first_key))
-                            .unwrap_or_else(|| key.to_string());
+                            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+                            .unwrap_or_else(|| {
+                                if let Some(current_key) = self.called_keys.last() {
+                                    current_key.as_str().to_string()
+                                } else {
+                                    String::new()
+                                }
+                            });
 
                         // owner_key で Manifest の静的値とマージ
                         let merged_loaded = self.merge_with_manifest_static_values(&owner_key, loaded);
@@ -404,7 +422,8 @@ impl<'a> StateTrait for State<'a> {
                         }
 
                         // owner_key で cache にマージ
-                        DotArrayAccessor::merge(&mut self.cache, &owner_key, merged_loaded.clone());
+                        let owner_key_dot = DotString::new(&owner_key);
+                        DotMapAccessor::merge(&mut self.cache, &owner_key_dot, merged_loaded.clone());
 
                         // 要求されたフィールドを抽出して返す
                         if key == owner_key {
@@ -412,7 +431,8 @@ impl<'a> StateTrait for State<'a> {
                             Some(merged_loaded)
                         } else {
                             // 子フィールドを取得した場合
-                            Some(Self::extract_field_from_value(key, merged_loaded, &meta))
+                            let current_key = self.called_keys.last().unwrap();
+                            Some(Self::extract_field_from_value(current_key, merged_loaded, &meta))
                         }
                     } else {
                         None
@@ -425,15 +445,19 @@ impl<'a> StateTrait for State<'a> {
             None
         };
 
-        self.recursion_depth -= 1;
+        self.called_keys.pop();
         result
     }
 
     fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
+        // DotString を生成して call stack に追加
+        self.called_keys.push(DotString::new(key));
+
         // メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             eprintln!("State::set: meta is empty for key '{}'", key);
+            self.called_keys.pop();
             return false;
         }
 
@@ -442,6 +466,7 @@ impl<'a> StateTrait for State<'a> {
             Some(config) => config,
             None => {
                 eprintln!("State::set: no _store config for key '{}'", key);
+                self.called_keys.pop();
                 return false;
             }
         };
@@ -452,28 +477,65 @@ impl<'a> StateTrait for State<'a> {
         // store_config 内の placeholder 解決
         let resolved_store_config = self.resolve_load_config(&store_config_map);
 
-        // _store に保存
-        let result = self.set_to_store(&resolved_store_config, value.clone(), ttl);
+        // 1. owner_key を特定（_store が定義されているレベル）
+        // map の最初のキーから owner_key を逆算
+        // declare-engine L120-130: map から所有者キーを算出
+        let owner_key = meta.get("_load")
+            .and_then(|v| v.as_object())
+            .and_then(|obj| obj.get("map"))
+            .and_then(|v| v.as_object())
+            .and_then(|map| map.keys().next())
+            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+            .unwrap_or_else(|| {
+                if let Some(current_key) = self.called_keys.last() {
+                    Self::get_parent_key(current_key)
+                } else {
+                    String::new()
+                }
+            });
 
-        // 成功時はインスタンスキャッシュにも保存
-        if result {
-            DotArrayAccessor::set(&mut self.cache, key, value);
+        // 2. cache に owner_key の値がなければ、Store から取得して cache にロード
+        let owner_key_dot = DotString::new(&owner_key);
+        if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
+            if let Some(store_value) = self.get_from_store(&resolved_store_config) {
+                DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
+            }
         }
 
+        // 3. cache 上で新しい値を設定（DotMapAccessor が全ての作業を行う）
+        let current_key = self.called_keys.last().unwrap();
+        DotMapAccessor::set(&mut self.cache, current_key, value);
+
+        // 4. cache から owner_key の親オブジェクト全体を取得
+        let store_value = self.dot_accessor.get(&self.cache, &owner_key_dot)
+            .cloned()
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+        // 5. 親オブジェクト全体を _store に保存
+        let result = self.set_to_store(&resolved_store_config, store_value, ttl);
+
+        self.called_keys.pop();
         result
     }
 
     fn delete(&mut self, key: &str) -> bool {
+        // DotString を生成して call stack に追加
+        self.called_keys.push(DotString::new(key));
+
         // メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
+            self.called_keys.pop();
             return false;
         }
 
         // _store 設定取得
         let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
             Some(config) => config,
-            None => return false,
+            None => {
+                self.called_keys.pop();
+                return false;
+            }
         };
 
         let store_config_map: HashMap<String, Value> =
@@ -482,33 +544,93 @@ impl<'a> StateTrait for State<'a> {
         // store_config 内の placeholder 解決
         let resolved_store_config = self.resolve_load_config(&store_config_map);
 
-        // _store から削除
-        let result = self.delete_from_store(&resolved_store_config);
+        // 1. owner_key を特定（_store が定義されているレベル）
+        let owner_key = meta.get("_load")
+            .and_then(|v| v.as_object())
+            .and_then(|obj| obj.get("map"))
+            .and_then(|v| v.as_object())
+            .and_then(|map| map.keys().next())
+            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+            .unwrap_or_else(|| {
+                if let Some(current_key) = self.called_keys.last() {
+                    Self::get_parent_key(current_key)
+                } else {
+                    String::new()
+                }
+            });
 
-        // 成功時はインスタンスキャッシュからも削除
-        if result {
-            DotArrayAccessor::unset(&mut self.cache, key);
+        // 2. key が owner_key と同じ場合は親オブジェクト全体を削除
+        let owner_key_dot = DotString::new(&owner_key);
+        if key == owner_key {
+            // 親オブジェクト全体を削除
+            let result = self.delete_from_store(&resolved_store_config);
+            if result {
+                let current_key = self.called_keys.last().unwrap();
+                DotMapAccessor::unset(&mut self.cache, current_key);
+            }
+            self.called_keys.pop();
+            return result;
         }
 
+        // 3. 子フィールドの削除: cache に owner_key の値がなければ、Store から取得して cache にロード
+        if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
+            if let Some(store_value) = self.get_from_store(&resolved_store_config) {
+                DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
+            }
+        }
+
+        // 4. cache のバックアップ（ロールバック用）
+        let cache_backup = self.cache.clone();
+
+        // 5. cache 上で子フィールドを削除（DotMapAccessor が全ての作業を行う）
+        let current_key = self.called_keys.last().unwrap();
+        DotMapAccessor::unset(&mut self.cache, current_key);
+
+        // 6. cache から owner_key の親オブジェクト全体を取得
+        let store_value = self.dot_accessor.get(&self.cache, &owner_key_dot)
+            .cloned()
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+
+        // 7. 親オブジェクト全体を _store に保存
+        let result = self.set_to_store(&resolved_store_config, store_value, None);
+
+        // 8. 失敗時はロールバック
+        if !result {
+            self.cache = cache_backup;
+        }
+
+        // TODO: 空オブジェクトになった場合の処理（保留）
+        // 全ての子フィールドを削除して空配列になった時に owner_key も削除する
+
+        self.called_keys.pop();
         result
     }
 
     fn exists(&mut self, key: &str) -> bool {
+        // DotString を生成して call stack に追加
+        self.called_keys.push(DotString::new(key));
+
         // 1. インスタンスキャッシュをチェック（最優先・最速）
-        if self.dot_accessor.get(&self.cache, key).is_some() {
+        let current_key = self.called_keys.last().unwrap();
+        if self.dot_accessor.get(&self.cache, current_key).is_some() {
+            self.called_keys.pop();
             return true;
         }
 
         // 2. メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
+            self.called_keys.pop();
             return false;
         }
 
         // 3. _store 設定取得
         let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
             Some(config) => config,
-            None => return false,
+            None => {
+                self.called_keys.pop();
+                return false;
+            }
         };
 
         let store_config_map: HashMap<String, Value> =
@@ -518,7 +640,10 @@ impl<'a> StateTrait for State<'a> {
         let resolved_store_config = self.resolve_load_config(&store_config_map);
 
         // 5. _store から値を取得（自動ロードなし）
-        self.get_from_store(&resolved_store_config).is_some()
+        let result = self.get_from_store(&resolved_store_config).is_some();
+
+        self.called_keys.pop();
+        result
     }
 }
 

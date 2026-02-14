@@ -1,5 +1,5 @@
 // Common module integration tests
-use state_engine::DotArrayAccessor;
+use state_engine::{DotMapAccessor, DotString};
 use serde_json::json;
 
 #[test]
@@ -8,8 +8,9 @@ fn test_dot_accessor_simple_key() {
         "name": "Test User"
     });
 
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "name");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("name");
+    let result = accessor.get(&data, &key);
     assert!(result.is_some());
     assert_eq!(result.unwrap(), &json!("Test User"));
 }
@@ -25,12 +26,14 @@ fn test_dot_accessor_nested_key() {
         }
     });
 
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "user.profile.name");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("user.profile.name");
+    let result = accessor.get(&data, &key);
     assert!(result.is_some());
     assert_eq!(result.unwrap(), &json!("Test User"));
 
-    let result_age = accessor.get(&data, "user.profile.age");
+    let key_age = DotString::new("user.profile.age");
+    let result_age = accessor.get(&data, &key_age);
     assert!(result_age.is_some());
     assert_eq!(result_age.unwrap(), &json!(30));
 }
@@ -45,8 +48,9 @@ fn test_dot_accessor_missing_key() {
         }
     });
 
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "user.profile.missing");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("user.profile.missing");
+    let result = accessor.get(&data, &key);
     assert!(result.is_none());
 }
 
@@ -59,8 +63,9 @@ fn test_dot_accessor_array_access() {
         ]
     });
 
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "items");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("items");
+    let result = accessor.get(&data, &key);
     assert!(result.is_some());
 
     if let Some(json_value) = result {
@@ -75,8 +80,9 @@ fn test_dot_accessor_array_access() {
 #[test]
 fn test_dot_accessor_empty_path() {
     let data = json!({});
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("");
+    let result = accessor.get(&data, &key);
     assert!(result.is_none());
 }
 
@@ -94,8 +100,9 @@ fn test_dot_accessor_deep_nesting() {
         }
     });
 
-    let mut accessor = DotArrayAccessor::new();
-    let result = accessor.get(&data, "level1.level2.level3.level4.value");
+    let mut accessor = DotMapAccessor::new();
+    let key = DotString::new("level1.level2.level3.level4.value");
+    let result = accessor.get(&data, &key);
     assert!(result.is_some());
     assert_eq!(result.unwrap(), &json!("deep value"));
 }

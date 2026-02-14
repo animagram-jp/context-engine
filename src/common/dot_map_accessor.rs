@@ -1,21 +1,21 @@
-// DotArrayAccessor
-// ドット記法での配列アクセスを提供
+// DotMapAccessor
+// ドット記法での Map (Object) アクセスを提供
 //
-// PHPのDotArrayAccessorを完全再現
 // - missingKeys追跡機能
 // - 階層構造の自動作成（set時）
 // - インスタンスメソッド（get, getMissingKeys, clearMissingKeys）
 // - 静的メソッド（set, merge, unset）
 
 use serde_json::Value;
+use crate::common::DotString;
 
 /// ドット記法でのデータアクセスを提供
-pub struct DotArrayAccessor {
+pub struct DotMapAccessor {
     missing_keys: Vec<String>,
 }
 
-impl DotArrayAccessor {
-    /// 新しいインスタンスを作成
+impl DotMapAccessor {
+
     pub fn new() -> Self {
         Self {
             missing_keys: Vec::new(),
@@ -24,12 +24,12 @@ impl DotArrayAccessor {
 
     /// ドット記法で値を取得（missingKeys追跡付き）
     ///
-    /// 例: get(&data, "user.profile.name")
-    ///
     /// キーが見つからない場合はmissingKeysに記録してNoneを返す
-    pub fn get<'a>(&mut self, data: &'a Value, key: &str) -> Option<&'a Value> {
-        // ドットが無い場合は単純なキーアクセス
-        if !key.contains('.') {
+    pub fn get<'a>(&mut self, data: &'a Value, dot_string: &DotString) -> Option<&'a Value> {
+        let key = dot_string.as_str();
+
+        // 単純なキーアクセス
+        if dot_string.len() <= 1 {
             if let Some(obj) = data.as_object() {
                 if !obj.contains_key(key) {
                     self.missing_keys.push(key.to_string());
@@ -42,11 +42,9 @@ impl DotArrayAccessor {
             }
         }
 
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
+        // ネストされたパスを辿る
         let mut current = data;
-
-        for segment in segments {
+        for segment in dot_string.iter() {
             match current.get(segment) {
                 Some(next) => current = next,
                 None => {
@@ -74,9 +72,11 @@ impl DotArrayAccessor {
     /// 例: set(&mut data, "user.profile.name", Value::String("Alice".to_string()))
     ///
     /// 存在しないパスは自動的にObjectとして作成される
-    pub fn set(data: &mut Value, key: &str, value: Value) {
-        // ドットが無い場合は単純な設定
-        if !key.contains('.') {
+    pub fn set(data: &mut Value, dot_string: &DotString, value: Value) {
+        let key = dot_string.as_str();
+
+        // 単純なキー設定
+        if dot_string.len() <= 1 {
             if let Some(obj) = data.as_object_mut() {
                 obj.insert(key.to_string(), value);
             } else {
@@ -88,19 +88,15 @@ impl DotArrayAccessor {
             return;
         }
 
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
-
         // dataがObjectでない場合、新しいObjectを作成
         if !data.is_object() {
             *data = Value::Object(serde_json::Map::new());
         }
 
         let mut current = data;
+        let last_idx = dot_string.len() - 1;
 
-        let last_idx = segments.len() - 1;
-
-        for (i, segment) in segments.iter().enumerate() {
+        for (i, segment) in dot_string.iter().enumerate() {
             if i == last_idx {
                 // 最後のセグメント：値を設定
                 if let Some(obj) = current.as_object_mut() {
@@ -110,16 +106,15 @@ impl DotArrayAccessor {
             }
 
             // 中間パス：存在しないか、Objectでない場合は新規作成してから移動
-            // Borrowチェッカーを満たすため、明示的にスコープを分ける
             {
                 let obj = current.as_object_mut().expect("current must be an object");
-                if !obj.contains_key(*segment) || !obj[*segment].is_object() {
+                if !obj.contains_key(segment) || !obj[segment].is_object() {
                     obj.insert(segment.to_string(), Value::Object(serde_json::Map::new()));
                 }
             }
 
-            // 次の階層へ移動（新しいスコープで借用）
-            current = current.get_mut(*segment).expect("segment must exist");
+            // 次の階層へ移動
+            current = current.get_mut(segment).expect("segment must exist");
         }
     }
 
@@ -130,9 +125,11 @@ impl DotArrayAccessor {
     /// 注意: マージ処理の各レベルで、既存値と新しい値の少なくとも一方がスカラー（非オブジェクト）である場合、上書き処理がされる。
     /// state object では、末尾のノードは値に null を持って、末尾の値と区別されている。
     /// このため、scalar と list の object は、自動的に上書き処理してよい。
-    pub fn merge(data: &mut Value, key: &str, value: Value) {
-        // ドットが無い場合
-        if !key.contains('.') {
+    pub fn merge(data: &mut Value, dot_string: &DotString, value: Value) {
+        let key = dot_string.as_str();
+
+        // 単純なキー
+        if dot_string.len() <= 1 {
             // data[key] と value の両方がオブジェクトの場合は再帰マージ
             if let Some(obj) = data.as_object_mut() {
                 let should_merge = if let Some(existing) = obj.get(key) {
@@ -154,7 +151,8 @@ impl DotArrayAccessor {
 
                                 if should_recurse {
                                     // 既存のキーがあり、両方がオブジェクト → 再帰呼び出し
-                                    Self::merge(existing, k, v.clone());
+                                    let k_dot = DotString::new(k);
+                                    Self::merge(existing, &k_dot, v.clone());
                                 } else {
                                     // それ以外は上書き
                                     if let Some(existing_obj_mut) = existing.as_object_mut() {
@@ -177,10 +175,12 @@ impl DotArrayAccessor {
             return;
         }
 
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
-        let first_segment = segments[0];
-        let remaining_key = segments[1..].join(".");
+        // ネストされたパス
+        let first_segment = &dot_string[0];
+        let remaining_key = dot_string[1..].iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(".");
 
         // data がオブジェクトでない場合、新しいオブジェクトを作成
         if !data.is_object() {
@@ -195,7 +195,8 @@ impl DotArrayAccessor {
 
             // 再帰的にマージ
             if let Some(next) = obj.get_mut(first_segment) {
-                Self::merge(next, &remaining_key, value);
+                let remaining_dot = DotString::new(&remaining_key);
+                Self::merge(next, &remaining_dot, value);
             }
         }
     }
@@ -205,20 +206,20 @@ impl DotArrayAccessor {
     /// 例: has(&data, "user.profile.name")
     ///
     /// ドット記法でのパスを辿り、最後のキーまで存在するか確認する
-    pub fn has(data: &Value, key: &str) -> bool {
-        // ドットが無い場合は単純なキー存在チェック
-        if !key.contains('.') {
+    pub fn has(data: &Value, dot_string: &DotString) -> bool {
+        let key = dot_string.as_str();
+
+        // 単純なキー存在チェック
+        if dot_string.len() <= 1 {
             if let Some(obj) = data.as_object() {
                 return obj.contains_key(key);
             }
             return false;
         }
 
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
+        // ネストされたパスを辿る
         let mut current = data;
-
-        for segment in segments {
+        for segment in dot_string.iter() {
             match current.get(segment) {
                 Some(next) => current = next,
                 None => return false,
@@ -231,38 +232,37 @@ impl DotArrayAccessor {
     /// 値を削除（静的メソッド）
     ///
     /// 例: unset(&mut data, "user.profile.name")
-    pub fn unset(data: &mut Value, key: &str) {
-        // ドットが無い場合は単純な削除
-        if !key.contains('.') {
+    pub fn unset(data: &mut Value, dot_string: &DotString) {
+        let key = dot_string.as_str();
+
+        // 単純な削除
+        if dot_string.len() <= 1 {
             if let Some(obj) = data.as_object_mut() {
                 obj.remove(key);
             }
             return;
         }
 
-        // ドット記法のパスを分解
-        let segments: Vec<&str> = key.split('.').collect();
+        // ネストされたパスを辿る
         let mut current = data;
+        let last_idx = dot_string.len() - 1;
 
-        for (i, segment) in segments.iter().enumerate() {
-            let is_last = i == segments.len() - 1;
-
-            if is_last {
+        for (i, segment) in dot_string.iter().enumerate() {
+            if i == last_idx {
                 // 最後のセグメント：削除
                 if let Some(obj) = current.as_object_mut() {
-                    obj.remove(*segment);
+                    obj.remove(segment);
                 }
                 return;
             }
 
             // 中間パス：次の階層へ移動
-            // Borrowチェック回避のため、存在チェックと取得を分離
             if !current.is_object() {
                 return;
             }
 
             let has_next = if let Some(obj) = current.as_object() {
-                obj.contains_key(*segment) && obj.get(*segment).map_or(false, |v| v.is_object())
+                obj.contains_key(segment) && obj.get(segment).map_or(false, |v| v.is_object())
             } else {
                 false
             };
@@ -273,12 +273,12 @@ impl DotArrayAccessor {
             }
 
             // 次の階層へ移動
-            current = current.get_mut(*segment).unwrap();
+            current = current.get_mut(segment).unwrap();
         }
     }
 }
 
-impl Default for DotArrayAccessor {
+impl Default for DotMapAccessor {
     fn default() -> Self {
         Self::new()
     }
@@ -291,12 +291,13 @@ mod tests {
 
     #[test]
     fn test_get_simple_key() {
-        let mut accessor = DotArrayAccessor::new();
+        let mut accessor = DotMapAccessor::new();
         let data = json!({
             "name": "Alice"
         });
 
-        let result = accessor.get(&data, "name");
+        let key = DotString::new("name");
+        let result = accessor.get(&data, &key);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), &json!("Alice"));
         assert_eq!(accessor.get_missing_keys().len(), 0);
@@ -304,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_get_nested_key() {
-        let mut accessor = DotArrayAccessor::new();
+        let mut accessor = DotMapAccessor::new();
         let data = json!({
             "user": {
                 "profile": {
@@ -313,7 +314,8 @@ mod tests {
             }
         });
 
-        let result = accessor.get(&data, "user.profile.name");
+        let key = DotString::new("user.profile.name");
+        let result = accessor.get(&data, &key);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), &json!("Alice"));
         assert_eq!(accessor.get_missing_keys().len(), 0);
@@ -321,19 +323,21 @@ mod tests {
 
     #[test]
     fn test_get_missing_key_tracking() {
-        let mut accessor = DotArrayAccessor::new();
+        let mut accessor = DotMapAccessor::new();
         let data = json!({
             "user": {
                 "name": "Alice"
             }
         });
 
-        let result = accessor.get(&data, "user.age");
+        let key = DotString::new("user.age");
+        let result = accessor.get(&data, &key);
         assert!(result.is_none());
         assert_eq!(accessor.get_missing_keys(), vec!["user.age"]);
 
         // 2回目の失敗
-        let result2 = accessor.get(&data, "user.email");
+        let key2 = DotString::new("user.email");
+        let result2 = accessor.get(&data, &key2);
         assert!(result2.is_none());
         assert_eq!(accessor.get_missing_keys(), vec!["user.age", "user.email"]);
 
@@ -345,7 +349,8 @@ mod tests {
     #[test]
     fn test_set_simple_key() {
         let mut data = json!({});
-        DotArrayAccessor::set(&mut data, "name", json!("Alice"));
+        let key = DotString::new("name");
+        DotMapAccessor::set(&mut data, &key, json!("Alice"));
 
         assert_eq!(data, json!({"name": "Alice"}));
     }
@@ -353,7 +358,8 @@ mod tests {
     #[test]
     fn test_set_nested_key() {
         let mut data = json!({});
-        DotArrayAccessor::set(&mut data, "user.profile.name", json!("Alice"));
+        let key = DotString::new("user.profile.name");
+        DotMapAccessor::set(&mut data, &key, json!("Alice"));
 
         assert_eq!(data, json!({
             "user": {
@@ -372,7 +378,8 @@ mod tests {
             }
         });
 
-        DotArrayAccessor::set(&mut data, "user.name", json!("Bob"));
+        let key = DotString::new("user.name");
+        DotMapAccessor::set(&mut data, &key, json!("Bob"));
 
         assert_eq!(data["user"]["name"], json!("Bob"));
     }
@@ -384,7 +391,8 @@ mod tests {
             "age": 30
         });
 
-        DotArrayAccessor::unset(&mut data, "name");
+        let key = DotString::new("name");
+        DotMapAccessor::unset(&mut data, &key);
 
         assert_eq!(data, json!({"age": 30}));
     }
@@ -400,7 +408,8 @@ mod tests {
             }
         });
 
-        DotArrayAccessor::unset(&mut data, "user.profile.name");
+        let key = DotString::new("user.profile.name");
+        DotMapAccessor::unset(&mut data, &key);
 
         assert_eq!(data, json!({
             "user": {
@@ -420,8 +429,10 @@ mod tests {
         });
 
         // 存在しないキーの削除は何もしない
-        DotArrayAccessor::unset(&mut data, "user.age");
-        DotArrayAccessor::unset(&mut data, "unknown.path");
+        let key1 = DotString::new("user.age");
+        DotMapAccessor::unset(&mut data, &key1);
+        let key2 = DotString::new("unknown.path");
+        DotMapAccessor::unset(&mut data, &key2);
 
         assert_eq!(data, json!({
             "user": {
@@ -436,7 +447,8 @@ mod tests {
             "name": "Alice"
         });
 
-        DotArrayAccessor::merge(&mut data, "age", json!(30));
+        let key = DotString::new("age");
+        DotMapAccessor::merge(&mut data, &key, json!(30));
 
         assert_eq!(data, json!({
             "name": "Alice",
@@ -450,7 +462,8 @@ mod tests {
             "name": "Alice"
         });
 
-        DotArrayAccessor::merge(&mut data, "name", json!("Bob"));
+        let key = DotString::new("name");
+        DotMapAccessor::merge(&mut data, &key, json!("Bob"));
 
         assert_eq!(data, json!({
             "name": "Bob"
@@ -463,7 +476,8 @@ mod tests {
             "tags": ["php", "web"]
         });
 
-        DotArrayAccessor::merge(&mut data, "tags", json!(["api", "rest"]));
+        let key = DotString::new("tags");
+        DotMapAccessor::merge(&mut data, &key, json!(["api", "rest"]));
 
         assert_eq!(data, json!({
             "tags": ["api", "rest"]
@@ -481,7 +495,8 @@ mod tests {
             }
         });
 
-        DotArrayAccessor::merge(&mut data, "user", json!({
+        let key = DotString::new("user");
+        DotMapAccessor::merge(&mut data, &key, json!({
             "email": "alice@example.com",
             "profile": {
                 "age": 30,
@@ -510,7 +525,8 @@ mod tests {
             }
         });
 
-        DotArrayAccessor::merge(&mut data, "connection", json!({
+        let key = DotString::new("connection");
+        DotMapAccessor::merge(&mut data, &key, json!({
             "host": "localhost",
             "port": 5432
         }));
@@ -529,7 +545,8 @@ mod tests {
     fn test_merge_creates_path() {
         let mut data = json!({});
 
-        DotArrayAccessor::merge(&mut data, "user.profile.name", json!("Alice"));
+        let key = DotString::new("user.profile.name");
+        DotMapAccessor::merge(&mut data, &key, json!("Alice"));
 
         assert_eq!(data, json!({
             "user": {
@@ -547,9 +564,12 @@ mod tests {
             "age": 30
         });
 
-        assert!(DotArrayAccessor::has(&data, "name"));
-        assert!(DotArrayAccessor::has(&data, "age"));
-        assert!(!DotArrayAccessor::has(&data, "email"));
+        let key1 = DotString::new("name");
+        assert!(DotMapAccessor::has(&data, &key1));
+        let key2 = DotString::new("age");
+        assert!(DotMapAccessor::has(&data, &key2));
+        let key3 = DotString::new("email");
+        assert!(!DotMapAccessor::has(&data, &key3));
     }
 
     #[test]
@@ -563,13 +583,13 @@ mod tests {
             }
         });
 
-        assert!(DotArrayAccessor::has(&data, "user"));
-        assert!(DotArrayAccessor::has(&data, "user.profile"));
-        assert!(DotArrayAccessor::has(&data, "user.profile.name"));
-        assert!(DotArrayAccessor::has(&data, "user.profile.age"));
-        assert!(!DotArrayAccessor::has(&data, "user.profile.email"));
-        assert!(!DotArrayAccessor::has(&data, "user.settings"));
-        assert!(!DotArrayAccessor::has(&data, "unknown"));
+        assert!(DotMapAccessor::has(&data, &DotString::new("user")));
+        assert!(DotMapAccessor::has(&data, &DotString::new("user.profile")));
+        assert!(DotMapAccessor::has(&data, &DotString::new("user.profile.name")));
+        assert!(DotMapAccessor::has(&data, &DotString::new("user.profile.age")));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("user.profile.email")));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("user.settings")));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("unknown")));
     }
 
     #[test]
@@ -582,8 +602,8 @@ mod tests {
         });
 
         // null値でもキーは存在する
-        assert!(DotArrayAccessor::has(&data, "user.deleted_at"));
-        assert!(!DotArrayAccessor::has(&data, "user.created_at"));
+        assert!(DotMapAccessor::has(&data, &DotString::new("user.deleted_at")));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("user.created_at")));
     }
 
     #[test]
@@ -594,11 +614,11 @@ mod tests {
         });
 
         // スカラー値や配列も存在チェック可能
-        assert!(DotArrayAccessor::has(&data, "tags"));
-        assert!(DotArrayAccessor::has(&data, "count"));
+        assert!(DotMapAccessor::has(&data, &DotString::new("tags")));
+        assert!(DotMapAccessor::has(&data, &DotString::new("count")));
 
         // 配列の要素にはドット記法でアクセスできない
-        assert!(!DotArrayAccessor::has(&data, "tags.0"));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("tags.0")));
     }
 
     #[test]
@@ -610,6 +630,6 @@ mod tests {
         });
 
         // 空文字列は存在しない
-        assert!(!DotArrayAccessor::has(&data, ""));
+        assert!(!DotMapAccessor::has(&data, &DotString::new("")));
     }
 }

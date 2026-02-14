@@ -317,3 +317,42 @@ fn test_exists_performance() {
     // exists()の方が処理が少ないはず
     assert_eq!(state.get("cache.user"), None);
 }
+
+// ============================================================================
+// Issue #7 regression tests
+// ============================================================================
+
+#[test]
+fn test_delete_child_field_preserves_siblings() {
+    // Issue #7で発見された問題: 子フィールド削除時に兄弟フィールドも消える
+    // 修正後: 子フィールドのみ削除され、兄弟フィールドは保持される
+    
+    let fixtures_path = get_fixtures_path();
+    let mut manifest = Manifest::new(&fixtures_path);
+    let load = Load::new();
+    let mut in_memory = MockInMemory::new();
+
+    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
+
+    // 初期データを設定
+    state.set("connection.common", json!({
+        "host": "db.example.com",
+        "port": 5432,
+        "database": "mydb",
+        "username": "admin",
+        "password": "secret"
+    }), None);
+
+    // username のみ削除
+    let result = state.delete("connection.common.username");
+    assert!(result, "delete should succeed");
+
+    // 兄弟フィールドが保持されているか確認
+    assert_eq!(state.get("connection.common.host"), Some(json!("db.example.com")));
+    assert_eq!(state.get("connection.common.port"), Some(json!(5432)));
+    assert_eq!(state.get("connection.common.database"), Some(json!("mydb")));
+    assert_eq!(state.get("connection.common.password"), Some(json!("secret")));
+    
+    // username は Manifest に定義があるため、削除後も Some(Null) を返す
+    assert_eq!(state.get("connection.common.username"), Some(json!(null)));
+}

@@ -1,6 +1,7 @@
 // Provided Ports - ライブラリが提供するインターフェース
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::common::DotString;
 
 /// YAMLマニフェストファイル読み込み・管理
 pub trait Manifest {
@@ -17,6 +18,15 @@ pub trait Manifest {
 
     /// 存在しないキーのリストをクリア
     fn clear_missing_keys(&mut self);
+
+    /// キーから値のみを取得（メタデータと null を除く）
+    ///
+    /// get() との違い:
+    /// - メタデータ（_で始まるキー）を除外
+    /// - null 値のフィールドを除外
+    ///
+    /// 内部利用想定（State から呼ばれる）
+    fn get_value(&mut self, key: &DotString) -> Value;
 }
 
 /// State - 統一CRUD実装
