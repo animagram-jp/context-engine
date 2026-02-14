@@ -168,14 +168,14 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       provided.rs     # library provides
       required.rs     # Library requires
 
-    common/           # library common (pure logic modules)
+    common/           # library common modules (pure logic)
       dot_array_accessor.rs
       placeholder_resolver.rs
       log_format.rs
 
-    manifest/         # Manifest impl
-    state/            # State impl
-    load/             # Load module (internal module)
+    manifest.rs       # Manifest impl
+    state.rs          # State impl
+    load.rs           # Load internal module
 
   examples/
     manifest/         # manifest YAML examples
