@@ -19,17 +19,6 @@ impl KVSAdapter {
 
         Ok(Self { client })
     }
-
-    /// Get TTL for a key
-    pub fn ttl(&mut self, key: &str) -> Result<i64, String> {
-        let mut conn = self.client.get_connection()
-            .map_err(|e| format!("Failed to connect to Redis: {}", e))?;
-
-        redis::cmd("TTL")
-            .arg(key)
-            .query(&mut conn)
-            .map_err(|e| format!("Failed to get TTL: {}", e))
-    }
 }
 
 impl KVSClient for KVSAdapter {

@@ -1,6 +1,6 @@
 [package]
 name = "state-engine"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Medetashi <qebju@animagram.jp>"]
 edition = "2024"
 license = "MIT"

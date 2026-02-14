@@ -17,16 +17,6 @@ impl InMemoryAdapter {
             data: HashMap::new(),
         }
     }
-
-    /// Clear all data
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
-
-    /// Get all keys
-    pub fn keys(&self) -> Vec<String> {
-        self.data.keys().cloned().collect()
-    }
 }
 
 impl InMemoryClient for InMemoryAdapter {

@@ -7,7 +7,6 @@ mod adapters;
 use adapters::{InMemoryAdapter, ENVAdapter, KVSAdapter, DBAdapter};
 use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
-use serde_json::json;
 
 #[tokio::main]
 async fn main() {
