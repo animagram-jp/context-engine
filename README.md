@@ -1,7 +1,8 @@
 # state-engine
 
-Declarative state data management for multi-tenant, multi-service systems.
-Synchronizes process memory, KVS, and databases using YAML DSL.
+Declarative state data management system for a process. 
+Structures state data on process and keeps it syncable using your store clients.
+It behaves as described in YAML DSL.
 
 - Automates complex state lifecycles through developer-defined YAML manifests.
 - Enables multi-tenant DB apps without junction tables.

@@ -4,7 +4,7 @@ version = "0.1.2"
 authors = ["Medetashi <qebju@animagram.jp>"]
 edition = "2024"
 license = "MIT"
-description = "A Declarative State Data Management for Rust & WebAssembly"
+description = "Declarative state data management system for a process"
 
 repository = "https://github.com/animagram-jp/state-engine"
 homepage = "https://github.com/animagram-jp/"
