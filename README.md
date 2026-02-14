@@ -13,8 +13,8 @@ Synchronizes process memory, KVS, and databases using YAML DSL.
 
 | Version | Status | Date | description |
 |---------|--------|------|-------------|
-| 0.1.0 |  Released | 2026-2-12 | 1st | 
-| 0.1.2 |  Current | 2026-2-14 | fix #11 | 
+| 0.1   | Released | 2026-2-12 | initial | 
+| 0.1.2 | Current  | 2026-2-14 | fix #11 | 
 
 ## Provided Functions
 
