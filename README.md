@@ -198,7 +198,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
 ## tests
 
-39 unit tests, 49 intergeration tests and example application test passed
+unit tests, intergeration tests and example application test passed
 
 1. cargo test:
 ```bash
