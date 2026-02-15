@@ -27,26 +27,26 @@ impl Placeholder {
         self.missing_keys.clear();
     }
 
-    /// Collect all placeholder names from a value (unique list)
+    /// Collect all placeholder names from a HashMap (unique list)
     ///
-    /// Walks through the value and extracts all ${key} patterns.
+    /// Walks through the HashMap values and extracts all ${key} patterns.
     /// Returns unique placeholder names in the order they appear.
     ///
     /// # Examples
     /// ```
     /// use state_engine::common::Placeholder;
     /// use serde_json::json;
+    /// use std::collections::HashMap;
     ///
-    /// let value = json!({
-    ///     "key1": "user:${session.id}",
-    ///     "key2": "tenant:${cache.user.org_id}",
-    ///     "key3": "${session.id}"  // duplicate
-    /// });
+    /// let mut map = HashMap::new();
+    /// map.insert("key1".to_string(), json!("user:${session.id}"));
+    /// map.insert("key2".to_string(), json!("tenant:${cache.user.org_id}"));
+    /// map.insert("key3".to_string(), json!("${session.id}"));  // duplicate
     ///
-    /// let names = Placeholder::collect(&value);
+    /// let names = Placeholder::collect(&map);
     /// assert_eq!(names, vec!["session.id", "cache.user.org_id"]);
     /// ```
-    pub fn collect(value: &Value) -> Vec<String> {
+    pub fn collect(map: &std::collections::HashMap<String, Value>) -> Vec<String> {
         let mut names = Vec::new();
         let mut seen = HashSet::new();
         let re = Regex::new(r"\$\{([\w.]+)\}").unwrap();
@@ -75,7 +75,9 @@ impl Placeholder {
             }
         }
 
-        walk(value, &mut names, &mut seen, &re);
+        for v in map.values() {
+            walk(v, &mut names, &mut seen, &re);
+        }
         names
     }
 
@@ -164,50 +166,52 @@ impl Default for Placeholder {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn test_collect_simple() {
-        let value = json!({
-            "key": "user:${session.id}"
-        });
-        let names = Placeholder::collect(&value);
+        let mut map = HashMap::new();
+        map.insert("key".to_string(), json!("user:${session.id}"));
+        let names = Placeholder::collect(&map);
         assert_eq!(names, vec!["session.id"]);
     }
 
     #[test]
     fn test_collect_multiple() {
-        let value = json!({
-            "key1": "${session.id}",
-            "key2": "${cache.user.org_id}",
-            "key3": "prefix:${connection.host}:suffix"
-        });
-        let names = Placeholder::collect(&value);
-        assert_eq!(names, vec!["session.id", "cache.user.org_id", "connection.host"]);
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), json!("${session.id}"));
+        map.insert("key2".to_string(), json!("${cache.user.org_id}"));
+        map.insert("key3".to_string(), json!("prefix:${connection.host}:suffix"));
+        let names = Placeholder::collect(&map);
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"session.id".to_string()));
+        assert!(names.contains(&"cache.user.org_id".to_string()));
+        assert!(names.contains(&"connection.host".to_string()));
     }
 
     #[test]
     fn test_collect_duplicates() {
-        let value = json!({
-            "key1": "${session.id}",
-            "key2": "${cache.user.org_id}",
-            "key3": "${session.id}"  // duplicate
-        });
-        let names = Placeholder::collect(&value);
-        assert_eq!(names, vec!["session.id", "cache.user.org_id"]);
+        let mut map = HashMap::new();
+        map.insert("key1".to_string(), json!("${session.id}"));
+        map.insert("key2".to_string(), json!("${cache.user.org_id}"));
+        map.insert("key3".to_string(), json!("${session.id}"));  // duplicate
+        let names = Placeholder::collect(&map);
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"session.id".to_string()));
+        assert!(names.contains(&"cache.user.org_id".to_string()));
     }
 
     #[test]
     fn test_collect_nested() {
-        let value = json!({
-            "level1": {
-                "level2": {
-                    "key": "${nested.value}"
-                }
-            },
-            "array": ["${array.item1}", "${array.item2}"]
-        });
-        let names = Placeholder::collect(&value);
-        // Order depends on Object iteration, just check all are present
+        let mut map = HashMap::new();
+        map.insert("level1".to_string(), json!({
+            "level2": {
+                "key": "${nested.value}"
+            }
+        }));
+        map.insert("array".to_string(), json!(["${array.item1}", "${array.item2}"]));
+        let names = Placeholder::collect(&map);
+        // Order depends on HashMap iteration, just check all are present
         assert_eq!(names.len(), 3);
         assert!(names.contains(&"nested.value".to_string()));
         assert!(names.contains(&"array.item1".to_string()));
@@ -216,10 +220,9 @@ mod tests {
 
     #[test]
     fn test_collect_no_placeholders() {
-        let value = json!({
-            "key": "plain text"
-        });
-        let names = Placeholder::collect(&value);
+        let mut map = HashMap::new();
+        map.insert("key".to_string(), json!("plain text"));
+        let names = Placeholder::collect(&map);
         assert!(names.is_empty());
     }
 }

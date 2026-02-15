@@ -40,11 +40,40 @@ impl<'a> State<'a> {
         self
     }
 
-    /// storeから取得した値から、要求された子フィールドを抽出
+    /// owner_pathを算出（YAMLで_loadが定義されているnodeのqualified path）
     ///
-    /// key="cache.user.org_id" で _store が "cache.user" レベルで定義されている場合、
-    /// storeには user オブジェクト全体が保存されているため、"org_id" フィールドを抽出する。
-    /// config内のplaceholderを解決
+    /// _load.map の最初のキーから逆算する。
+    /// mapがない場合の挙動は is_load によって異なる:
+    /// - is_load = true (Load処理): called_key をそのまま返す
+    /// - is_load = false (Store処理): called_key の親パスを返す
+    fn get_owner_path(&self, meta: &HashMap<String, Value>, is_load: bool) -> DotString {
+        meta.get("_load")
+            .and_then(|v| v.as_object())
+            .and_then(|obj| obj.get("map"))
+            .and_then(|v| v.as_object())
+            .and_then(|map| map.keys().next())
+            .and_then(|qualified_key| {
+                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
+            })
+            .unwrap_or_else(|| {
+                if let Some(called_key) = self.called_keys.last() {
+                    if is_load {
+                        // Load処理: called_key そのまま
+                        DotString::new(called_key.as_str())
+                    } else {
+                        // Store処理: called_key の親パス
+                        if called_key.len() <= 1 {
+                            DotString::new("")
+                        } else {
+                            DotString::new(&called_key[..called_key.len() - 1].join("."))
+                        }
+                    }
+                } else {
+                    DotString::new("")
+                }
+            })
+    }
+
     fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
         let mut placeholder = Placeholder::new();
         let mut resolver = |placeholder_name: &str| -> Option<Value> {
@@ -67,7 +96,6 @@ impl<'a> StateTrait for State<'a> {
     fn get(&mut self, key: &str) -> Option<Value> {
         method_log!("State", "get", key);
 
-        // 再帰深度チェック
         if self.called_keys.len() >= self.max_recursion {
             eprintln!(
                 "State::get: max recursion depth ({}) reached for key '{}'",
@@ -76,10 +104,9 @@ impl<'a> StateTrait for State<'a> {
             return None;
         }
 
-        // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
-        // 1. インスタンスキャッシュをチェック（最優先）
+        // 1. check State.cache
         let current_key = self.called_keys.last().unwrap();
         if let Some(cached) = self.dot_accessor.get(&self.cache, current_key) {
             self.called_keys.pop();
@@ -94,7 +121,6 @@ impl<'a> StateTrait for State<'a> {
         }
 
         // 3. _load.client: State の場合は _store をスキップ
-        //    明示的なState参照は親の _store を使わない
         let has_state_client = meta.get("_load")
             .and_then(|v| v.as_object())
             .and_then(|obj| obj.get("client"))
@@ -109,33 +135,13 @@ impl<'a> StateTrait for State<'a> {
                         store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
                     // store_config 内の placeholder 名を収集
-                    let config_value = Value::Object(store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                    let _placeholder_names = Placeholder::collect(&config_value);
+                    let _placeholder_names = Placeholder::collect(&store_config);
 
                     // store_config 内の placeholder を解決
                     self.resolve_config_placeholders(&mut store_config);
 
                     if let Some(value) = self.store.get(&store_config) {
-                        // map の最初のキーから owner_path を逆算
-                        let owner_path = meta.get("_load")
-                            .and_then(|v| v.as_object())
-                            .and_then(|obj| obj.get("map"))
-                            .and_then(|v| v.as_object())
-                            .and_then(|map| map.keys().next())
-                            .and_then(|qualified_key| {
-                                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
-                            })
-                            .unwrap_or_else(|| {
-                                if let Some(called_key) = self.called_keys.last() {
-                                    if called_key.len() <= 1 {
-                                        DotString::new("")
-                                    } else {
-                                        DotString::new(&called_key[..called_key.len() - 1].join("."))
-                                    }
-                                } else {
-                                    DotString::new("")
-                                }
-                            });
+                        let owner_path = self.get_owner_path(&meta, false);
 
                         // owner_path で Manifest の静的値を cache にマージ
                         let manifest_value = self.manifest.get_value(&owner_path);
@@ -168,8 +174,7 @@ impl<'a> StateTrait for State<'a> {
                 }
 
                 // load_config 内の placeholder 名を収集
-                let config_value = Value::Object(load_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                let _placeholder_names = Placeholder::collect(&config_value);
+                let _placeholder_names = Placeholder::collect(&load_config);
 
                 // placeholder 解決
                 self.resolve_config_placeholders(&mut load_config);
@@ -210,23 +215,7 @@ impl<'a> StateTrait for State<'a> {
 
                     // Load 実行
                     if let Ok(loaded) = self.load.handle(&load_config) {
-                        // map の最初のキーから owner_path を逆算
-                        // declare-e L120-130: map から所有者キーを算出
-                        let owner_path = meta.get("_load")
-                            .and_then(|v| v.as_object())
-                            .and_then(|obj| obj.get("map"))
-                            .and_then(|v| v.as_object())
-                            .and_then(|map| map.keys().next())
-                            .and_then(|qualified_key| {
-                                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
-                            })
-                            .unwrap_or_else(|| {
-                                if let Some(called_key) = self.called_keys.last() {
-                                    DotString::new(called_key.as_str())
-                                } else {
-                                    DotString::new("")
-                                }
-                            });
+                        let owner_path = self.get_owner_path(&meta, true);
 
                         // owner_path で Manifest の静的値を cache にマージ
                         let manifest_value = self.manifest.get_value(&owner_path);
@@ -244,8 +233,7 @@ impl<'a> StateTrait for State<'a> {
                                     .collect();
 
                                 // store_config 内の placeholder 名を収集
-                                let config_value = Value::Object(store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                                let _placeholder_names = Placeholder::collect(&config_value);
+                                let _placeholder_names = Placeholder::collect(&store_config);
 
                                 // store_config の placeholder も解決
                                 self.resolve_config_placeholders(&mut store_config);
@@ -303,34 +291,13 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // store_config 内の placeholder 名を収集
-        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let _placeholder_names = Placeholder::collect(&config_value);
+        let _placeholder_names = Placeholder::collect(&store_config_map);
 
         // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
-        // 1. owner_path を特定（_store が定義されているレベル）
-        // map の最初のキーから owner_path を逆算
-        // declare-engine L120-130: map から所有者キーを算出
-        let owner_path = meta.get("_load")
-            .and_then(|v| v.as_object())
-            .and_then(|obj| obj.get("map"))
-            .and_then(|v| v.as_object())
-            .and_then(|map| map.keys().next())
-            .and_then(|qualified_key| {
-                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
-            })
-            .unwrap_or_else(|| {
-                if let Some(called_key) = self.called_keys.last() {
-                    if called_key.len() <= 1 {
-                        DotString::new("")
-                    } else {
-                        DotString::new(&called_key[..called_key.len() - 1].join("."))
-                    }
-                } else {
-                    DotString::new("")
-                }
-            });
+        // 1. owner_path を算出
+        let owner_path = self.get_owner_path(&meta, false);
 
         // 2. cache に owner_path の値がなければ、Store から取得して cache にロード
         if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
@@ -358,7 +325,6 @@ impl<'a> StateTrait for State<'a> {
     fn delete(&mut self, key: &str) -> bool {
         method_log!("State", "delete", key);
 
-        // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
         // メタデータ取得
@@ -381,32 +347,13 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // store_config 内の placeholder 名を収集
-        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let _placeholder_names = Placeholder::collect(&config_value);
+        let _placeholder_names = Placeholder::collect(&store_config_map);
 
         // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
-        // 1. owner_path を特定（_store が定義されているレベル）
-        let owner_path = meta.get("_load")
-            .and_then(|v| v.as_object())
-            .and_then(|obj| obj.get("map"))
-            .and_then(|v| v.as_object())
-            .and_then(|map| map.keys().next())
-            .and_then(|qualified_key| {
-                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
-            })
-            .unwrap_or_else(|| {
-                if let Some(called_key) = self.called_keys.last() {
-                    if called_key.len() <= 1 {
-                        DotString::new("")
-                    } else {
-                        DotString::new(&called_key[..called_key.len() - 1].join("."))
-                    }
-                } else {
-                    DotString::new("")
-                }
-            });
+        // 1. owner_path を算出
+        let owner_path = self.get_owner_path(&meta, false);
 
         // 2. key が owner_path と同じ場合は親オブジェクト全体を削除
         if key == owner_path.as_str() {
@@ -487,8 +434,7 @@ impl<'a> StateTrait for State<'a> {
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         // 4. store_config 内の placeholder 名を収集
-        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let _placeholder_names = Placeholder::collect(&config_value);
+        let _placeholder_names = Placeholder::collect(&store_config_map);
 
         // 5. store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
