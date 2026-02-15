@@ -7,28 +7,23 @@ use crate::load::Load;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// State impl
-///
-/// depends on: Manifest YAML meta data(_state, _store, _load)
-/// func: placeholder resolution, self calling, store CRUD
 pub struct State<'a> {
     dot_accessor: DotMapAccessor,
     manifest: &'a mut dyn ManifestTrait,
     load: Load<'a>,
     store: Store<'a>,
     max_recursion: usize,
-    called_keys: Vec<DotString>,  // call stack の DotString（recursion_depth は len() で代用）
-    cache: Value,  // instance cache（single collection object）
+    called_keys: Vec<DotString>,
+    cache: Value,
 }
 
 impl<'a> State<'a> {
-    /// create a new State instance
     pub fn new(manifest: &'a mut dyn ManifestTrait, load: Load<'a>) -> Self {
         Self {
             manifest,
             load,
             store: Store::new(),
-            max_recursion: 10,
+            max_recursion: 20,
             called_keys: Vec::new(),
             cache: Value::Object(serde_json::Map::new()),
             dot_accessor: DotMapAccessor::new(),
@@ -49,105 +44,22 @@ impl<'a> State<'a> {
     ///
     /// key="cache.user.org_id" で _store が "cache.user" レベルで定義されている場合、
     /// storeには user オブジェクト全体が保存されているため、"org_id" フィールドを抽出する。
-    fn extract_field_from_value(key: &DotString, value: Value, meta: &HashMap<String, Value>) -> Value {
-        // metaに _store が含まれている場合、直接マッチしたので値をそのまま返す
-        // （cache.user を取得した場合）
-        if let Some(store_meta) = meta.get("_store") {
-            if let Some(_store_obj) = store_meta.as_object() {
-                // _store の定義が継承でなく、このレベルで直接定義されているか確認
-                // ここでは簡易的に、keyの最後の部分とvalueの構造で判断
-                // cache.user → value全体を返す
-                // cache.user.org_id → valueから org_id を抽出
-
-                if key.len() < 2 {
-                    return value;
-                }
-
-                // 最後の部分が value の中のフィールドとして存在するか確認
-                let last_field = &key[key.len() - 1];
-                if let Some(field_value) = value.get(last_field) {
-                    // 子フィールドが存在する → 抽出して返す
-                    return field_value.clone();
-                }
-            }
-        }
-
-        // それ以外は値をそのまま返す
-        value
-    }
-
-    /// placeholder を解決
-    ///
-    /// Manifestが既に完全修飾パス(manifestDir path)を返すため、
-    /// nameをそのままkeyとして使用
-    fn resolve_placeholder(&mut self, name: &str) -> Option<Value> {
-        // キャッシュを優先チェック（高速パス）
-        let name_dot = DotString::new(name);
-        if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
-            return Some(cached.clone());
-        }
-
-        // キャッシュミス時はフル処理
-        self.get(name)
-    }
-
-    /// load_config 内の placeholder を解決
-    fn resolve_load_config(&mut self, load_config: &HashMap<String, Value>) -> HashMap<String, Value> {
-        let config_value = Value::Object(load_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-        let mut resolver = |placeholder_name: &str| -> Option<Value> {
-            self.resolve_placeholder(placeholder_name)
-        };
+    /// config内のplaceholderを解決
+    fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
         let mut placeholder = Placeholder::new();
-        let resolved_value = placeholder.map(config_value, &mut resolver);
-        if let Value::Object(map) = resolved_value {
-            map.into_iter().collect()
-        } else {
-            HashMap::new()
-        }
-    }
-
-    /// _store 設定から値を取得
-
-    /// 親キーを取得
-    ///
-    /// "cache.user.org_id" → "cache.user"
-    /// "cache.user" → "cache"
-    /// "cache" → ""
-    /// Manifest の静的値とマージ
-    ///
-    /// Load/Store から取得した値に Manifest の静的値をマージする。
-    /// Load/Store の値が優先される（後から上書き）。
-    ///
-    /// # Arguments
-    /// * `manifest_key` - Manifest から取得するキー
-    /// * `data` - Load/Store から取得した値
-    ///
-    /// # Returns
-    /// マージ後の値（data が Object でない場合はそのまま返す）
-    fn merge_with_manifest_static_values(&mut self, manifest_key: &str, data: Value) -> Value {
-        // data が Object でない場合はマージ不要
-        let Value::Object(data_obj) = data else {
-            return data;
+        let mut resolver = |placeholder_name: &str| -> Option<Value> {
+            // cache優先
+            let name_dot = DotString::new(placeholder_name);
+            if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
+                return Some(cached.clone());
+            }
+            // cache miss → 再帰的にget()
+            self.get(placeholder_name)
         };
 
-        // Manifest から静的値を取得（メタデータとnullを除外）
-        let manifest_key_dotstring = DotString::new(manifest_key);
-        let manifest_value = self.manifest.get_value(&manifest_key_dotstring);
-
-        // Manifest の値が Object でない場合はマージ不要
-        let manifest_obj = match manifest_value {
-            Value::Object(obj) => obj,
-            Value::Null => return Value::Object(data_obj),
-            _ => return Value::Object(data_obj),
-        };
-
-        // Manifest の静的値を先に入れ、data で上書き（data が優先）
-        let mut merged = manifest_obj.clone();
-        for (key, value) in data_obj {
-            merged.insert(key, value);
+        for (_, v) in config.iter_mut() {
+            placeholder.process(v, &mut resolver);
         }
-
-        Value::Object(merged)
     }
 }
 
@@ -193,56 +105,51 @@ impl<'a> StateTrait for State<'a> {
         if !has_state_client {
             if let Some(store_config_value) = meta.get("_store") {
                 if let Some(store_config_obj) = store_config_value.as_object() {
-                    let store_config: HashMap<String, Value> =
+                    let mut store_config: HashMap<String, Value> =
                         store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-                    // store_config 内の placeholder を解決
-                    let resolved_store_config = self.resolve_load_config(&store_config);
+                    // store_config 内の placeholder 名を収集
+                    let config_value = Value::Object(store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                    let _placeholder_names = Placeholder::collect(&config_value);
 
-                    if let Some(value) = self.store.get(&resolved_store_config) {
-                        // map の最初のキーから owner_key を逆算
-                        let owner_key = meta.get("_load")
+                    // store_config 内の placeholder を解決
+                    self.resolve_config_placeholders(&mut store_config);
+
+                    if let Some(value) = self.store.get(&store_config) {
+                        // map の最初のキーから owner_path を逆算
+                        let owner_path = meta.get("_load")
                             .and_then(|v| v.as_object())
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| {
-                                let dot = DotString::new(first_key);
-                                if dot.len() <= 1 {
-                                    String::new()
-                                } else {
-                                    dot[..dot.len() - 1].join(".")
-                                }
+                            .and_then(|qualified_key| {
+                                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
                             })
                             .unwrap_or_else(|| {
-                                if let Some(current_key) = self.called_keys.last() {
-                                    if current_key.len() <= 1 {
-                                        String::new()
+                                if let Some(called_key) = self.called_keys.last() {
+                                    if called_key.len() <= 1 {
+                                        DotString::new("")
                                     } else {
-                                        current_key[..current_key.len() - 1].join(".")
+                                        DotString::new(&called_key[..called_key.len() - 1].join("."))
                                     }
                                 } else {
-                                    String::new()
+                                    DotString::new("")
                                 }
                             });
 
-                        // owner_key で Manifest の静的値とマージ
-                        let merged_value = self.merge_with_manifest_static_values(&owner_key, value);
+                        // owner_path で Manifest の静的値を cache にマージ
+                        let manifest_value = self.manifest.get_value(&owner_path);
+                        DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
 
-                        // owner_key で cache にマージ
-                        let owner_key_dot = DotString::new(&owner_key);
-                        DotMapAccessor::merge(&mut self.cache, &owner_key_dot, merged_value.clone());
+                        // owner_path で Store値を cache にマージ (上書き)
+                        DotMapAccessor::merge(&mut self.cache, &owner_path, value);
 
                         // 要求されたフィールドを抽出
-                        let extracted = if key == owner_key {
-                            merged_value
-                        } else {
-                            let current_key = self.called_keys.last().unwrap();
-                            Self::extract_field_from_value(current_key, merged_value, &meta)
-                        };
+                        let called_key = self.called_keys.last().unwrap();
+                        let extracted = self.dot_accessor.get(&self.cache, called_key).cloned();
 
                         self.called_keys.pop();
-                        return Some(extracted);
+                        return extracted;
                     }
                 }
             }
@@ -251,7 +158,7 @@ impl<'a> StateTrait for State<'a> {
         // 5. miss時は自動ロード
         let result = if let Some(load_config_value) = meta.get("_load") {
             if let Some(load_config_obj) = load_config_value.as_object() {
-                let load_config: HashMap<String, Value> =
+                let mut load_config: HashMap<String, Value> =
                     load_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
                 // client が無い場合は自動ロードしない
@@ -260,16 +167,20 @@ impl<'a> StateTrait for State<'a> {
                     return None;
                 }
 
+                // load_config 内の placeholder 名を収集
+                let config_value = Value::Object(load_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                let _placeholder_names = Placeholder::collect(&config_value);
+
                 // placeholder 解決
-                let mut resolved_config = self.resolve_load_config(&load_config);
+                self.resolve_config_placeholders(&mut load_config);
 
                 // client: State の場合は key の値を直接返す（State内参照）
-                let client_value = resolved_config.get("client").and_then(|v| v.as_str());
+                let client_value = load_config.get("client").and_then(|v| v.as_str());
 
                 if client_value == Some("State") {
                     // _load.key の値を返す（placeholder 解決済みの値）
-                    if let Some(key_value) = resolved_config.get("key") {
-                        // key_value は既に resolve_load_config で値に解決されている
+                    if let Some(key_value) = load_config.get("key") {
+                        // key_value は既にplaceholder解決済み
                         // インスタンスキャッシュに保存
                         let current_key = self.called_keys.last().unwrap();
                         DotMapAccessor::set(&mut self.cache, current_key, key_value.clone());
@@ -280,77 +191,75 @@ impl<'a> StateTrait for State<'a> {
                     self.called_keys.pop();
                     None
                 } else {
-                    // Load に渡す前に map を denormalize（絶対パス → 相対パス）
-                    if let Some(map_value) = resolved_config.get("map") {
+                    // Load に渡す前に map を unqualify（qualified path → relative field name）
+                    if let Some(map_value) = load_config.get("map") {
                         if let Value::Object(map_obj) = map_value {
-                            let mut denormalized_map = serde_json::Map::new();
-                            for (absolute_key, db_column) in map_obj {
-                                // 絶対パスから最後のセグメントを抽出（相対フィールド名）
-                                let dot_key = DotString::new(absolute_key);
-                                if dot_key.len() > 0 {
-                                    let relative_key = &dot_key[dot_key.len() - 1];
-                                    denormalized_map.insert(relative_key.to_string(), db_column.clone());
+                            let mut unqualified_map = serde_json::Map::new();
+                            for (qualified_key, db_column) in map_obj {
+                                // qualified pathから最後のセグメントを抽出（相対フィールド名）
+                                if let Some(pos) = qualified_key.rfind('.') {
+                                    let field_name = &qualified_key[pos + 1..];
+                                    unqualified_map.insert(field_name.to_string(), db_column.clone());
+                                } else {
+                                    unqualified_map.insert(qualified_key.clone(), db_column.clone());
                                 }
                             }
-                            resolved_config.insert("map".to_string(), Value::Object(denormalized_map));
+                            load_config.insert("map".to_string(), Value::Object(unqualified_map));
                         }
                     }
 
                     // Load 実行
-                    if let Ok(loaded) = self.load.handle(&resolved_config) {
-                        // map の最初のキーから owner_key を逆算
+                    if let Ok(loaded) = self.load.handle(&load_config) {
+                        // map の最初のキーから owner_path を逆算
                         // declare-e L120-130: map から所有者キーを算出
-                        let owner_key = meta.get("_load")
+                        let owner_path = meta.get("_load")
                             .and_then(|v| v.as_object())
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| {
-                                let dot = DotString::new(first_key);
-                                if dot.len() <= 1 {
-                                    String::new()
-                                } else {
-                                    dot[..dot.len() - 1].join(".")
-                                }
+                            .and_then(|qualified_key| {
+                                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
                             })
                             .unwrap_or_else(|| {
-                                if let Some(current_key) = self.called_keys.last() {
-                                    current_key.as_str().to_string()
+                                if let Some(called_key) = self.called_keys.last() {
+                                    DotString::new(called_key.as_str())
                                 } else {
-                                    String::new()
+                                    DotString::new("")
                                 }
                             });
 
-                        // owner_key で Manifest の静的値とマージ
-                        let merged_loaded = self.merge_with_manifest_static_values(&owner_key, loaded);
+                        // owner_path で Manifest の静的値を cache にマージ
+                        let manifest_value = self.manifest.get_value(&owner_path);
+                        DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
 
-                        // ロード成功 → _store に保存（マージ後の値を保存）
+                        // owner_path で Load値を cache にマージ (上書き)
+                        DotMapAccessor::merge(&mut self.cache, &owner_path, loaded.clone());
+
+                        // ロード成功 → _store に保存（cache上のマージ済み値を保存）
                         if let Some(store_config_value) = meta.get("_store") {
                             if let Some(store_config_obj) = store_config_value.as_object() {
-                                let store_config: HashMap<String, Value> = store_config_obj
+                                let mut store_config: HashMap<String, Value> = store_config_obj
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect();
 
+                                // store_config 内の placeholder 名を収集
+                                let config_value = Value::Object(store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                                let _placeholder_names = Placeholder::collect(&config_value);
+
                                 // store_config の placeholder も解決
-                                let resolved_store_config = self.resolve_load_config(&store_config);
-                                self.store.set(&resolved_store_config, merged_loaded.clone(), None);
+                                self.resolve_config_placeholders(&mut store_config);
+
+                                // cacheから保存する値を取得
+                                if let Some(cache_value) = self.dot_accessor.get(&self.cache, &owner_path) {
+                                    self.store.set(&store_config, cache_value.clone(), None);
+                                }
                             }
                         }
 
-                        // owner_key で cache にマージ
-                        let owner_key_dot = DotString::new(&owner_key);
-                        DotMapAccessor::merge(&mut self.cache, &owner_key_dot, merged_loaded.clone());
-
                         // 要求されたフィールドを抽出して返す
-                        if key == owner_key {
-                            // 親辞書そのものを取得した場合
-                            Some(merged_loaded)
-                        } else {
-                            // 子フィールドを取得した場合
-                            let current_key = self.called_keys.last().unwrap();
-                            Some(Self::extract_field_from_value(current_key, merged_loaded, &meta))
-                        }
+                        let called_key = self.called_keys.last().unwrap();
+                        self.dot_accessor.get(&self.cache, called_key).cloned()
                     } else {
                         None
                     }
@@ -390,59 +299,57 @@ impl<'a> StateTrait for State<'a> {
             }
         };
 
-        let store_config_map: HashMap<String, Value> =
+        let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(&store_config_map);
+        // store_config 内の placeholder 名を収集
+        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        let _placeholder_names = Placeholder::collect(&config_value);
 
-        // 1. owner_key を特定（_store が定義されているレベル）
-        // map の最初のキーから owner_key を逆算
+        // store_config 内の placeholder 解決
+        self.resolve_config_placeholders(&mut store_config_map);
+
+        // 1. owner_path を特定（_store が定義されているレベル）
+        // map の最初のキーから owner_path を逆算
         // declare-engine L120-130: map から所有者キーを算出
-        let owner_key = meta.get("_load")
+        let owner_path = meta.get("_load")
             .and_then(|v| v.as_object())
             .and_then(|obj| obj.get("map"))
             .and_then(|v| v.as_object())
             .and_then(|map| map.keys().next())
-            .map(|first_key| {
-                let dot = DotString::new(first_key);
-                if dot.len() <= 1 {
-                    String::new()
-                } else {
-                    dot[..dot.len() - 1].join(".")
-                }
+            .and_then(|qualified_key| {
+                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
             })
             .unwrap_or_else(|| {
-                if let Some(current_key) = self.called_keys.last() {
-                    if current_key.len() <= 1 {
-                        String::new()
+                if let Some(called_key) = self.called_keys.last() {
+                    if called_key.len() <= 1 {
+                        DotString::new("")
                     } else {
-                        current_key[..current_key.len() - 1].join(".")
+                        DotString::new(&called_key[..called_key.len() - 1].join("."))
                     }
                 } else {
-                    String::new()
+                    DotString::new("")
                 }
             });
 
-        // 2. cache に owner_key の値がなければ、Store から取得して cache にロード
-        let owner_key_dot = DotString::new(&owner_key);
-        if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
-            if let Some(store_value) = self.store.get(&resolved_store_config) {
-                DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
+        // 2. cache に owner_path の値がなければ、Store から取得して cache にロード
+        if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
+            if let Some(store_value) = self.store.get(&store_config_map) {
+                DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
             }
         }
 
         // 3. cache 上で新しい値を設定（DotMapAccessor が全ての作業を行う）
-        let current_key = self.called_keys.last().unwrap();
-        DotMapAccessor::set(&mut self.cache, current_key, value);
+        let called_key = self.called_keys.last().unwrap();
+        DotMapAccessor::set(&mut self.cache, called_key, value);
 
-        // 4. cache から owner_key の親オブジェクト全体を取得
-        let store_value = self.dot_accessor.get(&self.cache, &owner_key_dot)
+        // 4. cache から owner_path の親オブジェクト全体を取得
+        let store_value = self.dot_accessor.get(&self.cache, &owner_path)
             .cloned()
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
         // 5. 親オブジェクト全体を _store に保存
-        let result = self.store.set(&resolved_store_config, store_value, ttl);
+        let result = self.store.set(&store_config_map, store_value, ttl);
 
         self.called_keys.pop();
         result
@@ -470,55 +377,53 @@ impl<'a> StateTrait for State<'a> {
             }
         };
 
-        let store_config_map: HashMap<String, Value> =
+        let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(&store_config_map);
+        // store_config 内の placeholder 名を収集
+        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        let _placeholder_names = Placeholder::collect(&config_value);
 
-        // 1. owner_key を特定（_store が定義されているレベル）
-        let owner_key = meta.get("_load")
+        // store_config 内の placeholder 解決
+        self.resolve_config_placeholders(&mut store_config_map);
+
+        // 1. owner_path を特定（_store が定義されているレベル）
+        let owner_path = meta.get("_load")
             .and_then(|v| v.as_object())
             .and_then(|obj| obj.get("map"))
             .and_then(|v| v.as_object())
             .and_then(|map| map.keys().next())
-            .map(|first_key| {
-                let dot = DotString::new(first_key);
-                if dot.len() <= 1 {
-                    String::new()
-                } else {
-                    dot[..dot.len() - 1].join(".")
-                }
+            .and_then(|qualified_key| {
+                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
             })
             .unwrap_or_else(|| {
-                if let Some(current_key) = self.called_keys.last() {
-                    if current_key.len() <= 1 {
-                        String::new()
+                if let Some(called_key) = self.called_keys.last() {
+                    if called_key.len() <= 1 {
+                        DotString::new("")
                     } else {
-                        current_key[..current_key.len() - 1].join(".")
+                        DotString::new(&called_key[..called_key.len() - 1].join("."))
                     }
                 } else {
-                    String::new()
+                    DotString::new("")
                 }
             });
 
-        // 2. key が owner_key と同じ場合は親オブジェクト全体を削除
-        let owner_key_dot = DotString::new(&owner_key);
-        if key == owner_key {
+        // 2. key が owner_path と同じ場合は親オブジェクト全体を削除
+        if key == owner_path.as_str() {
             // 親オブジェクト全体を削除
-            let result = self.store.delete(&resolved_store_config);
+            let result = self.store.delete(&store_config_map);
             if result {
-                let current_key = self.called_keys.last().unwrap();
-                DotMapAccessor::unset(&mut self.cache, current_key);
+                let called_key = self.called_keys.last().unwrap();
+                DotMapAccessor::unset(&mut self.cache, called_key);
             }
             self.called_keys.pop();
             return result;
         }
 
-        // 3. 子フィールドの削除: cache に owner_key の値がなければ、Store から取得して cache にロード
-        if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
-            if let Some(store_value) = self.store.get(&resolved_store_config) {
-                DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
+        // 3. 子フィールドの削除: cache に owner_path の値がなければ、Store から取得して cache にロード
+        if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
+            if let Some(store_value) = self.store.get(&store_config_map) {
+                DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
             }
         }
 
@@ -526,16 +431,16 @@ impl<'a> StateTrait for State<'a> {
         let cache_backup = self.cache.clone();
 
         // 5. cache 上で子フィールドを削除（DotMapAccessor が全ての作業を行う）
-        let current_key = self.called_keys.last().unwrap();
-        DotMapAccessor::unset(&mut self.cache, current_key);
+        let called_key = self.called_keys.last().unwrap();
+        DotMapAccessor::unset(&mut self.cache, called_key);
 
-        // 6. cache から owner_key の親オブジェクト全体を取得
-        let store_value = self.dot_accessor.get(&self.cache, &owner_key_dot)
+        // 6. cache から owner_path の親オブジェクト全体を取得
+        let store_value = self.dot_accessor.get(&self.cache, &owner_path)
             .cloned()
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
         // 7. 親オブジェクト全体を _store に保存
-        let result = self.store.set(&resolved_store_config, store_value, None);
+        let result = self.store.set(&store_config_map, store_value, None);
 
         // 8. 失敗時はロールバック
         if !result {
@@ -543,7 +448,7 @@ impl<'a> StateTrait for State<'a> {
         }
 
         // TODO: 空オブジェクトになった場合の処理（保留）
-        // 全ての子フィールドを削除して空配列になった時に owner_key も削除する
+        // 全ての子フィールドを削除して空配列になった時に owner_path も削除する
 
         self.called_keys.pop();
         result
@@ -578,14 +483,18 @@ impl<'a> StateTrait for State<'a> {
             }
         };
 
-        let store_config_map: HashMap<String, Value> =
+        let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // 4. store_config 内の placeholder 解決
-        let resolved_store_config = self.resolve_load_config(&store_config_map);
+        // 4. store_config 内の placeholder 名を収集
+        let config_value = Value::Object(store_config_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+        let _placeholder_names = Placeholder::collect(&config_value);
 
-        // 5. _store から値を取得（自動ロードなし）
-        let result = self.store.get(&resolved_store_config).is_some();
+        // 5. store_config 内の placeholder 解決
+        self.resolve_config_placeholders(&mut store_config_map);
+
+        // 6. _store から値を取得（自動ロードなし）
+        let result = self.store.get(&store_config_map).is_some();
 
         self.called_keys.pop();
         result

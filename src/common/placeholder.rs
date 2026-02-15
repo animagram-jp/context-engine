@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde_json::Value;
+use std::collections::HashSet;
 
 /// Placeholder resolver for ${...} patterns in JSON values
 ///
@@ -26,6 +27,58 @@ impl Placeholder {
         self.missing_keys.clear();
     }
 
+    /// Collect all placeholder names from a value (unique list)
+    ///
+    /// Walks through the value and extracts all ${key} patterns.
+    /// Returns unique placeholder names in the order they appear.
+    ///
+    /// # Examples
+    /// ```
+    /// use state_engine::common::Placeholder;
+    /// use serde_json::json;
+    ///
+    /// let value = json!({
+    ///     "key1": "user:${session.id}",
+    ///     "key2": "tenant:${cache.user.org_id}",
+    ///     "key3": "${session.id}"  // duplicate
+    /// });
+    ///
+    /// let names = Placeholder::collect(&value);
+    /// assert_eq!(names, vec!["session.id", "cache.user.org_id"]);
+    /// ```
+    pub fn collect(value: &Value) -> Vec<String> {
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        let re = Regex::new(r"\$\{([\w.]+)\}").unwrap();
+
+        fn walk(value: &Value, names: &mut Vec<String>, seen: &mut HashSet<String>, re: &Regex) {
+            match value {
+                Value::String(s) => {
+                    for cap in re.captures_iter(s) {
+                        let name = cap[1].to_string();
+                        if seen.insert(name.clone()) {
+                            names.push(name);
+                        }
+                    }
+                }
+                Value::Object(map) => {
+                    for v in map.values() {
+                        walk(v, names, seen, re);
+                    }
+                }
+                Value::Array(arr) => {
+                    for v in arr {
+                        walk(v, names, seen, re);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        walk(value, &mut names, &mut seen, &re);
+        names
+    }
+
     /// Map placeholders (${...}) to actual values using resolver callback
     ///
     /// Walks through all nodes and values, replaces ${key} patterns with resolved values.
@@ -42,7 +95,7 @@ impl Placeholder {
         value
     }
 
-    fn process<F>(&mut self, value: &mut Value, resolver: &mut F)
+    pub fn process<F>(&mut self, value: &mut Value, resolver: &mut F)
     where
         F: FnMut(&str) -> Option<Value>,
     {
@@ -104,5 +157,69 @@ impl Placeholder {
 impl Default for Placeholder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_collect_simple() {
+        let value = json!({
+            "key": "user:${session.id}"
+        });
+        let names = Placeholder::collect(&value);
+        assert_eq!(names, vec!["session.id"]);
+    }
+
+    #[test]
+    fn test_collect_multiple() {
+        let value = json!({
+            "key1": "${session.id}",
+            "key2": "${cache.user.org_id}",
+            "key3": "prefix:${connection.host}:suffix"
+        });
+        let names = Placeholder::collect(&value);
+        assert_eq!(names, vec!["session.id", "cache.user.org_id", "connection.host"]);
+    }
+
+    #[test]
+    fn test_collect_duplicates() {
+        let value = json!({
+            "key1": "${session.id}",
+            "key2": "${cache.user.org_id}",
+            "key3": "${session.id}"  // duplicate
+        });
+        let names = Placeholder::collect(&value);
+        assert_eq!(names, vec!["session.id", "cache.user.org_id"]);
+    }
+
+    #[test]
+    fn test_collect_nested() {
+        let value = json!({
+            "level1": {
+                "level2": {
+                    "key": "${nested.value}"
+                }
+            },
+            "array": ["${array.item1}", "${array.item2}"]
+        });
+        let names = Placeholder::collect(&value);
+        // Order depends on Object iteration, just check all are present
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"nested.value".to_string()));
+        assert!(names.contains(&"array.item1".to_string()));
+        assert!(names.contains(&"array.item2".to_string()));
+    }
+
+    #[test]
+    fn test_collect_no_placeholders() {
+        let value = json!({
+            "key": "plain text"
+        });
+        let names = Placeholder::collect(&value);
+        assert!(names.is_empty());
     }
 }

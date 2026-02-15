@@ -1,4 +1,4 @@
-// Placeholder normalization integration tests
+// Placeholder qualification integration tests
 // PHP版 MainTest.php の testPlaceholderNormalization に対応
 
 use state_engine::manifest::Manifest;
@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn test_placeholder_normalization_cross_file_reference() {
+fn test_placeholder_qualification_cross_file_reference() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/placeholder_norm");
     fs::create_dir_all(&manifest_dir).unwrap();
@@ -87,7 +87,7 @@ user:
 }
 
 #[test]
-fn test_placeholder_normalization_relative_path() {
+fn test_placeholder_qualification_relative_path() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/placeholder_norm2");
     fs::create_dir_all(&manifest_dir).unwrap();
@@ -134,7 +134,7 @@ cache:
 }
 
 #[test]
-fn test_placeholder_normalization_file_root_reference() {
+fn test_placeholder_qualification_file_root_reference() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/placeholder_norm3");
     fs::create_dir_all(&manifest_dir).unwrap();

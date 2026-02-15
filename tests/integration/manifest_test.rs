@@ -244,7 +244,7 @@ fn test_manifest_connection_tenant() {
 }
 
 #[test]
-fn test_manifest_get_meta_absolute_path_normalization_for_load_map() {
+fn test_manifest_get_meta_qualified_path_for_load_map() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
