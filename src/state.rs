@@ -77,12 +77,12 @@ impl<'a> State<'a> {
     fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
         let mut placeholder = Placeholder::new();
         let mut resolver = |placeholder_name: &str| -> Option<Value> {
-            // cache優先
+
             let name_dot = DotString::new(placeholder_name);
             if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
                 return Some(cached.clone());
             }
-            // cache miss → 再帰的にget()
+
             self.get(placeholder_name)
         };
 
