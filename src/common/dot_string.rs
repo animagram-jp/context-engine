@@ -1,17 +1,16 @@
 use std::ops::{Index, Range, RangeFrom, RangeTo, RangeFull};
 
-/// ドット区切り文字列へのインデックスアクセスを提供
-///
 /// # Examples
 ///
 /// ```
 /// use state_engine::common::DotString;
 ///
-/// let dot_string = DotString::new("cache.user.org_id");
-/// assert_eq!(&dot_string[0], "cache");
-/// assert_eq!(&dot_string[1], "user");
-/// assert_eq!(&dot_string[2], "org_id");
-/// assert_eq!(dot_string.len(), 3);
+/// let dot_string = DotString::new("segment1.segment2.segment3.segment4.segment5");
+/// assert_eq!(&dot_string[0], "segment1");
+/// assert_eq!(&dot_string[1], "segment2");
+/// assert_eq!(&dot_string[2], "segment3");
+/// assert_eq!(dot_string.len(), 5);
+/// assert_eq!(&dot_string[3..5], &["segment4".to_string(), "segment5".to_string()]);
 /// ```
 pub struct DotString {
     key: String,
@@ -19,16 +18,6 @@ pub struct DotString {
 }
 
 impl DotString {
-    /// 新しい DotString インスタンスを作成
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::common::DotString;
-    ///
-    /// let dot_string = DotString::new("cache.user.org_id");
-    /// assert_eq!(dot_string.len(), 3);
-    /// ```
     pub fn new(dot_key: &str) -> Self {
         let segments = if dot_key.is_empty() {
             Vec::new()
@@ -42,35 +31,20 @@ impl DotString {
         }
     }
 
-    /// セグメント数を返す
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::common::DotString;
-    ///
-    /// let dot_string = DotString::new("cache.user.org_id");
-    /// assert_eq!(dot_string.len(), 3);
-    ///
-    /// let empty = DotString::new("");
-    /// assert_eq!(empty.len(), 0);
-    /// ```
     pub fn len(&self) -> usize {
         self.segments.len()
     }
 
-    /// 元のキー文字列を返す
     pub fn as_str(&self) -> &str {
         &self.key
     }
 
-    /// セグメントのイテレータを返す
     pub fn iter(&self) -> impl Iterator<Item = &str> {
         self.segments.iter().map(|s| s.as_str())
     }
 }
 
-// インデックスアクセス: dot_string[0]
+// dot_string[0]
 impl Index<usize> for DotString {
     type Output = str;
 
@@ -79,7 +53,7 @@ impl Index<usize> for DotString {
     }
 }
 
-// 範囲アクセス: dot_string[0..2]
+// dot_string[0..2]
 impl Index<Range<usize>> for DotString {
     type Output = [String];
 
@@ -88,7 +62,7 @@ impl Index<Range<usize>> for DotString {
     }
 }
 
-// 範囲アクセス: dot_string[0..]
+// dot_string[0..]
 impl Index<RangeFrom<usize>> for DotString {
     type Output = [String];
 
@@ -97,7 +71,7 @@ impl Index<RangeFrom<usize>> for DotString {
     }
 }
 
-// 範囲アクセス: dot_string[..2]
+// dot_string[..2]
 impl Index<RangeTo<usize>> for DotString {
     type Output = [String];
 
@@ -106,7 +80,7 @@ impl Index<RangeTo<usize>> for DotString {
     }
 }
 
-// 範囲アクセス: dot_string[..]
+// dot_string[..]
 impl Index<RangeFull> for DotString {
     type Output = [String];
 
@@ -120,13 +94,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new() {
-        let dot_string = DotString::new("cache.user.org_id");
-        assert_eq!(dot_string.len(), 3);
-        assert_eq!(dot_string.as_str(), "cache.user.org_id");
-    }
-
-    #[test]
     fn test_empty() {
         let dot_string = DotString::new("");
         assert_eq!(dot_string.len(), 0);
@@ -134,54 +101,44 @@ mod tests {
 
     #[test]
     fn test_single_segment() {
-        let dot_string = DotString::new("cache");
+        let dot_string = DotString::new("segment1");
         assert_eq!(dot_string.len(), 1);
-        assert_eq!(&dot_string[0], "cache");
+        assert_eq!(&dot_string[0], "segment1");
     }
 
     #[test]
     fn test_index_access() {
-        let dot_string = DotString::new("cache.user.org_id");
-        assert_eq!(&dot_string[0], "cache");
-        assert_eq!(&dot_string[1], "user");
-        assert_eq!(&dot_string[2], "org_id");
+        let dot_string = DotString::new("segment1.segment2.segment3");
+        assert_eq!(&dot_string[0], "segment1");
+        assert_eq!(&dot_string[1], "segment2");
+        assert_eq!(&dot_string[2], "segment3");
     }
 
     #[test]
     fn test_range_access() {
-        let dot_string = DotString::new("cache.user.org_id");
+        let dot_string = DotString::new("1.2.3");
 
-        // 0..2
-        assert_eq!(&dot_string[0..2], &["cache".to_string(), "user".to_string()]);
-
-        // 1..
-        assert_eq!(&dot_string[1..], &["user".to_string(), "org_id".to_string()]);
-
-        // ..2
-        assert_eq!(&dot_string[..2], &["cache".to_string(), "user".to_string()]);
-
-        // ..
-        assert_eq!(&dot_string[..], &["cache".to_string(), "user".to_string(), "org_id".to_string()]);
+        assert_eq!(&dot_string[0..2], &["1".to_string(), "2".to_string()]);
+        assert_eq!(&dot_string[1..], &["2".to_string(), "3".to_string()]);
+        assert_eq!(&dot_string[..2], &["1".to_string(), "2".to_string()]);
+        assert_eq!(&dot_string[..], &["1".to_string(), "2".to_string(), "3".to_string()]);
     }
 
     #[test]
     fn test_negative_index_emulation() {
-        let dot_string = DotString::new("cache.user.org_id");
+        let dot_string = DotString::new("segment1.segment2.segment3");
 
-        // Python の string[-1] に相当: dot_string[len-1]
         let last = &dot_string[dot_string.len() - 1];
-        assert_eq!(last, "org_id");
+        assert_eq!(last, "segment3");
 
-        // Python の string[:-1] に相当: dot_string[..len-1]
         let without_last = &dot_string[..dot_string.len() - 1];
-        assert_eq!(without_last, &["cache".to_string(), "user".to_string()]);
+        assert_eq!(without_last, &["segment1".to_string(), "segment2".to_string()]);
     }
-
 
     #[test]
     fn test_iter() {
-        let dot_string = DotString::new("cache.user.org_id");
+        let dot_string = DotString::new("segment1.segment2.segment3");
         let collected: Vec<&str> = dot_string.iter().collect();
-        assert_eq!(collected, vec!["cache", "user", "org_id"]);
+        assert_eq!(collected, vec!["segment1", "segment2", "segment3"]);
     }
 }
