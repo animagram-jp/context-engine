@@ -30,7 +30,7 @@ impl Placeholder {
     /// Collect all placeholder names from a HashMap (unique list)
     ///
     /// Walks through the HashMap values and extracts all ${key} patterns.
-    /// Returns unique placeholder names in the order they appear.
+    /// Returns unique placeholder names (order depends on HashMap iteration).
     ///
     /// # Examples
     /// ```
@@ -44,7 +44,9 @@ impl Placeholder {
     /// map.insert("key3".to_string(), json!("${session.id}"));  // duplicate
     ///
     /// let names = Placeholder::collect(&map);
-    /// assert_eq!(names, vec!["session.id", "cache.user.org_id"]);
+    /// assert_eq!(names.len(), 2);
+    /// assert!(names.contains(&"session.id".to_string()));
+    /// assert!(names.contains(&"cache.user.org_id".to_string()));
     /// ```
     pub fn collect(map: &std::collections::HashMap<String, Value>) -> Vec<String> {
         let mut names = Vec::new();

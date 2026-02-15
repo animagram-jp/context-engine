@@ -77,16 +77,14 @@ impl<'a> State<'a> {
     fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
         let mut placeholder = Placeholder::new();
         let mut resolver = |placeholder_name: &str| -> Option<Value> {
-
             let name_dot = DotString::new(placeholder_name);
             if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
                 return Some(cached.clone());
             }
-
             self.get(placeholder_name)
         };
 
-        for (_, v) in config.iter_mut() {
+        for v in config.values_mut() {
             placeholder.process(v, &mut resolver);
         }
     }
@@ -147,8 +145,15 @@ impl<'a> StateTrait for State<'a> {
                         let manifest_value = self.manifest.get_value(&owner_path);
                         DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
 
-                        // owner_path で Store値を cache にマージ (上書き)
-                        DotMapAccessor::merge(&mut self.cache, &owner_path, value);
+                        // Store値のマージ方法を値の型によって変える
+                        if value.is_object() {
+                            // Object の場合: owner_path にマージ（上書き）
+                            DotMapAccessor::merge(&mut self.cache, &owner_path, value);
+                        } else {
+                            // Scalar の場合: called_key に直接セット
+                            let called_key = self.called_keys.last().unwrap();
+                            DotMapAccessor::set(&mut self.cache, called_key, value);
+                        }
 
                         // 要求されたフィールドを抽出
                         let called_key = self.called_keys.last().unwrap();
