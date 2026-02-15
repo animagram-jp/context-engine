@@ -1,8 +1,9 @@
 // State impl
+use crate::method_log;
 use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
-use crate::common::{DotMapAccessor, DotString, PlaceholderResolver};
+use crate::common::{DotString, DotMapAccessor, Placeholder};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -100,7 +101,8 @@ impl<'a> State<'a> {
         let mut resolver = |placeholder_name: &str| -> Option<Value> {
             self.resolve_placeholder(placeholder_name)
         };
-        let resolved_value = PlaceholderResolver::resolve_typed(config_value, &mut resolver);
+        let mut placeholder = Placeholder::new();
+        let resolved_value = placeholder.map(config_value, &mut resolver);
         if let Value::Object(map) = resolved_value {
             map.into_iter().collect()
         } else {
@@ -256,6 +258,8 @@ impl<'a> State<'a> {
 
 impl<'a> StateTrait for State<'a> {
     fn get(&mut self, key: &str) -> Option<Value> {
+        method_log!("State", "get", key);
+
         // 再帰深度チェック
         if self.called_keys.len() >= self.max_recursion {
             eprintln!(
@@ -450,6 +454,8 @@ impl<'a> StateTrait for State<'a> {
     }
 
     fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
+        method_log!("State", "set", key);
+
         // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
@@ -519,6 +525,8 @@ impl<'a> StateTrait for State<'a> {
     }
 
     fn delete(&mut self, key: &str) -> bool {
+        method_log!("State", "delete", key);
+
         // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
@@ -607,6 +615,8 @@ impl<'a> StateTrait for State<'a> {
     }
 
     fn exists(&mut self, key: &str) -> bool {
+        method_log!("State", "exists", key);
+
         // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 

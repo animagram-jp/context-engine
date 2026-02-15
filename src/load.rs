@@ -1,7 +1,3 @@
-// Load - 自動ロード実装
-//
-// _load 設定に従って各種ソースからデータをロードする。
-
 use crate::ports::required::{
     DBClient, ENVClient, KVSClient,
     InMemoryClient,

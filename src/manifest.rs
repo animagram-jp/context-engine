@@ -1,10 +1,11 @@
 // Manifest impl
+use crate::method_log;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::common::{DotMapAccessor, DotString};
+use crate::common::{DotString, DotMapAccessor};
 use crate::ports::provided;
 
 pub struct Manifest {
@@ -26,6 +27,8 @@ impl Manifest {
     /// 形式: "filename.path.to.key"
     /// 例: "connection.common.host"
     pub fn get(&mut self, key: &str, default: Option<Value>) -> Value {
+        method_log!("Manifest", "get", key);
+
         let mut parts = key.splitn(2, '.');
         let file = parts.next().unwrap_or("").to_string();
         let path = parts.next().unwrap_or("").to_string();
@@ -62,6 +65,8 @@ impl Manifest {
     /// 指定されたキーのパス上のすべての_始まりキーを収集
     /// _load.mapのキーとplaceholderを完全修飾パスに変換
     pub fn get_meta(&mut self, key: &str) -> HashMap<String, Value> {
+        method_log!("Manifest", "get_meta", key);
+
         use regex::Regex;
 
         let mut parts = key.splitn(2, '.');
@@ -326,6 +331,7 @@ impl Manifest {
 
     /// キーから値のみを取得（メタデータと null を除く）
     pub fn get_value(&mut self, key: &DotString) -> Value {
+        method_log!("Manifest", "get_value", key.as_str());
         let key_str = key.as_str();
         let mut parts = key_str.splitn(2, '.');
         let file = parts.next().unwrap_or("").to_string();

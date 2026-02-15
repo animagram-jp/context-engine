@@ -8,7 +8,7 @@ pub mod load;
 pub mod state;
 
 // Re-export main types
-pub use common::{DotMapAccessor, DotString, PlaceholderResolver, LogFormat};
+pub use common::{DotMapAccessor, DotString, Placeholder, LogFormat};
 pub use manifest::Manifest;
 pub use ports::provided::State as StateTrait;
 pub use state::State;

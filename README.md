@@ -19,7 +19,7 @@ It behaves as described in YAML DSL.
 
 ## Provided Functions
 
-| Module | description | methods |
+| Mod | description | fun |
 |-------|------|---------|
 | **Manifest** | reads static YAMLs and returns processed obj | `get()`, `getMeta()` |
 | **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
@@ -168,14 +168,15 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       provided.rs     # library provides
       required.rs     # Library requires
 
-    common/           # library common modules (pure logic)
-      dot_array_accessor.rs
-      placeholder_resolver.rs
+    common/           # library common mod (pure logic)
+      dot_string.rs
+      dot_map_accessor.rs
+      placeholder.rs
       log_format.rs
 
     manifest.rs       # Manifest impl
     state.rs          # State impl
-    load.rs           # Load internal module
+    load.rs           # Load internal mod
 
   examples/
     manifest/         # manifest YAML examples

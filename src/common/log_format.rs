@@ -1,44 +1,43 @@
-// LogFormat - ログメッセージの統一フォーマット
-//
-// declare-engine の LogMethodCall trait と同等の機能を提供
-
 use serde_json::Value;
 
-/// ログメッセージのフォーマットユーティリティ
+/// # Examples
+/// ```
+/// use state_engine::common::log_format::LogFormat;
+///
+/// let method_message = LogFormat::method("State", "get", &["'key'".to_string()]);
+/// assert_eq!(method_message, "State::get('key')");
+/// let error_message = LogFormat::error("State", "get", "not found");
+/// assert_eq!(error_message, "State::get: not found");
+/// ```
 pub struct LogFormat;
 
 impl LogFormat {
-    /// メソッド呼び出しログを生成
-    ///
-    /// 例: `State::get('cache.user')`
-    ///
-    /// # Arguments
-    /// * `class` - クラス名
-    /// * `method` - メソッド名
-    /// * `args` - 引数のスライス
-    pub fn method_call(class: &str, method: &str, args: &[String]) -> String {
+
+    pub fn method(class: &str, method: &str, args: &[String]) -> String {
         let args_str = args.join(", ");
         format!("{}::{}({})", class, method, args_str)
     }
 
-    /// エラーログを生成
-    ///
-    /// 例: `State::get: metadata not found`
-    ///
-    /// # Arguments
-    /// * `class` - クラス名
-    /// * `method` - メソッド名
-    /// * `message` - エラーメッセージ
     pub fn error(class: &str, method: &str, message: &str) -> String {
         format!("{}::{}: {}", class, method, message)
     }
 
-    /// 引数を読みやすくフォーマット（declare-engine の formatArgs 相当）
+    /// Format JSON value for log output
     ///
-    /// - 文字列: 50文字で省略
-    /// - 配列: 要素数を表示
-    /// - オブジェクト: フィールド数を表示
-    /// - null/bool/数値: そのまま
+    /// # Examples
+    /// ```
+    /// use state_engine::common::log_format::LogFormat;
+    /// use serde_json::json;
+    ///
+    /// assert_eq!(LogFormat::format_arg(&json!("text")), "'text'");
+    /// assert_eq!(LogFormat::format_arg(&json!(42)), "42");
+    /// assert_eq!(LogFormat::format_arg(&json!(true)), "true");
+    /// assert_eq!(LogFormat::format_arg(&json!(null)), "null");
+    /// assert_eq!(LogFormat::format_arg(&json!([])), "[]");
+    /// assert_eq!(LogFormat::format_arg(&json!({})), "{}");
+    /// assert_eq!(LogFormat::format_arg(&json!([1, 2, 3])), "[3 items]");
+    /// assert_eq!(LogFormat::format_arg(&json!({"a": 1})), "{1 fields}");
+    /// ```
     pub fn format_arg(value: &Value) -> String {
         match value {
             Value::String(s) if s.len() > 50 => {
@@ -67,7 +66,14 @@ impl LogFormat {
         }
     }
 
-    /// 文字列引数をフォーマット
+    /// Format string argument for log output
+    ///
+    /// # Examples
+    /// ```
+    /// use state_engine::common::log_format::LogFormat;
+    ///
+    /// assert_eq!(LogFormat::format_str_arg("key"), "'key'");
+    /// ```
     pub fn format_str_arg(s: &str) -> String {
         if s.len() > 50 {
             format!("'{}'...", &s[..47])
@@ -77,17 +83,17 @@ impl LogFormat {
     }
 }
 
-/// ログマクロ: メソッド呼び出し
+/// Log macro: method call
 ///
 /// # Examples
 /// ```ignore
-/// use state_engine::log_method;
+/// use state_engine::method_log;
 ///
-/// log_method!("State", "get", "cache.user");
+/// method_log!("State", "get", "cache.user");
 /// // Logs: State::get('cache.user')
 /// ```
 #[macro_export]
-macro_rules! log_method {
+macro_rules! method_log {
     ($class:expr, $method:expr $(, $arg:expr)*) => {{
         #[cfg(feature = "logging")]
         {
@@ -96,22 +102,22 @@ macro_rules! log_method {
                     $crate::common::log_format::LogFormat::format_str_arg($arg),
                 )*
             ];
-            log::debug!("{}", $crate::common::log_format::LogFormat::method_call($class, $method, &args));
+            log::debug!("{}", $crate::common::log_format::LogFormat::method($class, $method, &args));
         }
     }};
 }
 
-/// ログマクロ: エラー
+/// Log macro: error
 ///
 /// # Examples
 /// ```ignore
-/// use state_engine::log_err;
+/// use state_engine::error_log;
 ///
-/// log_err!("State", "get", "metadata not found");
+/// error_log!("State", "get", "metadata not found");
 /// // Logs: State::get: metadata not found
 /// ```
 #[macro_export]
-macro_rules! log_err {
+macro_rules! error_log {
     ($class:expr, $method:expr, $msg:expr) => {{
         #[cfg(feature = "logging")]
         {
@@ -126,11 +132,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_method_call() {
-        let result = LogFormat::method_call("State", "get", &["'cache.user'".to_string()]);
-        assert_eq!(result, "State::get('cache.user')");
-
-        let result = LogFormat::method_call("State", "get", &[
+    fn test_method_multiple_args() {
+        let result = LogFormat::method("State", "get", &[
             "'cache.user'".to_string(),
             "null".to_string(),
         ]);
@@ -138,15 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn test_error() {
-        let result = LogFormat::error("State", "get", "metadata not found");
-        assert_eq!(result, "State::get: metadata not found");
-    }
-
-    #[test]
-    fn test_format_arg_string() {
-        assert_eq!(LogFormat::format_arg(&json!("hello")), "'hello'");
-
+    fn test_format_arg_long_string() {
         let long_str = "a".repeat(60);
         let result = LogFormat::format_arg(&json!(long_str));
         assert!(result.starts_with("'aaa"));
@@ -155,30 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_arg_array() {
-        assert_eq!(LogFormat::format_arg(&json!([])), "[]");
-        assert_eq!(LogFormat::format_arg(&json!([1, 2, 3])), "[3 items]");
-    }
-
-    #[test]
-    fn test_format_arg_object() {
-        assert_eq!(LogFormat::format_arg(&json!({})), "{}");
-        assert_eq!(LogFormat::format_arg(&json!({"a": 1, "b": 2})), "{2 fields}");
-    }
-
-    #[test]
-    fn test_format_arg_primitives() {
-        assert_eq!(LogFormat::format_arg(&json!(null)), "null");
-        assert_eq!(LogFormat::format_arg(&json!(true)), "true");
-        assert_eq!(LogFormat::format_arg(&json!(false)), "false");
-        assert_eq!(LogFormat::format_arg(&json!(42)), "42");
-        assert_eq!(LogFormat::format_arg(&json!(3.14)), "3.14");
-    }
-
-    #[test]
-    fn test_format_str_arg() {
-        assert_eq!(LogFormat::format_str_arg("hello"), "'hello'");
-
+    fn test_format_str_arg_long_string() {
         let long_str = "a".repeat(60);
         let result = LogFormat::format_str_arg(&long_str);
         assert!(result.starts_with("'aaa"));

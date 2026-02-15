@@ -84,6 +84,7 @@ impl DotMapAccessor {
 
     /// set Value
     /// static method
+    /// quarify data to object
     pub fn set(data: &mut Value, dot_string: &DotString, value: Value) {
         let key = dot_string.as_str();
 
@@ -91,7 +92,6 @@ impl DotMapAccessor {
             if let Some(obj) = data.as_object_mut() {
                 obj.insert(key.to_string(), value);
             } else {
-                // dataがObjectでない場合、新しいObjectを作成
                 let mut new_obj = serde_json::Map::new();
                 new_obj.insert(key.to_string(), value);
                 *data = Value::Object(new_obj);
@@ -99,7 +99,6 @@ impl DotMapAccessor {
             return;
         }
 
-        // dataがObjectでない場合、新しいObjectを作成
         if !data.is_object() {
             *data = Value::Object(serde_json::Map::new());
         }
@@ -109,14 +108,12 @@ impl DotMapAccessor {
 
         for (i, segment) in dot_string.iter().enumerate() {
             if i == last_idx {
-                // 最後のセグメント：値を設定
                 if let Some(obj) = current.as_object_mut() {
                     obj.insert(segment.to_string(), value);
                 }
                 return;
             }
 
-            // 中間パス：存在しないか、Objectでない場合は新規作成してから移動
             {
                 let obj = current.as_object_mut().expect("current must be an object");
                 if !obj.contains_key(segment) || !obj[segment].is_object() {
@@ -295,7 +292,6 @@ mod tests {
             "1-1-key": {"2-1-key": "value"}
         });
 
-        // 存在しないキーの削除は何もしない
         let key1 = DotString::new("1-1-key.not-found");
         DotMapAccessor::unset(&mut map, &key1);
         let key2 = DotString::new("unknown.path");
