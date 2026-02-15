@@ -5,6 +5,7 @@ pub mod common;
 pub mod manifest;
 pub mod ports;
 pub mod load;
+pub mod store;
 pub mod state;
 
 // Re-export main types
@@ -13,6 +14,7 @@ pub use manifest::Manifest;
 pub use ports::provided::State as StateTrait;
 pub use state::State;
 pub use load::Load;
+pub use store::Store;
 
 // Re-export all Required Ports for app implementation
 pub use ports::required::{

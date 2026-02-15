@@ -1,4 +1,3 @@
-// Manifest impl
 use crate::method_log;
 use serde_json::Value;
 use std::collections::HashMap;

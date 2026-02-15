@@ -1,9 +1,9 @@
-// State impl
 use crate::method_log;
-use crate::load::Load;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
 use crate::common::{DotString, DotMapAccessor, Placeholder};
+use crate::store::Store;
+use crate::load::Load;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -15,8 +15,7 @@ pub struct State<'a> {
     dot_accessor: DotMapAccessor,
     manifest: &'a mut dyn ManifestTrait,
     load: Load<'a>,
-    in_memory: Option<&'a mut dyn InMemoryClient>,
-    kvs_client: Option<&'a mut dyn KVSClient>,
+    store: Store<'a>,
     max_recursion: usize,
     called_keys: Vec<DotString>,  // call stack の DotString（recursion_depth は len() で代用）
     cache: Value,  // instance cache（single collection object）
@@ -28,8 +27,7 @@ impl<'a> State<'a> {
         Self {
             manifest,
             load,
-            in_memory: None,
-            kvs_client: None,
+            store: Store::new(),
             max_recursion: 10,
             called_keys: Vec::new(),
             cache: Value::Object(serde_json::Map::new()),
@@ -37,15 +35,13 @@ impl<'a> State<'a> {
         }
     }
 
-    /// move InMemoryClient ownership
     pub fn with_in_memory(mut self, client: &'a mut dyn InMemoryClient) -> Self {
-        self.in_memory = Some(client);
+        self.store = self.store.with_in_memory(client);
         self
     }
 
-    /// move KVSClient ownership
     pub fn with_kvs_client(mut self, client: &'a mut dyn KVSClient) -> Self {
-        self.kvs_client = Some(client);
+        self.store = self.store.with_kvs_client(client);
         self
     }
 
@@ -111,113 +107,12 @@ impl<'a> State<'a> {
     }
 
     /// _store 設定から値を取得
-    fn get_from_store(&self, store_config: &HashMap<String, Value>) -> Option<Value> {
-        let client = store_config.get("client")?.as_str()?;
-
-        match client {
-            "InMemory" => {
-                let in_memory = self.in_memory.as_ref()?;
-                let key = store_config.get("key")?.as_str()?;
-                in_memory.get(key)
-            }
-            "KVS" => {
-                let kvs_client = self.kvs_client.as_ref()?;
-                let key = store_config.get("key")?.as_str()?;
-                let value_str = kvs_client.get(key)?;
-
-                // deserialize処理
-                // 全ての値はJSON形式で保存されている（型情報保持）
-                // JSON parse → Number/String/Bool/Null/Array/Objectを正確に復元
-                serde_json::from_str(&value_str).ok()
-            }
-            _ => None,
-        }
-    }
-
-    /// _store 設定に値を保存
-    fn set_to_store(
-        &mut self,
-        store_config: &HashMap<String, Value>,
-        value: Value,
-        ttl: Option<u64>,
-    ) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_str()) {
-            Some(c) => c,
-            None => return false,
-        };
-
-        match client {
-            "InMemory" => {
-                if let Some(in_memory) = self.in_memory.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        in_memory.set(key, value);
-                        return true;
-                    }
-                }
-                false
-            }
-            "KVS" => {
-                if let Some(kvs_client) = self.kvs_client.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        // serialize処理
-                        // 全ての値をJSON形式で保存（型情報を保持）
-                        // JSON内でNumber/String/Bool/Null/Array/Objectを区別
-                        let serialized = match serde_json::to_string(&value) {
-                            Ok(s) => s,
-                            Err(_) => return false,
-                        };
-
-                        let final_ttl =
-                            ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
-                        return kvs_client.set(key, serialized, final_ttl);
-                    }
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
-    /// _store 設定から値を削除
-    fn delete_from_store(&mut self, store_config: &HashMap<String, Value>) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_str()) {
-            Some(c) => c,
-            None => return false,
-        };
-
-        match client {
-            "InMemory" => {
-                if let Some(in_memory) = self.in_memory.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        return in_memory.delete(key);
-                    }
-                }
-                false
-            }
-            "KVS" => {
-                if let Some(kvs_client) = self.kvs_client.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        return kvs_client.delete(key);
-                    }
-                }
-                false
-            }
-            _ => false,
-        }
-    }
 
     /// 親キーを取得
     ///
     /// "cache.user.org_id" → "cache.user"
     /// "cache.user" → "cache"
     /// "cache" → ""
-    fn get_parent_key(dot_string: &DotString) -> String {
-        if dot_string.len() <= 1 {
-            return String::new();
-        }
-        dot_string[..dot_string.len() - 1].join(".")
-    }
-
     /// Manifest の静的値とマージ
     ///
     /// Load/Store から取得した値に Manifest の静的値をマージする。
@@ -304,17 +199,28 @@ impl<'a> StateTrait for State<'a> {
                     // store_config 内の placeholder を解決
                     let resolved_store_config = self.resolve_load_config(&store_config);
 
-                    if let Some(value) = self.get_from_store(&resolved_store_config) {
+                    if let Some(value) = self.store.get(&resolved_store_config) {
                         // map の最初のキーから owner_key を逆算
                         let owner_key = meta.get("_load")
                             .and_then(|v| v.as_object())
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+                            .map(|first_key| {
+                                let dot = DotString::new(first_key);
+                                if dot.len() <= 1 {
+                                    String::new()
+                                } else {
+                                    dot[..dot.len() - 1].join(".")
+                                }
+                            })
                             .unwrap_or_else(|| {
                                 if let Some(current_key) = self.called_keys.last() {
-                                    Self::get_parent_key(current_key)
+                                    if current_key.len() <= 1 {
+                                        String::new()
+                                    } else {
+                                        current_key[..current_key.len() - 1].join(".")
+                                    }
                                 } else {
                                     String::new()
                                 }
@@ -399,7 +305,14 @@ impl<'a> StateTrait for State<'a> {
                             .and_then(|obj| obj.get("map"))
                             .and_then(|v| v.as_object())
                             .and_then(|map| map.keys().next())
-                            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+                            .map(|first_key| {
+                                let dot = DotString::new(first_key);
+                                if dot.len() <= 1 {
+                                    String::new()
+                                } else {
+                                    dot[..dot.len() - 1].join(".")
+                                }
+                            })
                             .unwrap_or_else(|| {
                                 if let Some(current_key) = self.called_keys.last() {
                                     current_key.as_str().to_string()
@@ -421,7 +334,7 @@ impl<'a> StateTrait for State<'a> {
 
                                 // store_config の placeholder も解決
                                 let resolved_store_config = self.resolve_load_config(&store_config);
-                                self.set_to_store(&resolved_store_config, merged_loaded.clone(), None);
+                                self.store.set(&resolved_store_config, merged_loaded.clone(), None);
                             }
                         }
 
@@ -491,10 +404,21 @@ impl<'a> StateTrait for State<'a> {
             .and_then(|obj| obj.get("map"))
             .and_then(|v| v.as_object())
             .and_then(|map| map.keys().next())
-            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+            .map(|first_key| {
+                let dot = DotString::new(first_key);
+                if dot.len() <= 1 {
+                    String::new()
+                } else {
+                    dot[..dot.len() - 1].join(".")
+                }
+            })
             .unwrap_or_else(|| {
                 if let Some(current_key) = self.called_keys.last() {
-                    Self::get_parent_key(current_key)
+                    if current_key.len() <= 1 {
+                        String::new()
+                    } else {
+                        current_key[..current_key.len() - 1].join(".")
+                    }
                 } else {
                     String::new()
                 }
@@ -503,7 +427,7 @@ impl<'a> StateTrait for State<'a> {
         // 2. cache に owner_key の値がなければ、Store から取得して cache にロード
         let owner_key_dot = DotString::new(&owner_key);
         if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
-            if let Some(store_value) = self.get_from_store(&resolved_store_config) {
+            if let Some(store_value) = self.store.get(&resolved_store_config) {
                 DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
             }
         }
@@ -518,7 +442,7 @@ impl<'a> StateTrait for State<'a> {
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
         // 5. 親オブジェクト全体を _store に保存
-        let result = self.set_to_store(&resolved_store_config, store_value, ttl);
+        let result = self.store.set(&resolved_store_config, store_value, ttl);
 
         self.called_keys.pop();
         result
@@ -558,10 +482,21 @@ impl<'a> StateTrait for State<'a> {
             .and_then(|obj| obj.get("map"))
             .and_then(|v| v.as_object())
             .and_then(|map| map.keys().next())
-            .map(|first_key| Self::get_parent_key(&DotString::new(first_key)))
+            .map(|first_key| {
+                let dot = DotString::new(first_key);
+                if dot.len() <= 1 {
+                    String::new()
+                } else {
+                    dot[..dot.len() - 1].join(".")
+                }
+            })
             .unwrap_or_else(|| {
                 if let Some(current_key) = self.called_keys.last() {
-                    Self::get_parent_key(current_key)
+                    if current_key.len() <= 1 {
+                        String::new()
+                    } else {
+                        current_key[..current_key.len() - 1].join(".")
+                    }
                 } else {
                     String::new()
                 }
@@ -571,7 +506,7 @@ impl<'a> StateTrait for State<'a> {
         let owner_key_dot = DotString::new(&owner_key);
         if key == owner_key {
             // 親オブジェクト全体を削除
-            let result = self.delete_from_store(&resolved_store_config);
+            let result = self.store.delete(&resolved_store_config);
             if result {
                 let current_key = self.called_keys.last().unwrap();
                 DotMapAccessor::unset(&mut self.cache, current_key);
@@ -582,7 +517,7 @@ impl<'a> StateTrait for State<'a> {
 
         // 3. 子フィールドの削除: cache に owner_key の値がなければ、Store から取得して cache にロード
         if self.dot_accessor.get(&self.cache, &owner_key_dot).is_none() {
-            if let Some(store_value) = self.get_from_store(&resolved_store_config) {
+            if let Some(store_value) = self.store.get(&resolved_store_config) {
                 DotMapAccessor::merge(&mut self.cache, &owner_key_dot, store_value);
             }
         }
@@ -600,7 +535,7 @@ impl<'a> StateTrait for State<'a> {
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
         // 7. 親オブジェクト全体を _store に保存
-        let result = self.set_to_store(&resolved_store_config, store_value, None);
+        let result = self.store.set(&resolved_store_config, store_value, None);
 
         // 8. 失敗時はロールバック
         if !result {
@@ -650,7 +585,7 @@ impl<'a> StateTrait for State<'a> {
         let resolved_store_config = self.resolve_load_config(&store_config_map);
 
         // 5. _store から値を取得（自動ロードなし）
-        let result = self.get_from_store(&resolved_store_config).is_some();
+        let result = self.store.get(&resolved_store_config).is_some();
 
         self.called_keys.pop();
         result
