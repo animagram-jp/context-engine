@@ -1,5 +1,4 @@
 // Placeholder qualification integration tests
-// PHP版 MainTest.php の testPlaceholderNormalization に対応
 
 use state_engine::manifest::Manifest;
 use std::fs;

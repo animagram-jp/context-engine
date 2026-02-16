@@ -21,7 +21,7 @@ fn test_kvs_serialization_edge_case_zero() {
     let mut kvs = MockKVS::new();
 
     // session.sso_user_id を InMemory に設定（placeholder解決用）
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -58,7 +58,7 @@ fn test_kvs_serialization_edge_case_one() {
     let mut in_memory = MockInMemory::new();
     let mut kvs = MockKVS::new();
 
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -90,7 +90,7 @@ fn test_kvs_serialization_boolean_vs_number() {
     let mut in_memory = MockInMemory::new();
     let mut kvs = MockKVS::new();
 
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -144,7 +144,7 @@ fn test_kvs_serialization_empty_string() {
     let mut in_memory = MockInMemory::new();
     let mut kvs = MockKVS::new();
 
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -178,7 +178,7 @@ fn test_kvs_serialization_array_and_object() {
     let mut in_memory = MockInMemory::new();
     let mut kvs = MockKVS::new();
 
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)

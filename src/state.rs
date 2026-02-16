@@ -1,9 +1,10 @@
-use crate::method_log;
 use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
 use crate::ports::required::{KVSClient, InMemoryClient};
 use crate::common::{DotString, DotMapAccessor, Placeholder};
 use crate::store::Store;
 use crate::load::Load;
+use crate::method_log;
+use crate::warn_log;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -75,17 +76,51 @@ impl<'a> State<'a> {
     }
 
     fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
-        let mut placeholder = Placeholder::new();
-        let mut resolver = |placeholder_name: &str| -> Option<Value> {
-            let name_dot = DotString::new(placeholder_name);
-            if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
-                return Some(cached.clone());
-            }
-            self.get(placeholder_name)
-        };
+        // Phase 1: placeholder名を収集（unique list）
+        let placeholder_names: Vec<String> = Placeholder::collect(config);
 
-        for v in config.values_mut() {
-            placeholder.process(v, &mut resolver);
+        if placeholder_names.is_empty() {
+            return; // placeholderがなければ何もしない
+        }
+
+        // Phase 2: cache hit分を resolved_values に収集、miss分を pending_paths に保持
+        let mut resolved_values: HashMap<String, Value> = HashMap::new();
+        let mut pending_paths: Vec<String> = Vec::new();
+
+        for name in placeholder_names {
+            let name_dot = DotString::new(&name);
+            if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
+                // cache hit
+                resolved_values.insert(name, cached.clone());
+            } else {
+                // cache miss
+                pending_paths.push(name);
+            }
+        }
+
+        // Phase 3: cache hit分を一括置換
+        let _missing_after_cache = Placeholder::replace(config, &resolved_values);
+
+        // Phase 4: cache miss分を順次 self.get() で解決
+        // TODO: 呼び出し順序の最適化（依存関係を考慮）
+        for path in pending_paths {
+            if let Some(value) = self.get(&path) {
+                resolved_values.insert(path, value);
+            }
+            // else: 解決できなかった（missing_keysとして残る）
+        }
+
+        // Phase 5: 新たに解決した値で再度置換
+        let final_missing = Placeholder::replace(config, &resolved_values);
+
+        // 未解決のplaceholderがあれば警告ログ出力
+        if !final_missing.is_empty() {
+            let missing_list = final_missing.join(", ");
+            warn_log!(
+                "State",
+                "resolve_config_placeholders",
+                &format!("Unresolved placeholders: {}", missing_list)
+            );
         }
     }
 }

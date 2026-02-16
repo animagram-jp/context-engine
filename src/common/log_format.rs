@@ -87,7 +87,7 @@ impl LogFormat {
 ///
 /// # Examples
 /// ```ignore
-/// use state_engine::method_log;
+/// use crate::method_log;
 ///
 /// method_log!("State", "get", "cache.user");
 /// // Logs: State::get('cache.user')
@@ -122,6 +122,25 @@ macro_rules! error_log {
         #[cfg(feature = "logging")]
         {
             log::error!("{}", $crate::common::log_format::LogFormat::error($class, $method, $msg));
+        }
+    }};
+}
+
+/// Log macro: warning
+///
+/// # Examples
+/// ```ignore
+/// use crate::warn_log;
+///
+/// warn_log!("State", "resolve_config_placeholders", "unresolved placeholders: session.id");
+/// // Logs: State::resolve_config_placeholders: unresolved placeholders: session.id
+/// ```
+#[macro_export]
+macro_rules! warn_log {
+    ($class:expr, $method:expr, $msg:expr) => {{
+        #[cfg(feature = "logging")]
+        {
+            log::warn!("{}", $crate::common::log_format::LogFormat::error($class, $method, $msg));
         }
     }};
 }

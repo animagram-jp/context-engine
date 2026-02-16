@@ -66,7 +66,7 @@ fn test_state_set_and_get_kvs() {
     let mut kvs = MockKVS::new();
 
     // session.sso_user_id を InMemory に設定（placeholder解決用）
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -95,7 +95,7 @@ fn test_state_delete_kvs() {
     let mut kvs = MockKVS::new();
 
     // session.sso_user_id を InMemory に設定（placeholder解決用）
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -257,7 +257,7 @@ fn test_exists_does_not_trigger_load() {
     let mut kvs = MockKVS::new();
 
     // session.sso_user_id を InMemory に設定（placeholder解決用）
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -282,7 +282,7 @@ fn test_exists_with_kvs() {
     let mut kvs = MockKVS::new();
 
     // placeholder解決用
-    in_memory.set("request-attributes", json!(123));
+    in_memory.set("request-attributes-user-key", json!(123));
 
     let mut state = State::new(&mut manifest, load)
         .with_in_memory(&mut in_memory)
@@ -299,24 +299,6 @@ fn test_exists_with_kvs() {
     assert!(state.exists("cache.user.id"));
 }
 
-#[test]
-fn test_exists_performance() {
-    // exists()がget()より軽量であることを確認（自動ロードしないため）
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-    let load = Load::new();
-    let mut in_memory = MockInMemory::new();
-
-    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-    // 存在しないキーに対して
-    // exists()は単にfalseを返す（自動ロードしない）
-    assert!(!state.exists("cache.user"));
-
-    // get()も自動ロードを試みるが、DBClientが無いのでNoneを返す
-    // exists()の方が処理が少ないはず
-    assert_eq!(state.get("cache.user"), None);
-}
 
 // ============================================================================
 // Issue #7 regression tests

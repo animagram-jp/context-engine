@@ -1,35 +1,22 @@
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-/// Placeholder resolver for ${...} patterns in JSON values
+/// Pure logic collection for ${...} placeholder resolution
+///
+/// This struct provides stateless utility functions for placeholder operations.
+/// State management (resolved values, pending paths) should be handled by the caller (State).
 ///
 /// dev note:
 /// - エスケープは不要（${} は予約語、YAML DSLとして割り切る）
 /// - 再帰置換を防止（置換後の値が再度置換されない）
 /// - ドット解釈は不要
-pub struct Placeholder {
-    missing_keys: Vec<String>,
-}
+pub struct Placeholder;
 
 impl Placeholder {
-    pub fn new() -> Self {
-        Self {
-            missing_keys: Vec::new(),
-        }
-    }
-
-    pub fn get_missing_keys(&self) -> &[String] {
-        &self.missing_keys
-    }
-
-    pub fn clear_missing_keys(&mut self) {
-        self.missing_keys.clear();
-    }
-
-    /// Collect all placeholder names from a HashMap (unique list)
+    /// Collect all unique placeholder names from a HashMap
     ///
-    /// Walks through the HashMap values and extracts all ${key} patterns.
+    /// Walks through HashMap values and extracts all ${key} patterns.
     /// Returns unique placeholder names (order depends on HashMap iteration).
     ///
     /// # Examples
@@ -48,7 +35,7 @@ impl Placeholder {
     /// assert!(names.contains(&"session.id".to_string()));
     /// assert!(names.contains(&"cache.user.org_id".to_string()));
     /// ```
-    pub fn collect(map: &std::collections::HashMap<String, Value>) -> Vec<String> {
+    pub fn collect(map: &HashMap<String, Value>) -> Vec<String> {
         let mut names = Vec::new();
         let mut seen = HashSet::new();
         let re = Regex::new(r"\$\{([\w.]+)\}").unwrap();
@@ -83,23 +70,55 @@ impl Placeholder {
         names
     }
 
-    /// Map placeholders (${...}) to actual values using resolver callback
+    /// Replace placeholders in a HashMap using a resolved values map
     ///
-    /// Walks through all nodes and values, replaces ${key} patterns with resolved values.
-    /// Records missing keys when resolver returns None.
+    /// Walks through all values and replaces ${key} patterns with resolved values.
+    /// Returns list of placeholder names that were not found in resolved_values.
     ///
     /// Type preservation:
     /// - Single placeholder ("${key}") → preserves original type
     /// - Multiple or embedded ("user:${id}") → string replacement
-    pub fn map<F>(&mut self, mut value: Value, resolver: &mut F) -> Value
-    where
-        F: FnMut(&str) -> Option<Value>,
-    {
-        self.process(&mut value, resolver);
-        value
+    ///
+    /// # Examples
+    /// ```
+    /// use state_engine::common::Placeholder;
+    /// use serde_json::json;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut config = HashMap::new();
+    /// config.insert("key".to_string(), json!("user:${session.id}"));
+    ///
+    /// let mut resolved = HashMap::new();
+    /// resolved.insert("session.id".to_string(), json!(123));
+    ///
+    /// let missing = Placeholder::replace(&mut config, &resolved);
+    /// assert!(missing.is_empty());
+    /// assert_eq!(config.get("key").unwrap(), &json!("user:123"));
+    /// ```
+    pub fn replace(
+        config: &mut HashMap<String, Value>,
+        resolved_values: &HashMap<String, Value>,
+    ) -> Vec<String> {
+        let mut missing = Vec::new();
+        let mut seen = HashSet::new();
+
+        let mut resolver = |name: &str| -> Option<Value> {
+            let result = resolved_values.get(name).cloned();
+            if result.is_none() && seen.insert(name.to_string()) {
+                missing.push(name.to_string());
+            }
+            result
+        };
+
+        for v in config.values_mut() {
+            Self::process_value(v, &mut resolver);
+        }
+
+        missing
     }
 
-    pub fn process<F>(&mut self, value: &mut Value, resolver: &mut F)
+    /// Internal recursive function to process a single Value
+    fn process_value<F>(value: &mut Value, resolver: &mut F)
     where
         F: FnMut(&str) -> Option<Value>,
     {
@@ -115,18 +134,15 @@ impl Placeholder {
                     return;
                 }
 
-                // 単一プレースホルダー（値全体が ${key} のみ）の場合は型を保持
+                // Single placeholder ("${key}") → preserve type
                 if placeholders.len() == 1 && *s == placeholders[0].0 {
-                    let key = &placeholders[0].1;
-                    if let Some(resolved) = resolver(key) {
+                    if let Some(resolved) = resolver(&placeholders[0].1) {
                         *value = resolved;
-                    } else {
-                        self.missing_keys.push(key.clone());
                     }
                     return;
                 }
 
-                // 複数または文字列内プレースホルダーの場合は文字列置換
+                // Multiple or embedded placeholders → string replacement
                 let mut result = s.clone();
                 for (pattern, key) in placeholders {
                     if let Some(resolved) = resolver(&key) {
@@ -137,20 +153,18 @@ impl Placeholder {
                             _ => continue,
                         };
                         result = result.replace(&pattern, &replacement);
-                    } else {
-                        self.missing_keys.push(key.clone());
                     }
                 }
                 *s = result;
             }
             Value::Object(map) => {
-                for (_, v) in map.iter_mut() {
-                    self.process(v, resolver);
+                for v in map.values_mut() {
+                    Self::process_value(v, resolver);
                 }
             }
             Value::Array(arr) => {
                 for v in arr.iter_mut() {
-                    self.process(v, resolver);
+                    Self::process_value(v, resolver);
                 }
             }
             _ => {}
@@ -158,17 +172,10 @@ impl Placeholder {
     }
 }
 
-impl Default for Placeholder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::collections::HashMap;
 
     #[test]
     fn test_collect_simple() {
@@ -196,7 +203,7 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("key1".to_string(), json!("${session.id}"));
         map.insert("key2".to_string(), json!("${cache.user.org_id}"));
-        map.insert("key3".to_string(), json!("${session.id}"));  // duplicate
+        map.insert("key3".to_string(), json!("${session.id}"));
         let names = Placeholder::collect(&map);
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"session.id".to_string()));
@@ -206,14 +213,19 @@ mod tests {
     #[test]
     fn test_collect_nested() {
         let mut map = HashMap::new();
-        map.insert("level1".to_string(), json!({
-            "level2": {
-                "key": "${nested.value}"
-            }
-        }));
-        map.insert("array".to_string(), json!(["${array.item1}", "${array.item2}"]));
+        map.insert(
+            "level1".to_string(),
+            json!({
+                "level2": {
+                    "key": "${nested.value}"
+                }
+            }),
+        );
+        map.insert(
+            "array".to_string(),
+            json!(["${array.item1}", "${array.item2}"]),
+        );
         let names = Placeholder::collect(&map);
-        // Order depends on HashMap iteration, just check all are present
         assert_eq!(names.len(), 3);
         assert!(names.contains(&"nested.value".to_string()));
         assert!(names.contains(&"array.item1".to_string()));
@@ -226,5 +238,57 @@ mod tests {
         map.insert("key".to_string(), json!("plain text"));
         let names = Placeholder::collect(&map);
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_replace_simple() {
+        let mut config = HashMap::new();
+        config.insert("key".to_string(), json!("user:${session.id}"));
+
+        let mut resolved = HashMap::new();
+        resolved.insert("session.id".to_string(), json!(123));
+
+        let missing = Placeholder::replace(&mut config, &resolved);
+        assert!(missing.is_empty());
+        assert_eq!(config.get("key").unwrap(), &json!("user:123"));
+    }
+
+    #[test]
+    fn test_replace_type_preservation() {
+        let mut config = HashMap::new();
+        config.insert("key".to_string(), json!("${session.id}"));
+
+        let mut resolved = HashMap::new();
+        resolved.insert("session.id".to_string(), json!(123));
+
+        let missing = Placeholder::replace(&mut config, &resolved);
+        assert!(missing.is_empty());
+        assert_eq!(config.get("key").unwrap(), &json!(123)); // Number preserved
+    }
+
+    #[test]
+    fn test_replace_missing_placeholder() {
+        let mut config = HashMap::new();
+        config.insert("key".to_string(), json!("user:${session.id}"));
+
+        let resolved = HashMap::new(); // Empty
+
+        let missing = Placeholder::replace(&mut config, &resolved);
+        assert_eq!(missing, vec!["session.id"]);
+        assert_eq!(config.get("key").unwrap(), &json!("user:${session.id}")); // Unchanged
+    }
+
+    #[test]
+    fn test_replace_multiple_same_placeholder() {
+        let mut config = HashMap::new();
+        config.insert("key1".to_string(), json!("${session.id}"));
+        config.insert("key2".to_string(), json!("user:${session.id}"));
+
+        let resolved = HashMap::new();
+
+        let missing = Placeholder::replace(&mut config, &resolved);
+        // Should only report "session.id" once
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0], "session.id");
     }
 }

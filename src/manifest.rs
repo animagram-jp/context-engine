@@ -1,11 +1,10 @@
+use crate::ports::provided;
+use crate::common::{DotString, DotMapAccessor};
 use crate::method_log;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-
-use crate::common::{DotString, DotMapAccessor};
-use crate::ports::provided;
 
 pub struct Manifest {
     manifest_dir: PathBuf,
