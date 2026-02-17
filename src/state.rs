@@ -141,9 +141,10 @@ impl<'a> StateTrait for State<'a> {
 
         // 1. check State.cache
         let current_key = self.called_keys.last().unwrap();
-        if let Some(cached) = self.dot_accessor.get(&self.cache, current_key) {
+        if DotMapAccessor::has(&self.cache, current_key) {
+            let cached = self.dot_accessor.get(&self.cache, current_key).cloned();
             self.called_keys.pop();
-            return Some(cached.clone());
+            return cached;
         }
 
         // 2. メタデータ取得
@@ -191,11 +192,13 @@ impl<'a> StateTrait for State<'a> {
                         }
 
                         // 要求されたフィールドを抽出
+                        // has() でキーの存在を確認してから取得する（nullノードのキーを早期returnしない）
                         let called_key = self.called_keys.last().unwrap();
-                        let extracted = self.dot_accessor.get(&self.cache, called_key).cloned();
-
-                        self.called_keys.pop();
-                        return extracted;
+                        if DotMapAccessor::has(&self.cache, called_key) {
+                            let extracted = self.dot_accessor.get(&self.cache, called_key).cloned();
+                            self.called_keys.pop();
+                            return extracted;
+                        }
                     }
                 }
             }
@@ -286,8 +289,13 @@ impl<'a> StateTrait for State<'a> {
                         }
 
                         // 要求されたフィールドを抽出して返す
+                        // has() でキーの存在を確認してから取得する（nullノードのキーを早期returnしない）
                         let called_key = self.called_keys.last().unwrap();
-                        self.dot_accessor.get(&self.cache, called_key).cloned()
+                        if DotMapAccessor::has(&self.cache, called_key) {
+                            self.dot_accessor.get(&self.cache, called_key).cloned()
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -449,7 +457,7 @@ impl<'a> StateTrait for State<'a> {
 
         // 1. インスタンスキャッシュをチェック（最優先・最速）
         let current_key = self.called_keys.last().unwrap();
-        if self.dot_accessor.get(&self.cache, current_key).is_some() {
+        if DotMapAccessor::has(&self.cache, current_key) {
             self.called_keys.pop();
             return true;
         }
