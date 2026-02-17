@@ -39,7 +39,7 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get('user.tenant_id')
 ```
 
-**プレースホルダーの正規化方法:**
+**プレースホルダーの完全修飾化方法:**
 
 `Manifest::getMeta()`実行時、相対プレースホルダーは自動的に絶対パスに変換されます:
 
@@ -53,7 +53,7 @@ user:
 
 Manifestは`${tenant_id}`を`${cache.user.tenant_id}`（絶対パス）に変換します。
 
-Stateがプレースホルダーを見る時点で、既に絶対パスに正規化されています。
+Stateがプレースホルダーを見る時点で、既に絶対パスに完全修飾されています。
 
 #### 3. クライアント種別
 

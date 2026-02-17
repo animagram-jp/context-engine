@@ -15,7 +15,7 @@ It behaves as described in YAML DSL.
 | Version | Status | Date | description |
 |---------|--------|------|-------------|
 | 0.1   | Released | 2026-2-12 | initial | 
-| 0.1.2 | Current  | 2026-2-14 | fix #11 | 
+| 0.1.3 | Current  | 2026-2-17 | improve #17 | 
 
 ## Provided Functions
 
@@ -176,6 +176,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
     manifest.rs       # Manifest impl
     state.rs          # State impl
+    store.rs          # Store internal mod
     load.rs           # Load internal mod
 
   examples/

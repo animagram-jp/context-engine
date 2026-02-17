@@ -39,7 +39,7 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get('user.tenant_id')
 ```
 
-**How placeholders are normalized:**
+**How placeholders are qualified:**
 
 During `Manifest::getMeta()`, relative placeholders are automatically converted to absolute paths:
 
@@ -53,7 +53,7 @@ user:
 
 Manifest converts `${tenant_id}` to `${cache.user.tenant_id}` (absolute path).
 
-By the time State sees the placeholder, it's already normalized to an absolute path.
+By the time State sees the placeholder, it's already qualified to an absolute path.
 
 #### 3. Client Types
 
