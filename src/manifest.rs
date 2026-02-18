@@ -299,12 +299,7 @@ impl Manifest {
                         filtered.insert(k.clone(), self.remove_meta(v));
                     }
                 }
-                // Empty object (metadata-only node) should be treated as null
-                if filtered.is_empty() {
-                    Value::Null
-                } else {
-                    Value::Object(filtered)
-                }
+                Value::Object(filtered)
             }
             Value::Array(arr) => {
                 let filtered: Vec<Value> = arr.iter().map(|v| self.remove_meta(v)).collect();
@@ -374,11 +369,7 @@ impl Manifest {
                     .map(|(k, v)| (k.clone(), self.remove_meta_and_nulls(v)))
                     .collect();
 
-                if filtered.is_empty() {
-                    Value::Null
-                } else {
-                    Value::Object(filtered)
-                }
+                Value::Object(filtered)
             }
             Value::Array(arr) => {
                 let filtered: Vec<Value> = arr
