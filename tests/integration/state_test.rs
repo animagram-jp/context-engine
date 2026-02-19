@@ -335,6 +335,6 @@ fn test_delete_child_field_preserves_siblings() {
     assert_eq!(state.get("connection.common.database"), Some(json!("mydb")));
     assert_eq!(state.get("connection.common.password"), Some(json!("secret")));
     
-    // username は Manifest に定義があるため、削除後も Some(Null) を返す
-    assert_eq!(state.get("connection.common.username"), Some(json!(null)));
+    // username は store から削除されたため None を返す
+    assert_eq!(state.get("connection.common.username"), None);
 }

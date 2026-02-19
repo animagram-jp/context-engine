@@ -11,9 +11,9 @@ node_name:
 
 ### Core Concept
 
-#### 1. Metadata inheritance
+#### 1. meta key inheritance
 
-Child nodes inherit parent's _block, and can override:
+Child nodes inherit parent's meta keys, and can override:
 
 ```yaml
 _store:
@@ -151,7 +151,7 @@ _load:
   client: # {ENV, InMemory, KVS, DB, State}
 
 node_A:
-  _state: # オプション、メタデータのみ（型検証は未実装）
+  _state: # オプション、meta keyのみ（型検証は未実装）
     type: {integer, float, string, boolean, list, map}
   _store: # ファイルルートで最低1つ必要。子ノードに継承され、上書き可能。
     client: {InMemory, KVS}  # _storeで有効なのはInMemoryとKVSのみ

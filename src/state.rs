@@ -178,8 +178,11 @@ impl<'a> StateTrait for State<'a> {
                         let owner_path = self.get_owner_path(&meta, false);
 
                         // owner_path で Manifest の静的値を cache にマージ
+                        self.manifest.clear_missing_keys();
                         let manifest_value = self.manifest.get_value(&owner_path);
-                        DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
+                        if self.manifest.get_missing_keys().is_empty() {
+                            DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
+                        }
 
                         // Store値のマージ方法を値の型によって変える
                         if value.is_object() {
@@ -261,8 +264,11 @@ impl<'a> StateTrait for State<'a> {
                         let owner_path = self.get_owner_path(&meta, true);
 
                         // owner_path で Manifest の静的値を cache にマージ
+                        self.manifest.clear_missing_keys();
                         let manifest_value = self.manifest.get_value(&owner_path);
-                        DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
+                        if self.manifest.get_missing_keys().is_empty() {
+                            DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
+                        }
 
                         // owner_path で Load値を cache にマージ (上書き)
                         DotMapAccessor::merge(&mut self.cache, &owner_path, loaded.clone());

@@ -14,8 +14,8 @@ State:
 Load:
 
 Common:
-  DotArrayAccessor:
-  PlaceholderResolver:
+  DotMapAccessor:
+  Placeholder:
   LogFormat:
 ```
 
@@ -29,7 +29,7 @@ Common:
 
 ライブラリ提供moduleのtraits
 
-  1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。'_'始まりのキー以下(メタブロック)を認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
+  1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。'_'始まりのmeta keysを認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
   2. **State** - Manifest::getMeta()から取得する_storeブロックの記述に基づいて格納されるステートデータ(state obj)を対象に、`get()` / `set()` / `delete()`操作を行うmodule。`get()`では、key miss hitをトリガーとして、同じく取得した`_load`ブロックの記述に基づいてロード試行を自動的に行う。`set()`は指定のkeyに値をsetする。自動ロードは引き起こさない。`delete()`は指定のkeyと、そのvalue全てを削除する。Stateは、インスタンスメモリの`State.cache`にYAMLファイル記述に従ったcollection型でstate objをキャッシュし、動作中、同期処理を行う。ロードを引き起こさないmiss/hit key判定の`exists()`も提供している。
 
 2. Required Ports
@@ -341,7 +341,7 @@ fn extract_field(data: Value, key: &str) -> Value {
 
 ## 内部実装
 
-### PlaceholderResolver
+### Placeholder
 
 純粋な文字列処理（依存関係なし）。
 
@@ -354,7 +354,7 @@ fn extract_field(data: Value, key: &str) -> Value {
 - 単一プレースホルダーかつ文字列全体が`${...}`形式 → 型を保持
 - 複数または文字列内プレースホルダー → 文字列置換
 
-### DotArrayAccessor
+### DotMapAccessor
 
 ドット記法での配列アクセスを提供。
 

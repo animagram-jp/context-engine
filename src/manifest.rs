@@ -293,12 +293,11 @@ impl Manifest {
     fn remove_meta(&self, value: &Value) -> Value {
         match value {
             Value::Object(obj) => {
-                let mut filtered = serde_json::Map::new();
-                for (k, v) in obj {
-                    if !k.starts_with('_') {
-                        filtered.insert(k.clone(), self.remove_meta(v));
-                    }
-                }
+                let filtered: serde_json::Map<String, Value> = obj
+                    .iter()
+                    .filter(|(k, _)| !k.starts_with('_'))
+                    .map(|(k, v)| (k.clone(), self.remove_meta(v)))
+                    .collect();
                 Value::Object(filtered)
             }
             Value::Array(arr) => {
@@ -365,11 +364,22 @@ impl Manifest {
             Value::Object(obj) => {
                 let filtered: serde_json::Map<String, Value> = obj
                     .iter()
-                    .filter(|(k, v)| !k.starts_with('_') && !v.is_null())
-                    .map(|(k, v)| (k.clone(), self.remove_meta_and_nulls(v)))
+                    .filter(|(k, _)| !k.starts_with('_'))
+                    .filter_map(|(k, v)| {
+                        let cleaned = self.remove_meta_and_nulls(v);
+                        if cleaned.is_null() {
+                            None
+                        } else {
+                            Some((k.clone(), cleaned))
+                        }
+                    })
                     .collect();
 
-                Value::Object(filtered)
+                if filtered.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Object(filtered)
+                }
             }
             Value::Array(arr) => {
                 let filtered: Vec<Value> = arr
