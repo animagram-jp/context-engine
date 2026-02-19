@@ -168,9 +168,6 @@ impl<'a> StateTrait for State<'a> {
                     let mut store_config: HashMap<String, Value> =
                         store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-                    // store_config 内の placeholder 名を収集
-                    let _placeholder_names = Placeholder::collect(&store_config);
-
                     // store_config 内の placeholder を解決
                     self.resolve_config_placeholders(&mut store_config);
 
@@ -218,9 +215,6 @@ impl<'a> StateTrait for State<'a> {
                     self.called_keys.pop();
                     return None;
                 }
-
-                // load_config 内の placeholder 名を収集
-                let _placeholder_names = Placeholder::collect(&load_config);
 
                 // placeholder 解決
                 self.resolve_config_placeholders(&mut load_config);
@@ -280,9 +274,6 @@ impl<'a> StateTrait for State<'a> {
                                     .iter()
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect();
-
-                                // store_config 内の placeholder 名を収集
-                                let _placeholder_names = Placeholder::collect(&store_config);
 
                                 // store_config の placeholder も解決
                                 self.resolve_config_placeholders(&mut store_config);
@@ -344,9 +335,6 @@ impl<'a> StateTrait for State<'a> {
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // store_config 内の placeholder 名を収集
-        let _placeholder_names = Placeholder::collect(&store_config_map);
-
         // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
@@ -399,9 +387,6 @@ impl<'a> StateTrait for State<'a> {
 
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-        // store_config 内の placeholder 名を収集
-        let _placeholder_names = Placeholder::collect(&store_config_map);
 
         // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
@@ -487,10 +472,7 @@ impl<'a> StateTrait for State<'a> {
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // 4. store_config 内の placeholder 名を収集
-        let _placeholder_names = Placeholder::collect(&store_config_map);
-
-        // 5. store_config 内の placeholder 解決
+        // 4. store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
         // 6. _store から値を取得（自動ロードなし）

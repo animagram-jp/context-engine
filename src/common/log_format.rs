@@ -113,8 +113,8 @@ macro_rules! method_log {
 /// ```ignore
 /// use state_engine::error_log;
 ///
-/// error_log!("State", "get", "metadata not found");
-/// // Logs: State::get: metadata not found
+/// error_log!("State", "get", "meta keys not found");
+/// // Logs: State::get: meta keys not found
 /// ```
 #[macro_export]
 macro_rules! error_log {

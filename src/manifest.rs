@@ -21,9 +21,27 @@ impl Manifest {
         }
     }
 
-    /// キーからデータを取得
-    /// 形式: "filename.path.to.key"
-    /// 例: "connection.common.host"
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::Manifest;
+    /// use serde_json::json;
+    ///
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    ///
+    /// // field keys are returned, meta keys excluded
+    /// let user = manifest.get("cache.user", None);
+    /// assert!(user.get("id").is_some());
+    /// assert!(user.get("_load").is_none());
+    ///
+    /// // leaf field key returns {} (presence indicator)
+    /// let host = manifest.get("connection.common.host", None);
+    /// assert_eq!(host, json!({}));
+    ///
+    /// // miss returns default
+    /// let missing = manifest.get("cache.never", Some(json!("default")));
+    /// assert_eq!(missing, json!("default"));
+    /// ```
     pub fn get(&mut self, key: &str, default: Option<Value>) -> Value {
         method_log!("Manifest", "get", key);
 
@@ -37,10 +55,8 @@ impl Manifest {
         }
 
         let value = if path.is_empty() {
-            // ファイル全体を返す
             self.cache.get(&file).cloned()
         } else {
-            // ドット記法でアクセス
             self.cache.get(&file).and_then(|data| {
                 let mut accessor = DotMapAccessor::new();
                 let path_dot = DotString::new(&path);
@@ -49,9 +65,7 @@ impl Manifest {
         };
 
         match value {
-            Some(v) => {
-                self.remove_meta(&v)
-            }
+            Some(v) => self.remove_meta(&v),
             None => {
                 self.missing_keys.push(key.to_string());
                 default.unwrap_or(Value::Null)
@@ -59,9 +73,23 @@ impl Manifest {
         }
     }
 
-    /// メタデータを取得
-    /// 指定されたキーのパス上のすべての_始まりキーを収集
-    /// _load.mapのキーとplaceholderを完全修飾パスに変換
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::Manifest;
+    ///
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    ///
+    /// // collects meta keys from root to node, child overrides parent
+    /// let meta = manifest.get_meta("cache.user");
+    /// assert!(meta.contains_key("_load"));
+    /// assert!(meta.contains_key("_store"));
+    ///
+    /// // _load.map keys are qualified to absolute paths
+    /// let load = meta["_load"].as_object().unwrap();
+    /// let map = load["map"].as_object().unwrap();
+    /// assert!(map.keys().next().unwrap().starts_with("cache.user."));
+    /// ```
     pub fn get_meta(&mut self, key: &str) -> HashMap<String, Value> {
         method_log!("Manifest", "get_meta", key);
 
@@ -129,10 +157,10 @@ impl Manifest {
                 }
             };
 
-            // metadata を収集
+            // meta keys を収集
             for (k, v) in obj {
                 if k.starts_with('_') {
-                    // メタブロックのマージ/上書きルール
+                    // meta key のマージ/上書きルール
                     if let Some(existing_value) = meta.get(k).cloned() {
                         if existing_value.is_object() && v.is_object() {
                             if let (Value::Object(existing_obj), Value::Object(new_obj)) = (&existing_value, v) {
@@ -186,7 +214,7 @@ impl Manifest {
         meta
     }
 
-    /// Value内のplaceholderを再帰的に完全修飾（get_meta内でインライン使用）
+    /// Recursively qualifies relative placeholders in a Value to absolute paths.
     fn qualify_value(
         &mut self,
         value: &mut Value,
@@ -244,9 +272,7 @@ impl Manifest {
         }
     }
 
-    /// YAMLファイルをロード
-    /// .yml と .yaml の両方をサポート
-    /// 同名で両方の拡張子が存在する場合はエラー
+    /// Loads a YAML file into cache; returns error if both .yml and .yaml exist.
     fn load_file(&mut self, file: &str) -> Result<(), String> {
         if self.cache.contains_key(file) {
             return Ok(());
@@ -258,7 +284,6 @@ impl Manifest {
         let yml_exists = yml_path.exists();
         let yaml_exists = yaml_path.exists();
 
-        // 両方存在する場合はエラー
         if yml_exists && yaml_exists {
             self.cache.insert(file.to_string(), Value::Object(serde_json::Map::new()));
             return Err(format!(
@@ -267,7 +292,6 @@ impl Manifest {
             ));
         }
 
-        // どちらか存在する方を使用
         let file_path = if yml_exists {
             yml_path
         } else if yaml_exists {
@@ -290,6 +314,7 @@ impl Manifest {
         Ok(())
     }
 
+    /// Recursively strips meta keys from a Value, preserving empty objects (field key presence).
     fn remove_meta(&self, value: &Value) -> Value {
         match value {
             Value::Object(obj) => {
@@ -302,7 +327,7 @@ impl Manifest {
             }
             Value::Array(arr) => {
                 let filtered: Vec<Value> = arr.iter().map(|v| self.remove_meta(v)).collect();
-                // Empty array (all elements were metadata or became null) should be treated as null
+                // Empty array (all elements were meta keys or became null) should be treated as null
                 if filtered.is_empty() {
                     Value::Null
                 } else {
@@ -313,15 +338,53 @@ impl Manifest {
         }
     }
 
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::Manifest;
+    ///
+    /// let mut manifest = Manifest::new("./nonexistent");
+    /// manifest.get("missing.key", None);
+    /// assert_eq!(manifest.get_missing_keys(), &["missing.key"]);
+    /// ```
     pub fn get_missing_keys(&self) -> &[String] {
         &self.missing_keys
     }
 
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::Manifest;
+    ///
+    /// let mut manifest = Manifest::new("./nonexistent");
+    /// manifest.get("missing.key", None);
+    /// manifest.clear_missing_keys();
+    /// assert!(manifest.get_missing_keys().is_empty());
+    /// ```
     pub fn clear_missing_keys(&mut self) {
         self.missing_keys.clear();
     }
 
-    /// キーから値のみを取得（メタデータと null を除く）
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::Manifest;
+    /// use state_engine::common::DotString;
+    /// use serde_json::json;
+    ///
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    ///
+    /// // static field values returned, meta keys and nulls excluded
+    /// let key = DotString::new("connection.common");
+    /// let value = manifest.get_value(&key);
+    /// assert_eq!(value.get("tag"), Some(&json!("common")));
+    ///
+    /// // miss records to missing_keys
+    /// manifest.clear_missing_keys();
+    /// let key = DotString::new("cache.never");
+    /// manifest.get_value(&key);
+    /// assert!(!manifest.get_missing_keys().is_empty());
+    /// ```
     pub fn get_value(&mut self, key: &DotString) -> Value {
         method_log!("Manifest", "get_value", key.as_str());
         let key_str = key.as_str();
@@ -335,10 +398,8 @@ impl Manifest {
         }
 
         let value = if path.is_empty() {
-            // ファイル全体を返す
             self.cache.get(&file).cloned()
         } else {
-            // ドット記法でアクセス
             self.cache.get(&file).and_then(|data| {
                 let mut accessor = DotMapAccessor::new();
                 let path_dot = DotString::new(&path);
@@ -347,10 +408,7 @@ impl Manifest {
         };
 
         match value {
-            Some(v) => {
-                // メタデータとnullを同時に除外
-                self.remove_meta_and_nulls(&v)
-            }
+            Some(v) => self.remove_meta_and_nulls(&v),
             None => {
                 self.missing_keys.push(key_str.to_string());
                 Value::Null
@@ -358,7 +416,7 @@ impl Manifest {
         }
     }
 
-    /// メタデータ(_始まりキー)とnull値を同時に除外
+    /// Recursively strips meta keys and nulls; empty objects collapse to Null.
     fn remove_meta_and_nulls(&self, value: &Value) -> Value {
         match value {
             Value::Object(obj) => {
