@@ -157,10 +157,10 @@ impl Manifest {
                 }
             };
 
-            // meta keys を収集
+            // collect meta keys
             for (k, v) in obj {
                 if k.starts_with('_') {
-                    // meta key のマージ/上書きルール
+                    // inherit and overwrite meta key
                     if let Some(existing_value) = meta.get(k).cloned() {
                         if existing_value.is_object() && v.is_object() {
                             if let (Value::Object(existing_obj), Value::Object(new_obj)) = (&existing_value, v) {
@@ -177,7 +177,7 @@ impl Manifest {
                         meta.insert(k.clone(), v.clone());
                     }
 
-                    // パス情報を記録: _load.map のパスを記録
+                    // collect _load.map path
                     if k == "_load" {
                         if let Value::Object(load_obj) = v {
                             if load_obj.contains_key("map") {
@@ -189,7 +189,7 @@ impl Manifest {
             }
         }
 
-        // _load.map のキーを完全修飾
+        // qualify _load.map
         if let Some(map_parent) = meta_paths.get("_load.map") {
             if let Some(Value::Object(load_obj)) = meta.get_mut("_load") {
                 if let Some(Value::Object(map_obj)) = load_obj.get("map").cloned() {
@@ -202,7 +202,7 @@ impl Manifest {
             }
         }
 
-        // placeholder を完全修飾
+        // qualify placeholders(${""})
         self.load_file(&file).ok();
         let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
         let parent_path = path.rfind('.').map_or(String::new(), |pos| path[..pos].to_string());
@@ -227,7 +227,7 @@ impl Manifest {
                 *s = re.replace_all(s, |caps: &regex::Captures| {
                     let placeholder = &caps[1];
 
-                    // owner file内に存在するか
+                    // bool existence in owner file
                     if let Some(owner_data) = self.cache.get(owner_file) {
                         let placeholder_dot = DotString::new(placeholder);
                         if DotMapAccessor::has(owner_data, &placeholder_dot) {
@@ -235,7 +235,7 @@ impl Manifest {
                         }
                     }
 
-                    // 別ファイル参照か
+                    // bool existence in another file
                     let mut ph_parts = placeholder.splitn(2, '.');
                     let ph_file = ph_parts.next().unwrap_or("").to_string();
                     let ph_path = ph_parts.next().unwrap_or("").to_string();
@@ -250,7 +250,7 @@ impl Manifest {
                         }
                     }
 
-                    // 相対パス → 完全修飾
+                    // qualify pathes
                     if parent_path.is_empty() {
                         caps[0].to_string()
                     } else {
@@ -457,7 +457,6 @@ impl Manifest {
     }
 }
 
-// Provided::Manifest trait の実装
 impl provided::Manifest for Manifest {
     fn get(&mut self, key: &str, default: Option<Value>) -> Value {
         Manifest::get(self, key, default)

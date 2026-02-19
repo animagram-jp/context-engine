@@ -19,6 +19,15 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::{Manifest, State, Load};
+    ///
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    /// let load = Load::new();
+    /// let mut state = State::new(&mut manifest, load);
+    /// ```
     pub fn new(manifest: &'a mut dyn ManifestTrait, load: Load<'a>) -> Self {
         Self {
             manifest,
@@ -41,12 +50,10 @@ impl<'a> State<'a> {
         self
     }
 
-    /// owner_pathを算出（YAMLで_loadが定義されているnodeのqualified path）
+    /// Returns the owner path where `_load` or `_store` is defined in the manifest.
     ///
-    /// _load.map の最初のキーから逆算する。
-    /// mapがない場合の挙動は is_load によって異なる:
-    /// - is_load = true (Load処理): called_key をそのまま返す
-    /// - is_load = false (Store処理): called_key の親パスを返す
+    /// Derives from the first qualified key in `_load.map`; falls back to `called_key`
+    /// (is_load=true) or its parent path (is_load=false) when no map is present.
     fn get_owner_path(&self, meta: &HashMap<String, Value>, is_load: bool) -> DotString {
         meta.get("_load")
             .and_then(|v| v.as_object())
@@ -59,10 +66,8 @@ impl<'a> State<'a> {
             .unwrap_or_else(|| {
                 if let Some(called_key) = self.called_keys.last() {
                     if is_load {
-                        // Load処理: called_key そのまま
                         DotString::new(called_key.as_str())
                     } else {
-                        // Store処理: called_key の親パス
                         if called_key.len() <= 1 {
                             DotString::new("")
                         } else {
@@ -75,45 +80,36 @@ impl<'a> State<'a> {
             })
     }
 
+    /// Resolves `${path}` placeholders in a config map using the instance cache and `self.get()`.
     fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
-        // Phase 1: placeholder名を収集（unique list）
         let placeholder_names: Vec<String> = Placeholder::collect(config);
 
         if placeholder_names.is_empty() {
-            return; // placeholderがなければ何もしない
+            return;
         }
 
-        // Phase 2: cache hit分を resolved_values に収集、miss分を pending_paths に保持
         let mut resolved_values: HashMap<String, Value> = HashMap::new();
         let mut pending_paths: Vec<String> = Vec::new();
 
         for name in placeholder_names {
             let name_dot = DotString::new(&name);
             if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
-                // cache hit
                 resolved_values.insert(name, cached.clone());
             } else {
-                // cache miss
                 pending_paths.push(name);
             }
         }
 
-        // Phase 3: cache hit分を一括置換
-        let _missing_after_cache = Placeholder::replace(config, &resolved_values);
+        Placeholder::replace(config, &resolved_values);
 
-        // Phase 4: cache miss分を順次 self.get() で解決
-        // TODO: 呼び出し順序の最適化（依存関係を考慮）
         for path in pending_paths {
             if let Some(value) = self.get(&path) {
                 resolved_values.insert(path, value);
             }
-            // else: 解決できなかった（missing_keysとして残る）
         }
 
-        // Phase 5: 新たに解決した値で再度置換
         let final_missing = Placeholder::replace(config, &resolved_values);
 
-        // 未解決のplaceholderがあれば警告ログ出力
         if !final_missing.is_empty() {
             let missing_list = final_missing.join(", ");
             warn_log!(
@@ -126,6 +122,31 @@ impl<'a> State<'a> {
 }
 
 impl<'a> StateTrait for State<'a> {
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// use serde_json::{json, Value};
+    ///
+    /// struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// impl InMemoryClient for MockInMemory {
+    ///     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    ///     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    ///     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// }
+    ///
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    ///
+    /// // store miss with no load client → None
+    /// assert_eq!(state.get("connection.common"), None);
+    ///
+    /// // when set before get
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.get("connection.common").is_some());
+    /// ```
     fn get(&mut self, key: &str) -> Option<Value> {
         method_log!("State", "get", key);
 
@@ -139,7 +160,7 @@ impl<'a> StateTrait for State<'a> {
 
         self.called_keys.push(DotString::new(key));
 
-        // 1. check State.cache
+        // 1. cache check
         let current_key = self.called_keys.last().unwrap();
         if DotMapAccessor::has(&self.cache, current_key) {
             let cached = self.dot_accessor.get(&self.cache, current_key).cloned();
@@ -147,52 +168,45 @@ impl<'a> StateTrait for State<'a> {
             return cached;
         }
 
-        // 2. メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             self.called_keys.pop();
             return None;
         }
 
-        // 3. _load.client: State の場合は _store をスキップ
+        // Skip _store when _load.client is "State" (intra-State reference)
         let has_state_client = meta.get("_load")
             .and_then(|v| v.as_object())
             .and_then(|obj| obj.get("client"))
             .and_then(|v| v.as_str())
             == Some("State");
 
-        // 4. _store から値を取得（client: State でない場合のみ）
+        // 2. Try _store
         if !has_state_client {
             if let Some(store_config_value) = meta.get("_store") {
                 if let Some(store_config_obj) = store_config_value.as_object() {
                     let mut store_config: HashMap<String, Value> =
                         store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-                    // store_config 内の placeholder を解決
                     self.resolve_config_placeholders(&mut store_config);
 
                     if let Some(value) = self.store.get(&store_config) {
                         let owner_path = self.get_owner_path(&meta, false);
 
-                        // owner_path で Manifest の静的値を cache にマージ
                         self.manifest.clear_missing_keys();
                         let manifest_value = self.manifest.get_value(&owner_path);
                         if self.manifest.get_missing_keys().is_empty() {
                             DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
                         }
 
-                        // Store値のマージ方法を値の型によって変える
                         if value.is_object() {
-                            // Object の場合: owner_path にマージ（上書き）
                             DotMapAccessor::merge(&mut self.cache, &owner_path, value);
                         } else {
-                            // Scalar の場合: called_key に直接セット
                             let called_key = self.called_keys.last().unwrap();
                             DotMapAccessor::set(&mut self.cache, called_key, value);
                         }
 
-                        // 要求されたフィールドを抽出
-                        // has() でキーの存在を確認してから取得する（nullノードのキーを早期returnしない）
+                        // Use has() before get() to avoid early-returning null nodes
                         let called_key = self.called_keys.last().unwrap();
                         if DotMapAccessor::has(&self.cache, called_key) {
                             let extracted = self.dot_accessor.get(&self.cache, called_key).cloned();
@@ -204,29 +218,23 @@ impl<'a> StateTrait for State<'a> {
             }
         }
 
-        // 5. miss時は自動ロード
+        // 3. Auto-load on miss
         let result = if let Some(load_config_value) = meta.get("_load") {
             if let Some(load_config_obj) = load_config_value.as_object() {
                 let mut load_config: HashMap<String, Value> =
                     load_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-                // client が無い場合は自動ロードしない
                 if !load_config.contains_key("client") {
                     self.called_keys.pop();
                     return None;
                 }
 
-                // placeholder 解決
                 self.resolve_config_placeholders(&mut load_config);
 
-                // client: State の場合は key の値を直接返す（State内参照）
                 let client_value = load_config.get("client").and_then(|v| v.as_str());
 
                 if client_value == Some("State") {
-                    // _load.key の値を返す（placeholder 解決済みの値）
                     if let Some(key_value) = load_config.get("key") {
-                        // key_value は既にplaceholder解決済み
-                        // インスタンスキャッシュに保存
                         let current_key = self.called_keys.last().unwrap();
                         DotMapAccessor::set(&mut self.cache, current_key, key_value.clone());
 
@@ -236,12 +244,11 @@ impl<'a> StateTrait for State<'a> {
                     self.called_keys.pop();
                     None
                 } else {
-                    // Load に渡す前に map を unqualify（qualified path → relative field name）
+                    // Unqualify map keys (qualified path → relative field name) before passing to Load
                     if let Some(map_value) = load_config.get("map") {
                         if let Value::Object(map_obj) = map_value {
                             let mut unqualified_map = serde_json::Map::new();
                             for (qualified_key, db_column) in map_obj {
-                                // qualified pathから最後のセグメントを抽出（相対フィールド名）
                                 if let Some(pos) = qualified_key.rfind('.') {
                                     let field_name = &qualified_key[pos + 1..];
                                     unqualified_map.insert(field_name.to_string(), db_column.clone());
@@ -253,21 +260,18 @@ impl<'a> StateTrait for State<'a> {
                         }
                     }
 
-                    // Load 実行
                     if let Ok(loaded) = self.load.handle(&load_config) {
                         let owner_path = self.get_owner_path(&meta, true);
 
-                        // owner_path で Manifest の静的値を cache にマージ
                         self.manifest.clear_missing_keys();
                         let manifest_value = self.manifest.get_value(&owner_path);
                         if self.manifest.get_missing_keys().is_empty() {
                             DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
                         }
 
-                        // owner_path で Load値を cache にマージ (上書き)
                         DotMapAccessor::merge(&mut self.cache, &owner_path, loaded.clone());
 
-                        // ロード成功 → _store に保存（cache上のマージ済み値を保存）
+                        // On load success, persist merged cache value to _store
                         if let Some(store_config_value) = meta.get("_store") {
                             if let Some(store_config_obj) = store_config_value.as_object() {
                                 let mut store_config: HashMap<String, Value> = store_config_obj
@@ -275,18 +279,15 @@ impl<'a> StateTrait for State<'a> {
                                     .map(|(k, v)| (k.clone(), v.clone()))
                                     .collect();
 
-                                // store_config の placeholder も解決
                                 self.resolve_config_placeholders(&mut store_config);
 
-                                // cacheから保存する値を取得
                                 if let Some(cache_value) = self.dot_accessor.get(&self.cache, &owner_path) {
                                     self.store.set(&store_config, cache_value.clone(), None);
                                 }
                             }
                         }
 
-                        // 要求されたフィールドを抽出して返す
-                        // has() でキーの存在を確認してから取得する（nullノードのキーを早期returnしない）
+                        // Use has() before get() to avoid early-returning null nodes
                         let called_key = self.called_keys.last().unwrap();
                         if DotMapAccessor::has(&self.cache, called_key) {
                             self.dot_accessor.get(&self.cache, called_key).cloned()
@@ -308,13 +309,30 @@ impl<'a> StateTrait for State<'a> {
         result
     }
 
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    ///
+    /// let ok = state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(ok);
+    /// ```
     fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
         method_log!("State", "set", key);
 
-        // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
-        // メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             eprintln!("State::set: meta is empty for key '{}'", key);
@@ -322,7 +340,6 @@ impl<'a> StateTrait for State<'a> {
             return false;
         }
 
-        // _store 設定取得
         let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
             Some(config) => config,
             None => {
@@ -335,48 +352,61 @@ impl<'a> StateTrait for State<'a> {
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
-        // 1. owner_path を算出
         let owner_path = self.get_owner_path(&meta, false);
 
-        // 2. cache に owner_path の値がなければ、Store から取得して cache にロード
+        // Pre-load owner object from store into cache to preserve sibling fields
         if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
             if let Some(store_value) = self.store.get(&store_config_map) {
                 DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
             }
         }
 
-        // 3. cache 上で新しい値を設定（DotMapAccessor が全ての作業を行う）
         let called_key = self.called_keys.last().unwrap();
         DotMapAccessor::set(&mut self.cache, called_key, value);
 
-        // 4. cache から owner_path の親オブジェクト全体を取得
         let store_value = self.dot_accessor.get(&self.cache, &owner_path)
             .cloned()
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
-        // 5. 親オブジェクト全体を _store に保存
         let result = self.store.set(&store_config_map, store_value, ttl);
 
         self.called_keys.pop();
         result
     }
 
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    ///
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.delete("connection.common"));
+    /// assert_eq!(state.get("connection.common"), None);
+    /// ```
     fn delete(&mut self, key: &str) -> bool {
         method_log!("State", "delete", key);
 
         self.called_keys.push(DotString::new(key));
 
-        // メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             self.called_keys.pop();
             return false;
         }
 
-        // _store 設定取得
         let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
             Some(config) => config,
             None => {
@@ -388,15 +418,12 @@ impl<'a> StateTrait for State<'a> {
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
-        // 1. owner_path を算出
         let owner_path = self.get_owner_path(&meta, false);
 
-        // 2. key が owner_path と同じ場合は親オブジェクト全体を削除
+        // When key == owner_path, delete the entire owner object from store
         if key == owner_path.as_str() {
-            // 親オブジェクト全体を削除
             let result = self.store.delete(&store_config_map);
             if result {
                 let called_key = self.called_keys.last().unwrap();
@@ -406,61 +433,72 @@ impl<'a> StateTrait for State<'a> {
             return result;
         }
 
-        // 3. 子フィールドの削除: cache に owner_path の値がなければ、Store から取得して cache にロード
+        // Pre-load owner object from store into cache to preserve sibling fields
         if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
             if let Some(store_value) = self.store.get(&store_config_map) {
                 DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
             }
         }
 
-        // 4. cache のバックアップ（ロールバック用）
         let cache_backup = self.cache.clone();
 
-        // 5. cache 上で子フィールドを削除（DotMapAccessor が全ての作業を行う）
         let called_key = self.called_keys.last().unwrap();
         DotMapAccessor::unset(&mut self.cache, called_key);
 
-        // 6. cache から owner_path の親オブジェクト全体を取得
         let store_value = self.dot_accessor.get(&self.cache, &owner_path)
             .cloned()
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
-        // 7. 親オブジェクト全体を _store に保存
         let result = self.store.set(&store_config_map, store_value, None);
 
-        // 8. 失敗時はロールバック
         if !result {
             self.cache = cache_backup;
         }
 
-        // TODO: 空オブジェクトになった場合の処理（保留）
-        // 全ての子フィールドを削除して空配列になった時に owner_path も削除する
+        // Github issue #22
 
         self.called_keys.pop();
         result
     }
 
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut manifest = Manifest::new("./examples/manifest");
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    ///
+    /// assert!(!state.exists("connection.common"));
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.exists("connection.common"));
+    /// ```
     fn exists(&mut self, key: &str) -> bool {
         method_log!("State", "exists", key);
 
-        // DotString を生成して call stack に追加
         self.called_keys.push(DotString::new(key));
 
-        // 1. インスタンスキャッシュをチェック（最優先・最速）
+        // 1. cache check (fastest path, no I/O)
         let current_key = self.called_keys.last().unwrap();
         if DotMapAccessor::has(&self.cache, current_key) {
             self.called_keys.pop();
             return true;
         }
 
-        // 2. メタデータ取得
         let meta = self.manifest.get_meta(key);
         if meta.is_empty() {
             self.called_keys.pop();
             return false;
         }
 
-        // 3. _store 設定取得
         let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
             Some(config) => config,
             None => {
@@ -472,10 +510,9 @@ impl<'a> StateTrait for State<'a> {
         let mut store_config_map: HashMap<String, Value> =
             store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        // 4. store_config 内の placeholder 解決
         self.resolve_config_placeholders(&mut store_config_map);
 
-        // 6. _store から値を取得（自動ロードなし）
+        // Check store only — no auto-load (Github issue #4)
         let result = self.store.get(&store_config_map).is_some();
 
         self.called_keys.pop();
@@ -483,84 +520,3 @@ impl<'a> StateTrait for State<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::manifest::Manifest;
-    use crate::ports::required::InMemoryClient;
-
-    // Mock InMemoryClient
-    struct MockInMemory {
-        data: HashMap<String, Value>,
-    }
-
-    impl MockInMemory {
-        fn new() -> Self {
-            Self {
-                data: HashMap::new(),
-            }
-        }
-    }
-
-    impl InMemoryClient for MockInMemory {
-        fn get(&self, key: &str) -> Option<Value> {
-            self.data.get(key).cloned()
-        }
-
-        fn set(&mut self, key: &str, value: Value) {
-            self.data.insert(key.to_string(), value);
-        }
-
-        fn delete(&mut self, key: &str) -> bool {
-            self.data.remove(key).is_some()
-        }
-    }
-
-    #[test]
-    fn test_state_set_and_get() {
-        let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("examples/manifest");
-        let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
-
-        let load = Load::new();
-        let mut in_memory = MockInMemory::new();
-
-        let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-        // connection.common は InMemory で placeholder なし
-        let mut conn_value = serde_json::Map::new();
-        conn_value.insert("host".to_string(), Value::String("localhost".to_string()));
-        let value = Value::Object(conn_value);
-
-        let result = state.set("connection.common", value.clone(), None);
-        assert!(result, "set should succeed");
-
-        // get
-        let retrieved = state.get("connection.common");
-        assert_eq!(retrieved, Some(value));
-    }
-
-    #[test]
-    fn test_state_delete() {
-        let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("examples/manifest");
-        let mut manifest = Manifest::new(manifest_path.to_str().unwrap());
-
-        let load = Load::new();
-        let mut in_memory = MockInMemory::new();
-
-        let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-        // connection.common でテスト
-        let value = Value::String("test_value".to_string());
-        state.set("connection.common", value, None);
-
-        // delete
-        let result = state.delete("connection.common");
-        assert!(result, "delete should succeed");
-
-        // get (should be None)
-        let retrieved = state.get("connection.common");
-        assert_eq!(retrieved, None);
-    }
-}

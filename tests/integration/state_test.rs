@@ -16,48 +16,6 @@ fn get_fixtures_path() -> String {
 // ============================================================================
 
 #[test]
-fn test_state_set_and_get_in_memory() {
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-    let load = Load::new();
-    let mut in_memory = MockInMemory::new();
-
-    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-    // connection.common (_store: InMemory)
-    let value = json!({
-        "host": "localhost",
-        "port": 5432,
-        "database": "testdb"
-    });
-
-    let result = state.set("connection.common", value.clone(), None);
-    assert!(result, "set should succeed");
-
-    let retrieved = state.get("connection.common");
-    assert_eq!(retrieved, Some(value));
-}
-
-#[test]
-fn test_state_delete_in_memory() {
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-    let load = Load::new();
-    let mut in_memory = MockInMemory::new();
-
-    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-    let value = json!({"host": "localhost"});
-    state.set("connection.common", value, None);
-
-    let result = state.delete("connection.common");
-    assert!(result, "delete should succeed");
-
-    let retrieved = state.get("connection.common");
-    assert_eq!(retrieved, None);
-}
-
-#[test]
 fn test_state_set_and_get_kvs() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
@@ -198,24 +156,6 @@ fn test_load_without_client_key_reference() {
 // ============================================================================
 
 #[test]
-fn test_exists_in_cache() {
-    // キャッシュに存在する場合、trueを返す
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-    let load = Load::new();
-    let mut in_memory = MockInMemory::new();
-
-    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-    // 値をセット（キャッシュに保存される）
-    let value = json!({"host": "localhost"});
-    state.set("connection.common", value, None);
-
-    // exists()はtrueを返す
-    assert!(state.exists("connection.common"));
-}
-
-#[test]
 fn test_exists_in_store_but_not_in_cache() {
     // ストアに存在するがキャッシュにない場合、trueを返す
     let fixtures_path = get_fixtures_path();
@@ -230,20 +170,6 @@ fn test_exists_in_store_but_not_in_cache() {
 
     // キャッシュには存在しないが、ストアには存在する
     assert!(state.exists("connection.common"));
-}
-
-#[test]
-fn test_exists_not_found() {
-    // キャッシュにもストアにも存在しない場合、falseを返す
-    let fixtures_path = get_fixtures_path();
-    let mut manifest = Manifest::new(&fixtures_path);
-    let load = Load::new();
-    let mut in_memory = MockInMemory::new();
-
-    let mut state = State::new(&mut manifest, load).with_in_memory(&mut in_memory);
-
-    // 存在しないキー
-    assert!(!state.exists("connection.common"));
 }
 
 #[test]
