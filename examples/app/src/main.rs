@@ -1,10 +1,10 @@
 /// state-engine Sample Application
 ///
-/// Demonstrates state-engine concepts with actual DB/KVS connections.
+/// Demonstrates state-engine concepts with actual Db/KVS connections.
 
 mod adapters;
 
-use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DBAdapter};
+use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DbAdapter};
 use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
 
@@ -37,12 +37,12 @@ async fn main() {
             return;
         }
     };
-    let mut db_client = DBAdapter::new();
+    let mut db_client = DbAdapter::new();
 
     println!("   - InMemory adapters initialized");
     println!("   - Env adapter initialized");
     println!("   - KVS adapters initialized");
-    println!("   - DB adapter initialized\n");
+    println!("   - Db adapter initialized\n");
 
     // 3. Setup Load with adapters
     println!("3. Configuring Load module...");

@@ -13,6 +13,6 @@ pub use load::Load;
 pub use store::Store;
 
 pub use ports::required::{
-    DBClient, EnvClient,
+    DbClient, EnvClient,
     KVSClient, InMemoryClient,
 };

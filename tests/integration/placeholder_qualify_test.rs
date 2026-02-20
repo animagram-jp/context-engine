@@ -35,7 +35,7 @@ user:
     key: 'user:${session.sso_user_id}'
     ttl: 14400
   _load:
-    client: DB
+    client: Db
     connection: ${connection.tenant}
     table: 'users'
     where: 'sso_user_id=${session.sso_user_id}'

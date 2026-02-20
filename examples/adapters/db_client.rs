@@ -1,18 +1,18 @@
-/// DBClient implementation using PostgreSQL
+/// DbClient implementation using PostgreSQL
 ///
-/// Implements the DBClient Required Port.
+/// Implements the DbClient Required Port.
 
-use state_engine::ports::required::DBClient;
+use state_engine::ports::required::DbClient;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-pub struct DBAdapter {
-    // Connection pool: key = connection.name (as string), value = DB client
+pub struct DbAdapter {
+    // Connection pool: key = connection.name (as string), value = Db client
     pool: Mutex<HashMap<String, tokio_postgres::Client>>,
 }
 
-impl DBAdapter {
+impl DbAdapter {
     pub fn new() -> Self {
         Self {
             pool: Mutex::new(HashMap::new()),
@@ -88,7 +88,7 @@ impl DBAdapter {
     }
 }
 
-impl DBClient for DBAdapter {
+impl DbClient for DbAdapter {
     fn fetch(
         &self,
         connection: &Value,

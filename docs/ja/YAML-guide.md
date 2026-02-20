@@ -70,7 +70,7 @@ _load:
   client: Env       # 環境変数
   client: InMemory  # プロセスメモリ
   client: KVS       # Redis, Memcached等
-  client: DB        # データベース
+  client: Db        # データベース
   client: State     # 別のStateキーを参照
 ```
 
@@ -78,10 +78,10 @@ _load:
 
 #### クライアント固有のパラメータ
 
-**_load.client: DB**
+**_load.client: Db**
 ```yaml
 _load:
-  client: DB
+  client: Db
   connection: ${connection.tenant}  # (Value) 接続設定オブジェクトまたは参照
   table: 'users'                    # (string) テーブル名
   where: 'id=${user.id}'            # (string, optional) WHERE句
@@ -148,7 +148,7 @@ _store:
 _store:
   client: # {InMemory, KVS}. 各クライアント用のアダプタークラスを作成
 _load:
-  client: # {Env, InMemory, KVS, DB, State}
+  client: # {Env, InMemory, KVS, Db, State}
 
 node_A:
   _state: # オプション、meta keyのみ（型検証は未実装）
@@ -156,7 +156,7 @@ node_A:
   _store: # ファイルルートで最低1つ必要。子ノードに継承され、上書き可能。
     client: {InMemory, KVS}  # _storeで有効なのはInMemoryとKVSのみ
   _load:
-    client: DB
+    client: Db
     connection: ${connection.tenant} # reserved ${} means State::get(). State try 'example.node_A.connection.tenant'(relative path) 1st and if not exists, 'connection.tenant'(absolute path) 2nd.
     table: 'table_A'
     map: # It can load multiple nodes once following YAML coding. Be attention for optimization and unintended loading
@@ -181,7 +181,7 @@ node_A:
 node_B:
   node_2:
     _load:
-      client: DB
+      client: Db
       table: 'table-${example.node_A.node_1}' # It means State::get{'example.node_A.node_1'} (State try 'example.node_B.example.node_A.node_1' 1st)
     _store:
 ...:

@@ -4,9 +4,9 @@ user:
   _store:
     client: KVS
     key: 'user:${session.sso_user_id}' # manifestDir path reference
-    ttl: 14400 # DBClient impl defines ttl unit
+    ttl: 14400 # DbClient impl defines ttl unit
   _load:
-    client: DB
+    client: Db
     connection: ${connection.tenant}
     table: 'users'
     where: 'sso_user_id=${session.sso_user_id}'
@@ -33,7 +33,7 @@ tenant:
     key: 'tenant:${cache.user.tenant_id}'
     ttl: 3600
   _load:
-    client: DB
+    client: Db
     connection: ${connection.common}
     table: 'tenants'
     where: 'id=${cache.user.tenant_id}'

@@ -9,7 +9,7 @@
 -  required modules (ライブラリ要求モジュール*)
   1. InMemoryClient
   2. KVSClient
-  3. DBClient
+  3. DbClient
   4. EnvClient
 
 - common modules (内部コモンモジュール)
@@ -61,7 +61,7 @@
       - **型保持**: JSON形式で型を区別（例: `42` vs `"42"`, `true` vs `"true"`）
       - KVSにはJSON文字列としてデータを保存。個別フィールドは取得後に抽出。
       - 設計意図: YAML構造に忠実でありながら、KVSはプリミティブに保つ。JSON形式でKVSネイティブ型に依存せず型情報を保持。
-  3. **DBClient**
+  3. **DbClient**
     - 必要なメソッド: `fetch()`
     - 渡される引数: `'connection': YAML記載の_{store,load}.connection:の値`, `'table': YAML記載の_{store,load}.table:の値}`, `'columns': YAML記載の_{store,load}.map.*:の値`, `'where_clause': YAML記載の_{store,load}.where:の値`
     - 想定対象ストア: SQLデータベース
@@ -172,7 +172,7 @@ tenant_id:
 
 **クライアント種別:**
 - `Env` - 環境変数からロード
-- `DB` - データベースからロード
+- `Db` - データベースからロード
 - `KVS` - KVSからロード
 - `InMemory` - プロセスメモリからロード
 - `State` - 別のStateキーを参照（自己参照）
@@ -229,7 +229,7 @@ tenant_id:
    ↓
 9. miss時、自動ロード
    ├─→ Load::handle(loadConfig)
-   │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
+   │    ├─→ client: Db → DbClient::fetchOne/fetchAll()
    │    ├─→ client: KVS → KVSClient::get()
    │    ├─→ client: Env → EnvClient::get()
    │    ├─→ client: InMemory → InMemoryClient::get()

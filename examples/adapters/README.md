@@ -17,10 +17,10 @@ impl InMemoryClient for InMemoryAdapter
 impl KVSClient for KVSAdapter
 ```
 
-### 3. DBAdapter
+### 3. DbAdapter
 
 ```Rust
-impl DBClient for DBAdapter
+impl DbClient for DbAdapter
 ```
 
 ## 4. EnvAdapter
@@ -29,14 +29,14 @@ impl DBClient for DBAdapter
 impl EnvClient for EnvAdapter
 ```
 
-### 4. DBAdapter
+### 4. DbAdapter
 
 ```Rust
-impl DBClient for DBAdapter
+impl DbClient for DbAdapter
 ```
 
 **!important**: 
-You can choose 3 ways of getting `connection: &Value` for your `DBAdapter::fetch()` - 
+You can choose 3 ways of getting `connection: &Value` for your `DbAdapter::fetch()` - 
   1: just a string
   2: state-engine resolved collection 
   3: state-engine resolved collection, and just use connection['configKey'], because your app already has connectionConfig stored in your InMemory or KVS.
@@ -44,14 +44,14 @@ You can choose 3 ways of getting `connection: &Value` for your `DBAdapter::fetch
 ```yaml
 node:
   _load:
-    client: DB
+    client: Db
     connection: 'connectionName'
 ```
 
 ```yaml
 node:
   _load:
-    client: DB
+    client: Db
     connection: ${connection.tenant} # It means "connection: State::get('connection.tenant')"
 ```
 

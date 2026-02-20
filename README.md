@@ -66,7 +66,7 @@ user:
     client: KVS
     key: 'user:1'
   _load:
-    client: DB
+    client: Db
     table: 'users'
     where: 'id=1'
     map:
@@ -88,10 +88,10 @@ user:
 |-----------|----------------|---------|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
 | `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [KVSAdapter](./examples/adapters/kvs_client.rs) |
-| `DBClient` | SQL Database | `fetch()` | [DBAdapter](./examples/adapters/db_client.rs) |
+| `DbClient` | SQL Database | `fetch()` | [DbAdapter](./examples/adapters/db_client.rs) |
 | `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
 
-'DB' and 'Env' will be used only in Loading(Read)
+'Db' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.
@@ -105,7 +105,7 @@ let mut manifest = Manifest::new("./manifest");
 // Create adapter instances
 let mut in_memory = InMemoryAdapter::new();
 let mut kvs = KVSAdapter::new()?;
-let db = DBAdapter::new()?;
+let db = DbAdapter::new()?;
 
 // Build Load with adapters
 let load = Load::new()
@@ -144,7 +144,7 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│    InMemory, KVS, DB, Env clients   │
+│    InMemory, KVS, Db, Env clients   │
 └─────────────────────────────────────┘
 ```
 

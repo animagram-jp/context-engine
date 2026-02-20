@@ -81,9 +81,9 @@ fn test_state_load_cache_expansion() {
 
     // EnvClientのモック設定
     let mut env_client = MockEnvClient::new();
-    env_client.data.insert("DB_HOST".to_string(), "localhost".to_string());
-    env_client.data.insert("DB_PORT".to_string(), "3306".to_string());
-    env_client.data.insert("DB_DATABASE".to_string(), "test_db".to_string());
+    env_client.data.insert("Db_HOST".to_string(), "localhost".to_string());
+    env_client.data.insert("Db_PORT".to_string(), "3306".to_string());
+    env_client.data.insert("Db_DATABASE".to_string(), "test_db".to_string());
 
     let mut load = Load::new();
     load = load.with_env_client(&mut env_client);
@@ -193,7 +193,7 @@ fn test_exists_does_not_trigger_load() {
     // exists()は自動ロードしないので、falseを返す
     assert!(!state.exists("cache.user"));
 
-    // get()を呼ぶと自動ロードが試みられる（ただし、この場合はDBClientが無いので失敗する）
+    // get()を呼ぶと自動ロードが試みられる（ただし、この場合はDbClientが無いので失敗する）
     let result = state.get("cache.user");
     assert_eq!(result, None);
 }

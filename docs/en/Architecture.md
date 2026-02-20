@@ -9,7 +9,7 @@
 -  required modules (library required*)
   1. InMemoryClient
   2. KVSClient
-  3. DBClient
+  3. DbClient
   4. EnvClient
 
 - common modules (internal common modules)
@@ -185,7 +185,7 @@ Application must implement the following traits to handle data stores:
     - KVS stores data as JSON strings. Individual fields are extracted after retrieval.
     - Design intent: Stay faithful to YAML structure while keeping KVS primitive. JSON format ensures type information is preserved without depending on KVS-native types.
 
-3. **DBClient**
+3. **DbClient**
   - expected operations: `fetch()`
   - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
   - only for _load.client
@@ -204,7 +204,7 @@ When `State::get()` misses a value, retrieve data according to `_store` and `_lo
 
 **Client types:**
 - `Env` - Load from environment variables
-- `DB` - Load from database
+- `Db` - Load from database
 - `KVS` - Load from KVS
 - `InMemory` - Load from process memory
 - `State` - Reference another State key (self-reference)
@@ -261,7 +261,7 @@ This is an explicit designation to reference another key within State without in
    ↓
 9. On miss, auto-load
    ├─→ Load::handle(loadConfig)
-   │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
+   │    ├─→ client: Db → DbClient::fetchOne/fetchAll()
    │    ├─→ client: KVS → KVSClient::get()
    │    ├─→ client: Env → EnvClient::get()
    │    ├─→ client: InMemory → InMemoryClient::get()

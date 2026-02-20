@@ -1,5 +1,5 @@
 use crate::ports::required::{
-    DBClient, EnvClient, KVSClient,
+    DbClient, EnvClient, KVSClient,
     InMemoryClient,
 };
 use serde_json::Value;
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 /// _load メタデータに従って各種clientからデータを取得する。
 /// 再帰制御は Resolver が担当。
 pub struct Load<'a> {
-    db_client: Option<&'a dyn DBClient>,
+    db_client: Option<&'a dyn DbClient>,
     kvs_client: Option<&'a dyn KVSClient>,
     in_memory: Option<&'a dyn InMemoryClient>,
     env_client: Option<&'a dyn EnvClient>,
@@ -27,8 +27,8 @@ impl<'a> Load<'a> {
         }
     }
 
-    /// DBClientを設定
-    pub fn with_db_client(mut self, client: &'a dyn DBClient) -> Self {
+    /// DbClientを設定
+    pub fn with_db_client(mut self, client: &'a dyn DbClient) -> Self {
         self.db_client = Some(client);
         self
     }
@@ -69,7 +69,7 @@ impl<'a> Load<'a> {
             "Env" | "Env" => self.load_from_env(config),
             "InMemory" => self.load_from_in_memory(config),
             "KVS" => self.load_from_kvs(config),
-            "DB" => self.load_from_db(config),
+            "Db" => self.load_from_db(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -146,14 +146,14 @@ impl<'a> Load<'a> {
             .map_err(|e| format!("Load::load_from_kvs: JSON parse error: {}", e))
     }
 
-    /// DBから読み込み
+    /// Dbから読み込み
     fn load_from_db(
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
         let db_client = self
             .db_client
-            .ok_or("Load::load_from_db: DBClient not configured")?;
+            .ok_or("Load::load_from_db: DbClient not configured")?;
 
         let table = config
             .get("table")
@@ -182,7 +182,7 @@ impl<'a> Load<'a> {
             return Err("Load::load_from_db: no columns specified in map".to_string());
         }
 
-        // DB から取得（常に Vec で返る）
+        // Db から取得（常に Vec で返る）
         let rows = db_client
             .fetch(connection, table, &columns, where_clause)
             .ok_or_else(|| format!("Load::load_from_db: fetch failed for table '{}'", table))?;
@@ -244,8 +244,8 @@ mod tests {
     impl EnvClient for MockEnvClient {
         fn get(&self, key: &str) -> Option<String> {
             match key {
-                "DB_HOST" => Some("localhost".to_string()),
-                "DB_PORT" => Some("5432".to_string()),
+                "Db_HOST" => Some("localhost".to_string()),
+                "Db_PORT" => Some("5432".to_string()),
                 _ => None,
             }
         }
@@ -260,8 +260,8 @@ mod tests {
         config.insert("client".to_string(), Value::String("Env".to_string()));
 
         let mut map = serde_json::Map::new();
-        map.insert("host".to_string(), Value::String("DB_HOST".to_string()));
-        map.insert("port".to_string(), Value::String("DB_PORT".to_string()));
+        map.insert("host".to_string(), Value::String("Db_HOST".to_string()));
+        map.insert("port".to_string(), Value::String("Db_PORT".to_string()));
         config.insert("map".to_string(), Value::Object(map));
 
         let result = load.handle(&config).unwrap();

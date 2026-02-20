@@ -10,5 +10,5 @@ pub use adapters_impl::{
     InMemoryAdapter,
     EnvAdapter,
     KVSAdapter,
-    DBAdapter,
+    DbAdapter,
 };

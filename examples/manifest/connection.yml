@@ -38,7 +38,7 @@ tenant:
     client: InMemory
     key: 'connection.tenant${cache.user.tenant_id}'
   _load:
-    client: DB
+    client: Db
     connection: ${connection.common}
     table: 'tenants'
     where: 'id=${cache.user.tenant_id}'

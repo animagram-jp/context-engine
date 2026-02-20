@@ -70,7 +70,7 @@ _load:
   client: Env       # Environment variables
   client: InMemory  # Process memory
   client: KVS       # Redis, Memcached
-  client: DB        # Database
+  client: Db        # Database
   client: State     # Reference another State key
 ```
 
@@ -78,10 +78,10 @@ You must implement adapter for each client you use (see Required Ports).
 
 #### Client-Specific Parameters
 
-**_load.client: DB**
+**_load.client: Db**
 ```yaml
 _load:
-  client: DB
+  client: Db
   connection: ${connection.tenant}  # (Value) Connection config object or reference
   table: 'users'                    # (string) Table name
   where: 'id=${user.id}'            # (string, optional) WHERE clause
@@ -148,7 +148,7 @@ _store:
 _store:
   client: # {InMemory, KVS}. Make adapter logic class for each client
 _load:
-  client: # {Env, InMemory, KVS, DB, State}
+  client: # {Env, InMemory, KVS, Db, State}
 
 node_A:
   _state: # optional, meta key only (type validation not yet implemented)
@@ -156,7 +156,7 @@ node_A:
   _store: # required at least in file root. Inherited by child nodes, can be overridden.
     client: {InMemory, KVS}  # Only InMemory and KVS are valid for _store
   _load:
-    client: DB
+    client: Db
     connection: ${connection.tenant} # reserved ${} means State::get(). State try 'example.node_A.connection.tenant'(relative path) 1st and if not exists, 'connection.tenant'(absolute path) 2nd.
     table: 'table_A'
     map: # It can load multiple nodes once following YAML coding. Be attention for optimization and unintended loading
@@ -181,7 +181,7 @@ node_A:
 node_B:
   node_2:
     _load:
-      client: DB
+      client: Db
       table: 'table-${example.node_A.node_1}' # It means State::get{'example.node_A.node_1'} (State try 'example.node_B.example.node_A.node_1' 1st)
     _store:
 ...:

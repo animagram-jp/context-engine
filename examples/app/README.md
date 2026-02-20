@@ -35,7 +35,7 @@ state-engine-app       | 2. Setting up adapters...
 state-engine-app       |    - InMemory adapters initialized
 state-engine-app       |    - Env adapter initialized
 state-engine-app       |    - KVS adapters initialized
-state-engine-app       |    - DB adapter initialized
+state-engine-app       |    - Db adapter initialized
 state-engine-app       | 
 state-engine-app       | 3. Configuring Load module...
 state-engine-app       |    - Load module configured
@@ -66,11 +66,11 @@ state-engine-app       |    _load metadata:
 state-engine-app       |    {
 state-engine-app       |   "client": "Env",
 state-engine-app       |   "map": {
-state-engine-app       |     "connection.common.database": "DB_DATABASE",
-state-engine-app       |     "connection.common.host": "DB_HOST",
-state-engine-app       |     "connection.common.password": "DB_PASSWORD",
-state-engine-app       |     "connection.common.port": "DB_PORT",
-state-engine-app       |     "connection.common.username": "DB_USERNAME"
+state-engine-app       |     "connection.common.database": "Db_DATABASE",
+state-engine-app       |     "connection.common.host": "Db_HOST",
+state-engine-app       |     "connection.common.password": "Db_PASSWORD",
+state-engine-app       |     "connection.common.port": "Db_PORT",
+state-engine-app       |     "connection.common.username": "Db_USERNAME"
 state-engine-app       |   }
 state-engine-app       | }
 state-engine-app       | 

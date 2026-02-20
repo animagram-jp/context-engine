@@ -15,17 +15,17 @@ pub trait InMemoryClient: Send + Sync {
     fn delete(&mut self, key: &str) -> bool;
 }
 
-/// DBクライアント
-/// DB接続・クエリ実行（PDO相当）
+/// Dbクライアント
+/// Db接続・クエリ実行（PDO相当）
 ///
 /// # connection 引数について
 /// - Value::Object: 接続情報が含まれる Object (例: {host: "...", port: 3306, ...})
 /// - Value::String: 接続識別子 (例: "common", "tenant")
 ///
-/// **重要:** DBClient 実装内で State を呼び出してはいけません。
+/// **重要:** DbClient 実装内で State を呼び出してはいけません。
 /// String 形式の connection を受け取った場合は、実装側で事前に用意した
 /// 接続マップから取得するか、エラーを返してください。
-pub trait DBClient: Send + Sync {
+pub trait DbClient: Send + Sync {
     /// レコード取得（単数でも複数でも対応）
     ///
     /// # Arguments

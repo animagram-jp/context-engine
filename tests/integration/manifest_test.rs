@@ -186,7 +186,7 @@ fn test_manifest_get_meta_child_node_without_load_map() {
 
     if let Some(load) = meta.get("_load") {
         // tenant_id の _load は親とマージされる
-        // 子の client: State が親の client: DB を上書き
+        // 子の client: State が親の client: Db を上書き
         assert_eq!(load.get("client"), Some(&json!("State")));
         // placeholder正規化により ${org_id} → ${cache.user.org_id} に変換される
         assert_eq!(load.get("key"), Some(&json!("${cache.user.org_id}")));
