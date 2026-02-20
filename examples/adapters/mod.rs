@@ -8,6 +8,6 @@ pub mod kvs_client;
 pub mod db_client;
 
 pub use in_memory::InMemoryAdapter;
-pub use env_client::ENVAdapter;
+pub use env_client::EnvAdapter;
 pub use kvs_client::KVSAdapter;
 pub use db_client::DBAdapter;

@@ -67,7 +67,7 @@ _store:
 **_load用（読込元）:**
 ```yaml
 _load:
-  client: ENV       # 環境変数
+  client: Env       # 環境変数
   client: InMemory  # プロセスメモリ
   client: KVS       # Redis, Memcached等
   client: DB        # データベース
@@ -89,12 +89,12 @@ _load:
     yaml_key: 'db_column'
 ```
 
-**_load.client: ENV**
+**_load.client: Env**
 ```yaml
 _load:
-  client: ENV
+  client: Env
   map:                               # (object, required) 環境変数マッピング
-    yaml_key: 'ENV_VAR_NAME'
+    yaml_key: 'Env_VAR_NAME'
 ```
 
 **_load.client: State**
@@ -148,7 +148,7 @@ _store:
 _store:
   client: # {InMemory, KVS}. 各クライアント用のアダプタークラスを作成
 _load:
-  client: # {ENV, InMemory, KVS, DB, State}
+  client: # {Env, InMemory, KVS, DB, State}
 
 node_A:
   _state: # オプション、meta keyのみ（型検証は未実装）

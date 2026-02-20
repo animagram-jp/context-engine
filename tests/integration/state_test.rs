@@ -3,7 +3,7 @@ use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
 use state_engine::ports::required::{InMemoryClient, KVSClient};
 use serde_json::{json, Value};
-use crate::mocks::{MockInMemory, MockKVS, MockENVClient};
+use crate::mocks::{MockInMemory, MockKVS, MockEnvClient};
 
 fn get_fixtures_path() -> String {
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -79,8 +79,8 @@ fn test_state_load_cache_expansion() {
     let fixtures_path = get_fixtures_path();
     let mut manifest = Manifest::new(&fixtures_path);
 
-    // ENVClientのモック設定
-    let mut env_client = MockENVClient::new();
+    // EnvClientのモック設定
+    let mut env_client = MockEnvClient::new();
     env_client.data.insert("DB_HOST".to_string(), "localhost".to_string());
     env_client.data.insert("DB_PORT".to_string(), "3306".to_string());
     env_client.data.insert("DB_DATABASE".to_string(), "test_db".to_string());

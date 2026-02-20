@@ -33,7 +33,7 @@ state-engine-app       |    - Manifests loaded
 state-engine-app       | 
 state-engine-app       | 2. Setting up adapters...
 state-engine-app       |    - InMemory adapters initialized
-state-engine-app       |    - ENV adapter initialized
+state-engine-app       |    - Env adapter initialized
 state-engine-app       |    - KVS adapters initialized
 state-engine-app       |    - DB adapter initialized
 state-engine-app       | 
@@ -43,7 +43,7 @@ state-engine-app       |
 state-engine-app       | 4. Creating State...
 state-engine-app       |    - State initialized
 state-engine-app       | 
-state-engine-app       | 5. Demo: Loading connection config from ENV...
+state-engine-app       | 5. Demo: Loading connection config from Env...
 state-engine-app       |    Connection config loaded:
 state-engine-app       |    {
 state-engine-app       |   "charset": "UTF8",

@@ -1,19 +1,19 @@
-/// ENVClient implementation
+/// EnvClient implementation
 ///
-/// Implements the ENVClient Required Port.
+/// Implements the EnvClient Required Port.
 /// Provides access to environment variables.
 
-use state_engine::ports::required::ENVClient;
+use state_engine::ports::required::EnvClient;
 
-pub struct ENVAdapter;
+pub struct EnvAdapter;
 
-impl ENVAdapter {
+impl EnvAdapter {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl ENVClient for ENVAdapter {
+impl EnvClient for EnvAdapter {
     fn get(&self, key: &str) -> Option<String> {
         std::env::var(key).ok()
     }

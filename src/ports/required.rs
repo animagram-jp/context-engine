@@ -76,9 +76,9 @@ pub trait KVSClient: Send + Sync {
     fn delete(&mut self, key: &str) -> bool;
 }
 
-/// ENVクライアント
+/// Envクライアント
 /// 環境変数取得
-pub trait ENVClient: Send + Sync {
+pub trait EnvClient: Send + Sync {
     /// 環境変数を取得
     fn get(&self, key: &str) -> Option<String>;
 }

@@ -1,5 +1,5 @@
 use crate::ports::required::{
-    DBClient, ENVClient, KVSClient,
+    DBClient, EnvClient, KVSClient,
     InMemoryClient,
 };
 use serde_json::Value;
@@ -13,7 +13,7 @@ pub struct Load<'a> {
     db_client: Option<&'a dyn DBClient>,
     kvs_client: Option<&'a dyn KVSClient>,
     in_memory: Option<&'a dyn InMemoryClient>,
-    env_client: Option<&'a dyn ENVClient>,
+    env_client: Option<&'a dyn EnvClient>,
 }
 
 impl<'a> Load<'a> {
@@ -45,8 +45,8 @@ impl<'a> Load<'a> {
         self
     }
 
-    /// ENVClientを設定
-    pub fn with_env_client(mut self, client: &'a dyn ENVClient) -> Self {
+    /// EnvClientを設定
+    pub fn with_env_client(mut self, client: &'a dyn EnvClient) -> Self {
         self.env_client = Some(client);
         self
     }
@@ -66,7 +66,7 @@ impl<'a> Load<'a> {
             .ok_or("Load::handle: 'client' not found in _load config")?;
 
         match client {
-            "Env" | "ENV" => self.load_from_env(config),
+            "Env" | "Env" => self.load_from_env(config),
             "InMemory" => self.load_from_in_memory(config),
             "KVS" => self.load_from_kvs(config),
             "DB" => self.load_from_db(config),
@@ -81,7 +81,7 @@ impl<'a> Load<'a> {
     ) -> Result<Value, String> {
         let env_client = self
             .env_client
-            .ok_or("Load::load_from_env: ENVClient not configured")?;
+            .ok_or("Load::load_from_env: EnvClient not configured")?;
 
         let map = config
             .get("map")
@@ -239,9 +239,9 @@ impl<'a> Load<'a> {
 mod tests {
     use super::*;
 
-    // Mock ENVClient
-    struct MockENVClient;
-    impl ENVClient for MockENVClient {
+    // Mock EnvClient
+    struct MockEnvClient;
+    impl EnvClient for MockEnvClient {
         fn get(&self, key: &str) -> Option<String> {
             match key {
                 "DB_HOST" => Some("localhost".to_string()),
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_load_from_env() {
-        let env_client = MockENVClient;
+        let env_client = MockEnvClient;
         let load = Load::new().with_env_client(&env_client);
 
         let mut config = HashMap::new();

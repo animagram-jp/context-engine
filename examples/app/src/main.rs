@@ -4,7 +4,7 @@
 
 mod adapters;
 
-use adapters::{InMemoryAdapter, ENVAdapter, KVSAdapter, DBAdapter};
+use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DBAdapter};
 use state_engine::{Manifest, State, Load};
 use state_engine::ports::provided::State as StateTrait;
 
@@ -22,7 +22,7 @@ async fn main() {
     println!("2. Setting up adapters...");
     let in_memory_load = InMemoryAdapter::new();
     let mut in_memory_state = InMemoryAdapter::new();
-    let env_client = ENVAdapter::new();
+    let env_client = EnvAdapter::new();
     let mut kvs_client_load = match KVSAdapter::new() {
         Ok(client) => client,
         Err(e) => {
@@ -40,7 +40,7 @@ async fn main() {
     let mut db_client = DBAdapter::new();
 
     println!("   - InMemory adapters initialized");
-    println!("   - ENV adapter initialized");
+    println!("   - Env adapter initialized");
     println!("   - KVS adapters initialized");
     println!("   - DB adapter initialized\n");
 
@@ -63,7 +63,7 @@ async fn main() {
     println!("   - State initialized\n");
 
     // 5. Demo: Get connection config
-    println!("5. Demo: Loading connection config from ENV...");
+    println!("5. Demo: Loading connection config from Env...");
     match state.get("connection.common") {
         Some(config) => {
             println!("   Connection config loaded:");

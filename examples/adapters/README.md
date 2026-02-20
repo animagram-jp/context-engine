@@ -23,10 +23,10 @@ impl KVSClient for KVSAdapter
 impl DBClient for DBAdapter
 ```
 
-## 4. ENVAdapter
+## 4. EnvAdapter
 
 ```Rust
-impl ENVClient for ENVAdapter
+impl EnvClient for EnvAdapter
 ```
 
 ### 4. DBAdapter

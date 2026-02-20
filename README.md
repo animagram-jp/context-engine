@@ -89,7 +89,7 @@ user:
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
 | `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [KVSAdapter](./examples/adapters/kvs_client.rs) |
 | `DBClient` | SQL Database | `fetch()` | [DBAdapter](./examples/adapters/db_client.rs) |
-| `ENVClient` | Environment Variables |  `get()` | [ENVAdapter](./examples/adapters/env_client.rs) |
+| `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
 
 'DB' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
@@ -144,7 +144,7 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│    InMemory, KVS, DB, ENV clients   │
+│    InMemory, KVS, DB, Env clients   │
 └─────────────────────────────────────┘
 ```
 

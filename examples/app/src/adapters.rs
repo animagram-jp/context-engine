@@ -8,7 +8,7 @@ mod adapters_impl;
 
 pub use adapters_impl::{
     InMemoryAdapter,
-    ENVAdapter,
+    EnvAdapter,
     KVSAdapter,
     DBAdapter,
 };

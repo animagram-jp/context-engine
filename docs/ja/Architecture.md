@@ -10,7 +10,7 @@
   1. InMemoryClient
   2. KVSClient
   3. DBClient
-  4. ENVClient
+  4. EnvClient
 
 - common modules (内部コモンモジュール)
   1. DotString
@@ -66,7 +66,7 @@
     - 渡される引数: `'connection': YAML記載の_{store,load}.connection:の値`, `'table': YAML記載の_{store,load}.table:の値}`, `'columns': YAML記載の_{store,load}.map.*:の値`, `'where_clause': YAML記載の_{store,load}.where:の値`
     - 想定対象ストア: SQLデータベース
     - _load.client: のみに使用対応
-  4. **ENVClient**
+  4. **EnvClient**
     - 必要なメソッド: `get()`
     - 渡される引数: `'key': Manifestの_{store,load}.map.*:の値`
     - 想定対象ストア: 環境変数
@@ -171,7 +171,7 @@ tenant_id:
 `State::get()` が値をmissした際、`Manifest::getMeta()` から取得した `_store` と `_load` 設定に従ってデータを取得する。
 
 **クライアント種別:**
-- `ENV` - 環境変数からロード
+- `Env` - 環境変数からロード
 - `DB` - データベースからロード
 - `KVS` - KVSからロード
 - `InMemory` - プロセスメモリからロード
@@ -231,7 +231,7 @@ tenant_id:
    ├─→ Load::handle(loadConfig)
    │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
    │    ├─→ client: KVS → KVSClient::get()
-   │    ├─→ client: ENV → ENVClient::get()
+   │    ├─→ client: Env → EnvClient::get()
    │    ├─→ client: InMemory → InMemoryClient::get()
    │    └─→ client: State → 指定キー値を直接返す（再帰）
    ├─→ 永続ストアに保存 (setToStore)

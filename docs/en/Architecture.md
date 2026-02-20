@@ -10,7 +10,7 @@
   1. InMemoryClient
   2. KVSClient
   3. DBClient
-  4. ENVClient
+  4. EnvClient
 
 - common modules (internal common modules)
   1. DotString
@@ -190,7 +190,7 @@ Application must implement the following traits to handle data stores:
   - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
   - only for _load.client
 
-4. **ENVClient**
+4. **EnvClient**
   - expected operations: `get()`
   - arguments: `'key':...` from `_{store,load}.map.*:...` in Manifest
   - expected target: environment variables
@@ -203,7 +203,7 @@ Application must implement the following traits to handle data stores:
 When `State::get()` misses a value, retrieve data according to `_store` and `_load` settings from `Manifest::getMeta()`.
 
 **Client types:**
-- `ENV` - Load from environment variables
+- `Env` - Load from environment variables
 - `DB` - Load from database
 - `KVS` - Load from KVS
 - `InMemory` - Load from process memory
@@ -263,7 +263,7 @@ This is an explicit designation to reference another key within State without in
    ├─→ Load::handle(loadConfig)
    │    ├─→ client: DB → DBClient::fetchOne/fetchAll()
    │    ├─→ client: KVS → KVSClient::get()
-   │    ├─→ client: ENV → ENVClient::get()
+   │    ├─→ client: Env → EnvClient::get()
    │    ├─→ client: InMemory → InMemoryClient::get()
    │    └─→ client: State → Return specified key value directly (recursion)
    ├─→ Save to persistent store (setToStore)

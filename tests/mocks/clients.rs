@@ -1,5 +1,5 @@
 // Mock client implementations for testing
-use state_engine::ports::required::{InMemoryClient, KVSClient, ENVClient};
+use state_engine::ports::required::{InMemoryClient, KVSClient, EnvClient};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -58,12 +58,12 @@ impl KVSClient for MockKVS {
     }
 }
 
-// Mock ENVClient
-pub struct MockENVClient {
+// Mock EnvClient
+pub struct MockEnvClient {
     pub data: HashMap<String, String>,
 }
 
-impl MockENVClient {
+impl MockEnvClient {
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
@@ -71,7 +71,7 @@ impl MockENVClient {
     }
 }
 
-impl ENVClient for MockENVClient {
+impl EnvClient for MockEnvClient {
     fn get(&self, key: &str) -> Option<String> {
         self.data.get(key).cloned()
     }

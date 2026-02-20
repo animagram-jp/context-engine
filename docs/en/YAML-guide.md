@@ -67,7 +67,7 @@ _store:
 **For _load** (where to load from):
 ```yaml
 _load:
-  client: ENV       # Environment variables
+  client: Env       # Environment variables
   client: InMemory  # Process memory
   client: KVS       # Redis, Memcached
   client: DB        # Database
@@ -89,12 +89,12 @@ _load:
     yaml_key: 'db_column'
 ```
 
-**_load.client: ENV**
+**_load.client: Env**
 ```yaml
 _load:
-  client: ENV
+  client: Env
   map:                               # (object, required) Environment variable mapping
-    yaml_key: 'ENV_VAR_NAME'
+    yaml_key: 'Env_VAR_NAME'
 ```
 
 **_load.client: State**
@@ -148,7 +148,7 @@ _store:
 _store:
   client: # {InMemory, KVS}. Make adapter logic class for each client
 _load:
-  client: # {ENV, InMemory, KVS, DB, State}
+  client: # {Env, InMemory, KVS, DB, State}
 
 node_A:
   _state: # optional, meta key only (type validation not yet implemented)
