@@ -2,22 +2,27 @@
 
 ## index
 
-```yaml
-# modules list
-Ports:
-  Provided: {Manifest, State}
-  Required: {InMemoryClient, KVSClient, DBClient, ENVClient}
+- provided modules (ライブラリ提供モジュール)
+  1. Manifest
+  2. State
 
-Manifest:
-State:
+-  required modules (ライブラリ要求モジュール*)
+  1. InMemoryClient
+  2. KVSClient
+  3. DBClient
+  4. ENVClient
 
-Load:
+- common modules (内部コモンモジュール)
+  1. DotString
+  2. DotMapAccessor
+  3. Placeholder
+  4. LogFormat
 
-Common:
-  DotMapAccessor:
-  Placeholder:
-  LogFormat:
-```
+- internal modules (内部モジュール)
+  1. Store
+  2. Load
+
+*: いずれもoptional(必須ではない)
 
 ---
 
@@ -361,34 +366,6 @@ fn extract_field(data: Value, key: &str) -> Value {
 **メソッド:**
 - `get(data, path)` - ドット記法で値を取得
 - 例: `get(data, "user.profile.name")`
-
----
-
-## 既知の議論点 / TODO
-
-### 1. TTL動作
-
-`State::set()`でのTTL処理:
-- 引数指定 > YAML設定 > 現在値を維持
-- この優先順位は適切か？
-- 未指定時は常にYAMLデフォルトで上書きすべきか？
-
-### 2. 無限再帰検出
-
-現在はカウンターベース（MAX_RECURSION=10）:
-- 事前に静的解析で検出すべきか？
-- 呼び出しパスを記録してループ検出すべきか？
-- エラーメッセージにパスを含めるべきか？
-
-### 3. State::delete() 実装
-
-**現状:**
-- 現在はディクショナリ全体を削除する実装
-- TODOコメント: 「個別フィールド削除には、ディクショナリをロード、フィールド削除、再保存が必要」
-
-**TODO:**
-- 個別フィールド削除実装を完成させる
-- またはディクショナリのみ削除の仕様として確定する
 
 ---
 

@@ -2,118 +2,82 @@
 
 ## index
 
-```yaml
-# modules list
-Ports:
-  Provided: {Manifest, State}
-  Required: {InMemoryClient, DBClient, KVSClient, ENVClient}
+- provided modules (library provided)
+  1. Manifest
+  2. State
 
-Manifest:
-State:
+-  required modules (library required*)
+  1. InMemoryClient
+  2. KVSClient
+  3. DBClient
+  4. ENVClient
 
-Load:
+- common modules (internal common modules)
+  1. DotString
+  2. DotMapAccessor
+  3. Placeholder
+  4. LogFormat
 
-Common:
-  DotMapAccessor:
-  Placeholder:
-  LogFormat:
-```
+- internal modules
+  1. Store
+  2. Load
+
+*: *_client impl are not esseintial, optional modules. 
 
 ---
 
-## Ports
-
-Library External Interface Traits
-
-1. Provided
+## provided modules
 
 Library provides the following modules to handle YAMLs and state data:
 
-  1. **Manifest** - A module reading YAML files and returning processed obj. It detects `_` prefix keys (meta keys) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `'filename.key1.key2.,...,.*'` (absolute path).
-  2. **State** - A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The `get()` method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. The `exists()` method checks key existence without triggering auto-load (lightweight check). It caches the state in the instance memory, `State.cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
+1. **Manifest**
 
-2. Required
+A module reading YAML files and returning processed obj. It detects `_` prefix keys (meta keys) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `'filename.key1.key2.,...,.*'` (absolute path).
 
-Application must implement the following traits to handle data stores:
+  1. Manifest::get('filename.node')
 
-  1. **InMemoryClient**
-    - expected operations: `get()`/`set()`/`delete()`
-    - arguments: `'key':...` from `_{store,load}.key:...` in Manifest
-    - expected target: Local process memory
-    - please mapping eache key arguments to your any memory path
-    - remind of State.cache instance memory State always caching regardless of client type.
-  2. **KVSClient**
-    - expected operations: `get()`/`set()`/`delete()`
-    - trait signature:
-      - `fn get(&self, key: &str) -> Option<String>`
-      - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
-      - `fn delete(&mut self, key: &str) -> bool`
-    - arguments: `'key':...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
-    - expected target: Key-Value Store (Redis, etc.)
-    - **Important**: KVSClient handles String only (primitive type). State layer performs serialize/deserialize:
-      - **serialize**: All values → JSON string (preserves type information: Number/String/Bool/Null/Array/Object)
-      - **deserialize**: JSON string → Value (accurately restores type)
-      - **Type preservation**: JSON format distinguishes types (e.g., `42` vs `"42"`, `true` vs `"true"`)
-      - KVS stores data as JSON strings. Individual fields are extracted after retrieval.
-      - Design intent: Stay faithful to YAML structure while keeping KVS primitive. JSON format ensures type information is preserved without depending on KVS-native types.
-  3. **DBClient**
-    - expected operations: `fetch()`
-    - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
-    - only for _load.client
-  4. **ENVClient**
-    - expected operations: `get()`
-    - arguments: `'key':...` from `_{store,load}.map.*:...` in Manifest
-    - expected target: environment variables
-    - only for _load.client
+  Read node structure from manifest/*.yml, ignoring `_` prefix keys (meta keys).
 
----
+  **Behavior:**
+  - If the specified node is a leaf, return its value (or null if not defined)
+  - Otherwise, return a collection representing all child nodes
+  - If the node doesn't exist in YAML (miss), return null
 
-## Manifest
+  **Key specification:**
+  - `'filename.node'` - Normal specification
+  - `'filename'` - Means `'filename.'`, retrieves the entire file root
 
-1. Manifest::get('filename.node')
+  2. Manifest::getMeta('filename.node')
 
-Read node structure from manifest/*.yml, ignoring `_` prefix keys (meta keys).
+  Return metadata blocks for the specified node.
 
-**Behavior:**
-- If the specified node is a leaf, return its value (or null if not defined)
-- Otherwise, return a collection representing all child nodes
-- If the node doesn't exist in YAML (miss), return null
+  **Behavior:**
+  - Read all metadata blocks from file root to the specified node in order
+  - Return a list (map) with child keys overwriting parent keys
+  - If the node doesn't exist in YAML (miss), return null
 
-**Key specification:**
-- `'filename.node'` - Normal specification
-- `'filename'` - Means `'filename.'`, retrieves the entire file root
+  **Key specification:**
+  - `'filename.node'` - Return metadata inherited/overwritten up to the specified node
+  - `'filename'` - Means `'filename.*'`, returns only top-level metadata blocks
 
----
-
-2. Manifest::getMeta('filename.node')
-
-Return metadata blocks for the specified node.
-
-**Behavior:**
-- Read all metadata blocks from file root to the specified node in order
-- Return a list (map) with child keys overwriting parent keys
-- If the node doesn't exist in YAML (miss), return null
-
-**Key specification:**
-- `'filename.node'` - Return metadata inherited/overwritten up to the specified node
-- `'filename'` - Means `'filename.*'`, returns only top-level metadata blocks
-
-**Metadata inheritance rules:**
-```yaml
-# cache.yml
-_store:
-  client: KVS
-  ttl: 3600
-
-user:
+  **Metadata inheritance rules:**
+  ```yaml
+  # cache.yml
   _store:
-    key: "user:${sso_user_id}"  # Inherits client: KVS, overwrites key
+    client: KVS
+    ttl: 3600
 
-  tenant_id:
-    # Inherits _store from parent: client: KVS, key: "user:${sso_user_id}", ttl: 3600
-```
+  user:
+    _store:
+      key: "user:${sso_user_id}"  # Inherits client: KVS, overwrites key
 
----
+    tenant_id:
+      # Inherits _store from parent: client: KVS, key: "user:${sso_user_id}", ttl: 3600
+  ```
+
+2. **State**
+
+A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data (state obj) stored following the `_store` block provided by Manifest. The `get()` method automatically attempts loading based on the description in the `_load` block definition, triggered by key miss hits. The `set()` method does not trigger loading, but just set a value obj. `delete()` removes the specified key and all its associated values. The `exists()` method checks key existence without triggering auto-load (lightweight check). It caches the state in the instance memory, `State.cache`, as a collection following the structure that YAMLs defined, and keep synced with the state through operation.
 
 ## State
 
@@ -192,6 +156,45 @@ Check if a key exists without triggering auto-load.
 **Comparison with get():**
 - `get()`: Returns value, triggers auto-load on miss
 - `exists()`: Returns boolean, never triggers auto-load
+
+---
+
+## required modules
+
+Application must implement the following traits to handle data stores:
+
+1. **InMemoryClient**
+  - expected operations: `get()`/`set()`/`delete()`
+  - arguments: `'key':...` from `_{store,load}.key:...` in Manifest
+  - expected target: Local process memory
+  - please mapping eache key arguments to your any memory path
+  - remind of State.cache instance memory State always caching regardless of client type.
+
+2. **KVSClient**
+  - expected operations: `get()`/`set()`/`delete()`
+  - trait signature:
+    - `fn get(&self, key: &str) -> Option<String>`
+    - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
+    - `fn delete(&mut self, key: &str) -> bool`
+  - arguments: `'key':...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
+  - expected target: Key-Value Store (Redis, etc.)
+  - **Important**: KVSClient handles String only (primitive type). State layer performs serialize/deserialize:
+    - **serialize**: All values → JSON string (preserves type information: Number/String/Bool/Null/Array/Object)
+    - **deserialize**: JSON string → Value (accurately restores type)
+    - **Type preservation**: JSON format distinguishes types (e.g., `42` vs `"42"`, `true` vs `"true"`)
+    - KVS stores data as JSON strings. Individual fields are extracted after retrieval.
+    - Design intent: Stay faithful to YAML structure while keeping KVS primitive. JSON format ensures type information is preserved without depending on KVS-native types.
+
+3. **DBClient**
+  - expected operations: `fetch()`
+  - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
+  - only for _load.client
+
+4. **ENVClient**
+  - expected operations: `get()`
+  - arguments: `'key':...` from `_{store,load}.map.*:...` in Manifest
+  - expected target: environment variables
+  - only for _load.client
 
 ---
 
@@ -395,31 +398,3 @@ Provides array access with dot notation.
 **Methods:**
 - `get(data, path)` - Get value with dot notation
 - Example: `get(data, "user.profile.name")`
-
----
-
-## Known Discussion Points / TODO
-
-### 1. TTL Behavior
-
-TTL processing in `State::set()`:
-- Argument specified > YAML setting > Maintain current value
-- Is this priority order appropriate?
-- Should it always overwrite with YAML default when unspecified?
-
-### 2. Infinite Recursion Detection
-
-Currently counter-based (MAX_RECURSION=10):
-- Should it be detected via static analysis beforehand?
-- Should call paths be recorded for loop detection?
-- Should error messages include paths?
-
-### 3. State::delete() Implementation
-
-**Current status:**
-- Currently implemented to delete entire dictionary
-- TODO comment: "For individual field deletion, need to load dictionary, delete field, and re-save"
-
-**TODO:**
-- Complete individual field deletion implementation
-- Or finalize specification as dictionary-only deletion
