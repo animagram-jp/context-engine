@@ -87,9 +87,9 @@ user:
 | Interface | expected store | methods | sample |
 |-----------|----------------|---------|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
-| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/kvs_client.rs) |
-| `DBClient` | SQL Database | `fetch()` | [InMemoryAdapter](./examples/adapters/db_client.rs) |
-| `ENVClient` | Environment Variables |  `get()` | [InMemoryAdapter](./examples/adapters/env_client.rs) |
+| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [KVSAdapter](./examples/adapters/kvs_client.rs) |
+| `DBClient` | SQL Database | `fetch()` | [DBAdapter](./examples/adapters/db_client.rs) |
+| `ENVClient` | Environment Variables |  `get()` | [ENVAdapter](./examples/adapters/env_client.rs) |
 
 'DB' and 'Env' will be used only in Loading(Read)
 It's not essential to implement all *Client.
