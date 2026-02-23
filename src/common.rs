@@ -1,3 +1,4 @@
+pub mod bit;
 pub mod bi_map;
 pub mod index;
 pub mod dot_map_accessor;
