@@ -1,17 +1,18 @@
-/// Key object record: 64-bit fixed-length record for Trie nodes.
+/// Key record: 64-bit fixed-length record for Trie nodes.
 ///
 /// Layout (MSB to LSB):
 /// | category    | field         | bits  | offset |
 /// |-------------|---------------|-------|--------|
 /// | flags       | is_path       |   1   |  63    |
 /// | flags       | has_children  |   1   |  62    |
-/// | key index   | root index    |   2   |  60    |
-/// | key index   | client index  |   4   |  56    |
-/// | key index   | prop index    |   4   |  52    |
-/// | key index   | type index    |   5   |  47    |
-/// | key index   | dynamic index |  16   |  31    |
-/// | child index | child index   |  16   |  15    |
-/// | padding     | -             |  15   |   0    |
+/// | flags       | is_leaf       |   1   |  61    |
+/// | key index   | root index    |   2   |  59    |
+/// | key index   | client index  |   4   |  55    |
+/// | key index   | prop index    |   4   |  51    |
+/// | key index   | type index    |   5   |  46    |
+/// | key index   | dynamic index |  16   |  30    |
+/// | child index | child index   |  16   |  14    |
+/// | padding     | -             |  14   |   0    |
 
 /// Value object record: 128-bit (2×u64) fixed-length record for YAML values.
 ///
@@ -56,25 +57,29 @@ pub const VO_MASK_IS_TEMPLATE: u64 = 0x1;
 pub const VO_MASK_IS_PATH: u64 = 0x1;
 pub const VO_MASK_DYNAMIC: u64 = 0xFFFF;
 
-// --- key object offsets ---
+// --- key record offsets ---
 
-pub const OFFSET_IS_PATH: u32 = 63;
+pub const OFFSET_IS_PATH: u32      = 63;
 pub const OFFSET_HAS_CHILDREN: u32 = 62;
-pub const OFFSET_ROOT: u32 = 60;
-pub const OFFSET_CLIENT: u32 = 56;
-pub const OFFSET_PROP: u32 = 52;
-pub const OFFSET_TYPE: u32 = 47;
-pub const OFFSET_DYNAMIC: u32 = 31;
-pub const OFFSET_CHILD: u32 = 15;
+pub const OFFSET_IS_LEAF: u32      = 61;
+pub const OFFSET_ROOT: u32         = 59;
+pub const OFFSET_CLIENT: u32       = 55;
+pub const OFFSET_PROP: u32         = 51;
+pub const OFFSET_TYPE: u32         = 46;
+pub const OFFSET_DYNAMIC: u32      = 30;
+pub const OFFSET_CHILD: u32        = 14;
 
-pub const MASK_IS_PATH: u64 = 0x1;
+// --- key record masks ---
+
+pub const MASK_IS_PATH: u64      = 0x1;
 pub const MASK_HAS_CHILDREN: u64 = 0x1;
-pub const MASK_ROOT: u64 = 0x3;
-pub const MASK_CLIENT: u64 = 0xF;
-pub const MASK_PROP: u64 = 0xF;
-pub const MASK_TYPE: u64 = 0x1F;
-pub const MASK_DYNAMIC: u64 = 0xFFFF;
-pub const MASK_CHILD: u64 = 0xFFFF;
+pub const MASK_IS_LEAF: u64      = 0x1;
+pub const MASK_ROOT: u64         = 0x3;
+pub const MASK_CLIENT: u64       = 0xF;
+pub const MASK_PROP: u64         = 0xF;
+pub const MASK_TYPE: u64         = 0x1F;
+pub const MASK_DYNAMIC: u64      = 0xFFFF;
+pub const MASK_CHILD: u64        = 0xFFFF;
 
 /// # Examples
 ///
@@ -125,8 +130,6 @@ pub const TYPE_F32:      u64 = 0b01100;
 pub const TYPE_F64:      u64 = 0b01101; // "float"
 pub const TYPE_BOOLEAN:  u64 = 0b11100;
 
-// --- functions ---
-
 pub fn new() -> u64 {
     0
 }
@@ -138,7 +141,7 @@ pub fn new() -> u64 {
 /// ```
 /// use state_engine::common::bit;
 ///
-/// let ko = 0b11u64 << bit::OFFSET_ROOT;
+/// let ko = 0b11u64 << bit::OFFSET_ROOT; // root index at offset 59
 /// assert_eq!(bit::get(ko, bit::OFFSET_ROOT, bit::MASK_ROOT), 0b11);
 /// ```
 pub fn get(ko: u64, offset: u32, mask: u64) -> u64 {
