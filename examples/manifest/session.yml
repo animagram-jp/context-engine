@@ -1,11 +1,11 @@
-# We can name this 'session.yml' meaning relation to http requests.
+# We can name this "session.yml" meaning relation to http requests.
 
 sso_user_id:
   _state:
     type: integer
   _store:
     client: InMemory
-    key: 'request-attributes-user-key'
+    key: "request-attributes-user-key"
   _load:
     client: InMemory
-    key: 'request-header-user-key'
+    key: "request-header-user-key"

@@ -32,33 +32,33 @@ Library provides the following modules to handle YAMLs and state data:
 
 1. **Manifest**
 
-A module reading YAML files and returning processed obj. It detects `_` prefix keys (meta keys) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `'filename.key1.key2.,...,.*'` (absolute path).
+A module reading YAML files and returning processed obj. It detects `_` prefix keys (meta keys) and ignores them at `get()`, collects them at `getMeta()`. It converts the key values _load.map.* in the metablock to `"filename.key1.key2.,...,.*"` (absolute path).
 
-  1. Manifest::get('filename.node')
+  1. Manifest::get("filename.node")
 
   Read node structure from manifest/*.yml, ignoring `_` prefix keys (meta keys).
 
   **Behavior:**
   - If the specified node is a leaf, return its value (or null if not defined)
   - Otherwise, return a collection representing all child nodes
-  - If the node doesn't exist in YAML (miss), return null
+  - If the node doesn"t exist in YAML (miss), return null
 
   **Key specification:**
-  - `'filename.node'` - Normal specification
-  - `'filename'` - Means `'filename.'`, retrieves the entire file root
+  - `"filename.node"` - Normal specification
+  - `"filename"` - Means `"filename."`, retrieves the entire file root
 
-  2. Manifest::getMeta('filename.node')
+  2. Manifest::getMeta("filename.node")
 
   Return metadata blocks for the specified node.
 
   **Behavior:**
   - Read all metadata blocks from file root to the specified node in order
   - Return a list (map) with child keys overwriting parent keys
-  - If the node doesn't exist in YAML (miss), return null
+  - If the node doesn"t exist in YAML (miss), return null
 
   **Key specification:**
-  - `'filename.node'` - Return metadata inherited/overwritten up to the specified node
-  - `'filename'` - Means `'filename.*'`, returns only top-level metadata blocks
+  - `"filename.node"` - Return metadata inherited/overwritten up to the specified node
+  - `"filename"` - Means `"filename.*"`, returns only top-level metadata blocks
 
   **Metadata inheritance rules:**
   ```yaml
@@ -81,7 +81,7 @@ A module performing `get()`/`set()`/`delete()`/`exists()` operations on state da
 
 ## State
 
-### State::get('filename.node')
+### State::get("filename.node")
 
 Reference the state represented by the specified node, returning value or collections.
 
@@ -97,7 +97,7 @@ Reference the state represented by the specified node, returning value or collec
 9. Return value (no type casting currently implemented)
 
 **Auto-load:**
-- If the specified node's state key misses, attempt auto-retrieval via `Load::handle()`
+- If the specified node"s state key misses, attempt auto-retrieval via `Load::handle()`
 - On `Load::handle()` error, return `None`
 
 **Note on _state.type:**
@@ -111,7 +111,7 @@ The `_state.type` field is currently metadata-only and not enforced by State ope
 
 ---
 
-### State::set('filename.node', value, ttl)
+### State::set("filename.node", value, ttl)
 
 Set a value to the state represented by the specified node.
 
@@ -127,7 +127,7 @@ Set a value to the state represented by the specified node.
 
 ---
 
-### State::delete('filename.node')
+### State::delete("filename.node")
 
 Delete the {key:value} record represented by the specified node.
 
@@ -138,7 +138,7 @@ Delete the {key:value} record represented by the specified node.
 
 ---
 
-### State::exists('filename.node')
+### State::exists("filename.node")
 
 Check if a key exists without triggering auto-load.
 
@@ -165,7 +165,7 @@ Application must implement the following traits to handle data stores:
 
 1. **InMemoryClient**
   - expected operations: `get()`/`set()`/`delete()`
-  - arguments: `'key':...` from `_{store,load}.key:...` in Manifest
+  - arguments: `"key":...` from `_{store,load}.key:...` in Manifest
   - expected target: Local process memory
   - please mapping eache key arguments to your any memory path
   - remind of State.cache instance memory State always caching regardless of client type.
@@ -176,7 +176,7 @@ Application must implement the following traits to handle data stores:
     - `fn get(&self, key: &str) -> Option<String>`
     - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
     - `fn delete(&mut self, key: &str) -> bool`
-  - arguments: `'key':...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
+  - arguments: `"key":...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
   - expected target: Key-Value Store (Redis, etc.)
   - **Important**: KVSClient handles String only (primitive type). State layer performs serialize/deserialize:
     - **serialize**: All values → JSON string (preserves type information: Number/String/Bool/Null/Array/Object)
@@ -187,12 +187,12 @@ Application must implement the following traits to handle data stores:
 
 3. **DbClient**
   - expected operations: `fetch()`
-  - arguments: `'connection':...` from `_{store,load}.connection:...`, `'table':...` from  `_{store,load}.table:...}`, `'columns':...` from `_{store,load}.map.*:...`, `'where_clause':...` from `_{store,load}.where:...`(optional) in Manifest
+  - arguments: `"connection":...` from `_{store,load}.connection:...`, `"table":...` from  `_{store,load}.table:...}`, `"columns":...` from `_{store,load}.map.*:...`, `"where_clause":...` from `_{store,load}.where:...`(optional) in Manifest
   - only for _load.client
 
 4. **EnvClient**
   - expected operations: `get()`
-  - arguments: `'key':...` from `_{store,load}.map.*:...` in Manifest
+  - arguments: `"key":...` from `_{store,load}.map.*:...` in Manifest
   - expected target: environment variables
   - only for _load.client
 
@@ -214,7 +214,7 @@ When `State::get()` misses a value, retrieve data according to `_store` and `_lo
 tenant_id:
   _load:
     client: State
-    key: ${org_id}  # Directly returns State::get('cache.user.org_id')
+    key: ${org_id}  # Directly returns State::get("cache.user.org_id")
 ```
 
 When `_load.client: State`, `Load::handle()` is not called; instead, the value of `_load.key` (with placeholders resolved) is returned directly.
@@ -222,10 +222,10 @@ When `_load.client: State`, `Load::handle()` is not called; instead, the value o
 **Design rules:**
 - No `_load` → No auto-load, return `None`
 - No `_load.client` → No auto-load, return `None`
-- `_load.client: State` → Use `_load.key` value directly (don't call Load::handle())
+- `_load.client: State` → Use `_load.key` value directly (don"t call Load::handle())
 - Other clients → Auto-load via `Load::handle()`
 
-This is an explicit designation to reference another key within State without inheriting the parent's `_load.client`.
+This is an explicit designation to reference another key within State without inheriting the parent"s `_load.client`.
 
 **Note:**
 - `client == null` is treated as YAML misconfiguration
@@ -278,12 +278,12 @@ This is an explicit designation to reference another key within State without in
 
 The State struct maintains an instance-level cache (`cache: Value`) separate from persistent stores (KVS/InMemoryClient).
 
-**Important:** This is NOT InMemoryClient. It's a variable of the State instance itself.
+**Important:** This is NOT InMemoryClient. It"s a variable of the State instance itself.
 
 **Purpose:**
 1. **Speed up duplicate `State::get()` calls within the same request**
 2. **Reduce access count to KVS/InMemoryClient**
-3. **Design to avoid duplicate loads** (don't load the same key multiple times)
+3. **Design to avoid duplicate loads** (don"t load the same key multiple times)
 
 **Check order (important):**
 ```Rust
@@ -332,18 +332,18 @@ Placeholder resolution priority.
 1. **Same dictionary reference (relative path)**: `${org_id}` → `cache.user.org_id`
 2. **Absolute path**: `${org_id}` → `org_id`
 
-**Example (contextKey: 'cache.user.tenant_id._load.key'):**
+**Example (contextKey: "cache.user.tenant_id._load.key"):**
 ```
 // Extract dictionary scope
-dictScope = 'cache.user'; // Up to before meta key (_load)
+dictScope = "cache.user"; // Up to before meta key (_load)
 
 // 1. Search within the same dictionary
-scopedKey = 'cache.user.org_id';
-value = self.get(scopedKey); // → State::get('cache.user.org_id')
+scopedKey = "cache.user.org_id";
+value = self.get(scopedKey); // → State::get("cache.user.org_id")
 if value.is_some() { return value; }
 
 // 2. Search absolute path
-return self.get('org_id'); // → State::get('org_id')
+return self.get("org_id"); // → State::get("org_id")
 ```
 
 **Note:**
@@ -366,7 +366,7 @@ fn extract_field(data: Value, key: &str) -> Value {
 
     // Get last segment of key
     // cache.user.id → id
-    let segments: Vec<&str> = key.split('.').collect();
+    let segments: Vec<&str> = key.split(".").collect();
     let field_name = segments.last().unwrap();
 
     // Extract field from dictionary

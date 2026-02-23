@@ -34,7 +34,7 @@
 
 ライブラリ提供moduleのtraits
 
-  1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。'_'始まりのmeta keysを認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
+  1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。"_"始まりのmeta keysを認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
   2. **State** - Manifest::getMeta()から取得する_storeブロックの記述に基づいて格納されるステートデータ(state obj)を対象に、`get()` / `set()` / `delete()`操作を行うmodule。`get()`では、key miss hitをトリガーとして、同じく取得した`_load`ブロックの記述に基づいてロード試行を自動的に行う。`set()`は指定のkeyに値をsetする。自動ロードは引き起こさない。`delete()`は指定のkeyと、そのvalue全てを削除する。Stateは、インスタンスメモリの`State.cache`にYAMLファイル記述に従ったcollection型でstate objをキャッシュし、動作中、同期処理を行う。ロードを引き起こさないmiss/hit key判定の`exists()`も提供している。
 
 2. Required Ports
@@ -43,7 +43,7 @@
 
   1. **InMemoryClient**
     - 必要なメソッド: `get()`/`set()`/`delete()`
-    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`
+    - 渡される引数: `"key": Manifestの_{store,load}.key:の値`
     - 想定対象ストア: ローカルプロセスメモリ
     - 引数の各キーに対応した、プロセスメモリパスをマッピングして下さい。
     - インスタンスメモリのState::cacheにて、_store.clientの値に依らず、キャッシュが常にされている点に留意して下さい。
@@ -53,7 +53,7 @@
       - `fn get(&self, key: &str) -> Option<String>`
       - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
       - `fn delete(&mut self, key: &str) -> bool`
-    - 渡される引数: `'key': Manifestの_{store,load}.key:の値`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
+    - 渡される引数: `"key": Manifestの_{store,load}.key:の値`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
     - 想定対象ストア: Key-Valueストア（Redis等）
     - **重要**: KVSClientはString型のみを扱う（プリミティブ型）。State層がserialize/deserializeを実行:
       - **serialize**: 全ての値 → JSON文字列（型情報を保持: Number/String/Bool/Null/Array/Object）
@@ -63,12 +63,12 @@
       - 設計意図: YAML構造に忠実でありながら、KVSはプリミティブに保つ。JSON形式でKVSネイティブ型に依存せず型情報を保持。
   3. **DbClient**
     - 必要なメソッド: `fetch()`
-    - 渡される引数: `'connection': YAML記載の_{store,load}.connection:の値`, `'table': YAML記載の_{store,load}.table:の値}`, `'columns': YAML記載の_{store,load}.map.*:の値`, `'where_clause': YAML記載の_{store,load}.where:の値`
+    - 渡される引数: `"connection": YAML記載の_{store,load}.connection:の値`, `"table": YAML記載の_{store,load}.table:の値}`, `"columns": YAML記載の_{store,load}.map.*:の値`, `"where_clause": YAML記載の_{store,load}.where:の値`
     - 想定対象ストア: SQLデータベース
     - _load.client: のみに使用対応
   4. **EnvClient**
     - 必要なメソッド: `get()`
-    - 渡される引数: `'key': Manifestの_{store,load}.map.*:の値`
+    - 渡される引数: `"key": Manifestの_{store,load}.map.*:の値`
     - 想定対象ストア: 環境変数
     - _load.client: のみに使用対応
 
@@ -88,7 +88,7 @@
 
 ## State
 
-### State::get('filename.node')
+### State::get("filename.node")
 
 指定されたノードが表すステート(state obj)を参照し、値またはcollectionを返却する。
 
@@ -118,7 +118,7 @@ tenant_id:
 
 ---
 
-### State::set('filename.node', value, ttl)
+### State::set("filename.node", value, ttl)
 
 指定されたノードが表すステートに値をセットする。
 
@@ -134,7 +134,7 @@ tenant_id:
 
 ---
 
-### State::delete('filename.node')
+### State::delete("filename.node")
 
 指定されたノードが表す {key:value} レコードを削除する。
 
@@ -145,7 +145,7 @@ tenant_id:
 
 ---
 
-### State::exists('filename.node')
+### State::exists("filename.node")
 
 自動ロードをトリガーせずに、キーの存在確認を行う。
 
@@ -182,7 +182,7 @@ tenant_id:
 tenant_id:
   _load:
     client: State
-    key: ${org_id}  # State::get('cache.user.org_id')を直接返す
+    key: ${org_id}  # State::get("cache.user.org_id")を直接返す
 ```
 
 `_load.client: State` の場合、`Load::handle()` は呼ばれず、`_load.key` の値（プレースホルダー解決済み）が直接返される。
@@ -300,18 +300,18 @@ State構造体は、永続ストア（KVS/InMemoryClient）とは別に、イン
 1. **同一ディクショナリ参照（相対パス）**: `${org_id}` → `cache.user.org_id`
 2. **絶対パス**: `${org_id}` → `org_id`
 
-**例（contextKey: 'cache.user.tenant_id._load.key'）:**
+**例（contextKey: "cache.user.tenant_id._load.key"）:**
 ```
 // ディクショナリスコープを抽出
-dictScope = 'cache.user'; // メタキー(_load)より前まで
+dictScope = "cache.user"; // メタキー(_load)より前まで
 
 // 1. 同一ディクショナリ内を検索
-scopedKey = 'cache.user.org_id';
-value = self.get(scopedKey); // → State::get('cache.user.org_id')
+scopedKey = "cache.user.org_id";
+value = self.get(scopedKey); // → State::get("cache.user.org_id")
 if value.is_some() { return value; }
 
 // 2. 絶対パスを検索
-return self.get('org_id'); // → State::get('org_id')
+return self.get("org_id"); // → State::get("org_id")
 ```
 
 **注意:**
@@ -334,7 +334,7 @@ fn extract_field(data: Value, key: &str) -> Value {
 
     // キーの最後のセグメントを取得
     // cache.user.id → id
-    let segments: Vec<&str> = key.split('.').collect();
+    let segments: Vec<&str> = key.split(".").collect();
     let field_name = segments.last().unwrap();
 
     // ディクショナリからフィールドを抽出

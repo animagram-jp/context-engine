@@ -26,14 +26,14 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Sample data
 INSERT INTO tenants (id, name, display_name, db_host, db_port, db_database, db_username, db_password) VALUES
-(1, 'tenant_1', 'Tenant One', 'localhost', 5432, 'tenant_1_db', 'tenant_user', 'tenant_pass'),
-(2, 'tenant_2', 'Tenant Two', 'localhost', 5432, 'tenant_2_db', 'tenant_user', 'tenant_pass')
+(1, "tenant_1", "Tenant One", "localhost", 5432, "tenant_1_db", "tenant_user", "tenant_pass"),
+(2, "tenant_2", "Tenant Two", "localhost", 5432, "tenant_2_db", "tenant_user", "tenant_pass")
 ON CONFLICT DO NOTHING;
 
 INSERT INTO users (sso_user_id, sso_org_id, tenant_id, name, email) VALUES
-('user001', 100, 1, 'John Doe', 'john@example.com'),
-('user002', 100, 1, 'Jane Smith', 'jane@example.com'),
-('user003', 200, 2, 'Bob Johnson', 'bob@example.com')
+("user001", 100, 1, "John Doe", "john@example.com"),
+("user002", 100, 1, "Jane Smith", "jane@example.com"),
+("user003", 200, 2, "Bob Johnson", "bob@example.com")
 ON CONFLICT DO NOTHING;
 
 -- Create indexes

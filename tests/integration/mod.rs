@@ -15,3 +15,4 @@ mod manifest_test;
 mod state_test;
 mod edge_cases_test;
 mod placeholder_qualify_test;
+mod common_state_test;

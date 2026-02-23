@@ -1,21 +1,21 @@
-# We can name this 'connection.yml' meaning connection configurations.
+# We can name this "connection.yml" meaning connection configurations.
 
 common:
   _store:
     client: InMemory
-    key: 'connection.common'
+    key: "connection.common"
   _load:
     client: Env
     map:
-      host: 'DB_HOST'
-      port: 'DB_PORT'
-      database: 'DB_DATABASE'
-      username: 'DB_USERNAME'
-      password: 'DB_PASSWORD'
+      host: "DB_HOST"
+      port: "DB_PORT"
+      database: "DB_DATABASE"
+      username: "DB_USERNAME"
+      password: "DB_PASSWORD"
 
-  tag: 'common'
-  driver: 'postgres'
-  charset: 'UTF8'
+  tag: "common"
+  driver: "postgres"
+  charset: "UTF8"
 
   host:
     _state:
@@ -36,23 +36,23 @@ common:
 tenant:
   _store:
     client: InMemory
-    key: 'connection.tenant${cache.user.tenant_id}'
+    key: "connection.tenant${cache.user.tenant_id}"
   _load:
     client: Db
     connection: ${connection.common}
-    table: 'tenants'
-    where: 'id=${cache.user.tenant_id}'
+    table: "tenants"
+    where: "id=${cache.user.tenant_id}"
     map:
-      id: 'id'
-      host: 'db_host'
-      port: 'db_port'
-      database: 'db_database'
-      username: 'db_username'
-      password: 'db_password'
+      id: "id"
+      host: "db_host"
+      port: "db_port"
+      database: "db_database"
+      username: "db_username"
+      password: "db_password"
 
-  tag: 'tenant'
-  driver: 'postgres'
-  charset: 'UTF8'
+  tag: "tenant"
+  driver: "postgres"
+  charset: "UTF8"
 
   id:
     _state:

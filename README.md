@@ -64,13 +64,13 @@ state-engine = "0.1"
 user:
   _store:
     client: KVS
-    key: 'user:1'
+    key: "user:1"
   _load:
     client: Db
-    table: 'users'
-    where: 'id=1'
+    table: "users"
+    where: "id=1"
     map:
-      name: 'name'
+      name: "name"
   name:
     _state:
       type: string
@@ -91,8 +91,8 @@ user:
 | `DbClient` | SQL Database | `fetch()` | [DbAdapter](./examples/adapters/db_client.rs) |
 | `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
 
-'Db' and 'Env' will be used only in Loading(Read)
-It's not essential to implement all *Client.
+"Db" and "Env" will be used only in Loading(Read)
+It"s not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.
 
