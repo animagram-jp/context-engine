@@ -1,9 +1,8 @@
 // Integration tests for common::state::State (new fixed-length record implementation)
 use state_engine::common::state::State;
 use state_engine::load::Load;
-use state_engine::ports::required::{InMemoryClient, KVSClient, EnvClient};
+use state_engine::{InMemoryClient, KVSClient, EnvClient};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use crate::mocks::{MockInMemory, MockKVS, MockEnvClient};
 
 fn fixtures_path() -> String {
@@ -50,14 +49,9 @@ fn test_common_state_delete_kvs() {
         .with_in_memory(&mut in_memory)
         .with_kvs_client(&mut kvs);
 
-    let set_ok = state.set("cache.user", json!({"id": 1}), None);
-    println!("set result: {}", set_ok);
-    println!("kvs after set: {:?}", kvs.data);
+    assert!(state.set("cache.user", json!({"id": 1}), None), "set should succeed");
 
-    let del_ok = state.delete("cache.user");
-    println!("delete result: {}", del_ok);
-
-    assert!(del_ok, "delete should succeed");
+    assert!(state.delete("cache.user"), "delete should succeed");
     assert_eq!(state.get("cache.user"), None);
 }
 

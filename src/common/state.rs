@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::collections::HashMap;
-use super::manifest::{ManifestStore, MetaIndices};
-use super::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
-use super::bit;
+use crate::common::manifest::ManifestStore;
+use crate::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
+use crate::common::bit;
 use crate::store::Store;
 use crate::load::Load;
 
@@ -16,6 +16,16 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
+    /// Creates a new State with the given manifest directory and load handler.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::state::State;
+    /// use state_engine::load::Load;
+    ///
+    /// let state = State::new("./examples/manifest", Load::new());
+    /// ```
     pub fn new(manifest_dir: &str, load: Load<'a>) -> Self {
         Self {
             manifest: ManifestStore::new(manifest_dir),
@@ -37,11 +47,6 @@ impl<'a> State<'a> {
         self
     }
 
-    /// Returns the current key being processed.
-    fn called_key(&self) -> Option<&str> {
-        self.called_keys.last().map(|s| s.as_str())
-    }
-
     /// Splits "file.path" into ("file", "path").
     fn split_key<'k>(key: &'k str) -> (&'k str, &'k str) {
         match key.find('.') {
@@ -53,6 +58,7 @@ impl<'a> State<'a> {
     /// Resolves a yaml value record to a String (for use in store/load config keys).
     /// Follows path references via state values if needed.
     fn resolve_value_to_string(&mut self, file: &str, value_idx: u16) -> Option<String> {
+        crate::fn_log!("State", "resolve_value_to_string", file, &value_idx.to_string());
         let pm = self.manifest.get_file(file)?;
         let vo = pm.values.get(value_idx)?;
 
@@ -91,7 +97,10 @@ impl<'a> State<'a> {
                         .collect()
                 };
                 let path_key = qualified.join(".");
-                let resolved = self.get(&path_key)?;
+                crate::fn_log!("State", "resolve/get", &path_key);
+                let resolved = self.get(&path_key);
+                crate::fn_log!("State", "resolve/got", if resolved.is_some() { "Some" } else { "None" });
+                let resolved = resolved?;
                 let s = match &resolved {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
@@ -102,7 +111,6 @@ impl<'a> State<'a> {
             } else {
                 let pm = self.manifest.get_file(file)?;
                 let s = pm.dynamic.get(dyn_idx)?.to_string();
-                drop(pm);
                 result.push_str(&s);
             }
 
@@ -116,6 +124,7 @@ impl<'a> State<'a> {
 
     /// Builds a store/load config HashMap from a meta record index.
     fn build_config(&mut self, file: &str, meta_idx: u16) -> Option<HashMap<String, Value>> {
+        crate::fn_log!("State", "build_config", file, &meta_idx.to_string());
         let children = {
             let pm = self.manifest.get_file(file)?;
             let record = pm.keys.get(meta_idx)?;
@@ -239,7 +248,38 @@ impl<'a> State<'a> {
         }
     }
 
+    /// Returns the value for `key`, checking state cache → _store → _load in order.
+    /// Returns `None` on miss, unknown key, or missing manifest.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::state::State;
+    /// use state_engine::load::Load;
+    /// use state_engine::InMemoryClient;
+    /// use serde_json::{json, Value};
+    ///
+    /// struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// impl InMemoryClient for MockInMemory {
+    ///     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    ///     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    ///     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// }
+    ///
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
+    ///
+    /// // store miss with no load client configured → None
+    /// assert_eq!(state.get("connection.common"), None);
+    ///
+    /// // set then get
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.get("connection.common").is_some());
+    /// ```
     pub fn get(&mut self, key: &str) -> Option<Value> {
+        crate::fn_log!("State", "get", key);
         if self.called_keys.len() >= self.max_recursion {
             return None;
         }
@@ -331,7 +371,31 @@ impl<'a> State<'a> {
         result
     }
 
+    /// Writes `value` to the _store backend for `key`.
+    /// Returns `true` on success.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::common::state::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
+    ///
+    /// assert!(state.set("connection.common", json!({"host": "localhost"}), None));
+    /// ```
     pub fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
+        crate::fn_log!("State", "set", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
@@ -349,6 +413,9 @@ impl<'a> State<'a> {
 
         if let Some(store_idx) = meta.store {
             if let Some(config) = self.build_config(&file, store_idx) {
+                crate::fn_log!("State", "set/store.set",
+                    config.get("client").and_then(|v| v.as_str()).unwrap_or(""),
+                    config.get("key").and_then(|v| v.as_str()).unwrap_or(""));
                 let ok = self.store.set(&config, value.clone(), ttl);
                 if ok {
                     // update state_values
@@ -364,7 +431,33 @@ impl<'a> State<'a> {
         false
     }
 
+    /// Removes the value for `key` from the _store backend.
+    /// Returns `true` on success.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::common::state::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
+    ///
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.delete("connection.common"));
+    /// assert_eq!(state.get("connection.common"), None);
+    /// ```
     pub fn delete(&mut self, key: &str) -> bool {
+        crate::fn_log!("State", "delete", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
@@ -382,6 +475,9 @@ impl<'a> State<'a> {
 
         if let Some(store_idx) = meta.store {
             if let Some(config) = self.build_config(&file, store_idx) {
+                crate::fn_log!("State", "delete/store.delete",
+                    config.get("client").and_then(|v| v.as_str()).unwrap_or(""),
+                    config.get("key").and_then(|v| v.as_str()).unwrap_or(""));
                 let ok = self.store.delete(&config);
                 if ok {
                     if let Some(sv_idx) = self.find_state_value(key_idx) {
@@ -394,7 +490,33 @@ impl<'a> State<'a> {
         false
     }
 
+    /// Returns `true` if a value exists for `key` in state cache or _store.
+    /// Does not trigger _load.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use state_engine::common::state::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
+    /// # use serde_json::{json, Value};
+    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
+    /// # impl InMemoryClient for MockInMemory {
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
+    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
+    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// # }
+    /// let mut client = MockInMemory::new();
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
+    ///
+    /// assert!(!state.exists("connection.common"));
+    /// state.set("connection.common", json!({"host": "localhost"}), None);
+    /// assert!(state.exists("connection.common"));
+    /// ```
     pub fn exists(&mut self, key: &str) -> bool {
+        crate::fn_log!("State", "exists", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();

@@ -1,6 +1,6 @@
 use serde_yaml_ng::Value;
-use super::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
-use super::bit;
+use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
+use crate::common::bit;
 
 /// Holds all structures built from a single YAML manifest file.
 pub struct ParsedManifest {

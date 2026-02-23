@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use super::parser::ParsedManifest;
-use super::bit;
+use crate::common::parser::ParsedManifest;
+use crate::common::bit;
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).
 #[derive(Debug, Default)]
@@ -41,6 +41,7 @@ impl ManifestStore {
     /// assert!(store.load("nonexistent").is_err());
     /// ```
     pub fn load(&mut self, file: &str) -> Result<(), String> {
+        crate::fn_log!("ManifestStore", "load", file);
         if self.files.contains_key(file) {
             return Ok(());
         }
@@ -189,6 +190,7 @@ impl ManifestStore {
     /// assert!(meta.state.is_some());
     /// ```
     pub fn get_meta(&self, file: &str, path: &str) -> MetaIndices {
+        crate::fn_log!("ManifestStore", "get_meta", &format!("{}.{}", file, path));
         let Some(pm) = self.files.get(file) else {
             return MetaIndices::default();
         };
@@ -312,10 +314,40 @@ impl ManifestStore {
         result
     }
 
+    /// Returns all keys that were not found since the last `clear_missing_keys`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::manifest::ManifestStore;
+    ///
+    /// let mut store = ManifestStore::new("./nonexistent");
+    /// // load a nonexistent file to register a miss
+    /// let _ = store.load("missing");
+    /// // find on an unloaded file also records nothing, but load failures do
+    /// assert!(store.get_missing_keys().is_empty()); // load errors are not recorded here
+    /// ```
     pub fn get_missing_keys(&self) -> &[String] {
         &self.missing_keys
     }
 
+    /// Clears the missing keys list.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::manifest::ManifestStore;
+    ///
+    /// let mut store = ManifestStore::new("./examples/manifest");
+    /// store.load("cache").unwrap();
+    ///
+    /// // find returns None for unknown path but does not record in missing_keys
+    /// assert!(store.find("cache", "never").is_none());
+    /// assert!(store.get_missing_keys().is_empty());
+    ///
+    /// store.clear_missing_keys();
+    /// assert!(store.get_missing_keys().is_empty());
+    /// ```
     pub fn clear_missing_keys(&mut self) {
         self.missing_keys.clear();
     }
