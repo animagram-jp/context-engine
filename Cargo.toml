@@ -1,7 +1,7 @@
 [package]
 name = "state-engine"
 version = "0.1.3"
-authors = ["Medetashi <qebju@animagram.jp>"]
+authors = ["Andyou <qebju@animagram.jp>"]
 edition = "2024"
 license = "MIT"
 description = "Declarative state data management system for a process"
