@@ -13,8 +13,6 @@
 /// | child index | child index   |  16   |  15    |
 /// | padding     | -             |  15   |   0    |
 
-// --- offsets ---
-
 pub const OFFSET_IS_PATH: u32 = 63;
 pub const OFFSET_HAS_CHILDREN: u32 = 62;
 pub const OFFSET_ROOT: u32 = 60;
@@ -23,8 +21,6 @@ pub const OFFSET_PROP: u32 = 52;
 pub const OFFSET_TYPE: u32 = 47;
 pub const OFFSET_DYNAMIC: u32 = 31;
 pub const OFFSET_CHILD: u32 = 15;
-
-// --- masks ---
 
 pub const MASK_IS_PATH: u64 = 0x1;
 pub const MASK_HAS_CHILDREN: u64 = 0x1;
@@ -35,10 +31,6 @@ pub const MASK_TYPE: u64 = 0x1F;
 pub const MASK_DYNAMIC: u64 = 0xFFFF;
 pub const MASK_CHILD: u64 = 0xFFFF;
 
-// --- functions ---
-
-/// Returns a new zeroed key object record.
-///
 /// # Examples
 ///
 /// ```
