@@ -1,4 +1,7 @@
 pub mod bit;
+pub mod pool;
+pub mod parser;
+pub mod manifest;
 pub mod bi_map;
 pub mod index;
 pub mod dot_map_accessor;
