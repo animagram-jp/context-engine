@@ -119,9 +119,13 @@ macro_rules! fn_log {
 #[macro_export]
 macro_rules! error_log {
     ($class:expr, $fun:expr, $msg:expr) => {{
+        let formatted = $crate::common::log_format::LogFormat::error($class, $method, $msg);
+
+        eprintln!("{}", formatted);
+        
         #[cfg(feature = "logging")]
         {
-            log::error!("{}", $crate::common::log_format::LogFormat::error($class, $fun, $msg));
+            log::error!("{}", formatted);
         }
     }};
 }
