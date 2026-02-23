@@ -203,3 +203,124 @@ impl Default for YamlValueList {
         Self::new()
     }
 }
+
+/// State value record: 32-bit fixed-length record.
+///
+/// Layout:
+/// | field       | bit |
+/// |-------------|-----|
+/// | key_index   |  16 |
+/// | value_index |  16 |
+///
+/// - key_index:   index into KeyList (for type info via key record's type index)
+/// - value_index: index into StateValueList's value buffer (serde_json::Value)
+pub type StateRecord = u32;
+
+pub const STATE_OFFSET_KEY:   u32 = 16;
+pub const STATE_OFFSET_VALUE: u32 = 0;
+pub const STATE_MASK_KEY:   u32 = 0xFFFF;
+pub const STATE_MASK_VALUE: u32 = 0xFFFF;
+
+pub fn state_new() -> StateRecord { 0 }
+
+pub fn state_get(record: StateRecord, offset: u32, mask: u32) -> u16 {
+    ((record >> offset) & mask) as u16
+}
+
+pub fn state_set(record: StateRecord, offset: u32, mask: u32, value: u16) -> StateRecord {
+    (record & !(mask << offset)) | (((value as u32) & mask) << offset)
+}
+
+/// Stores state value records (u32) and their associated serde_json::Value payloads.
+/// Index 0 is reserved as null.
+pub struct StateValueList {
+    records: Vec<StateRecord>,
+    values:  Vec<serde_json::Value>,
+}
+
+impl StateValueList {
+    pub fn new() -> Self {
+        let mut list = Self {
+            records: Vec::new(),
+            values:  Vec::new(),
+        };
+        list.records.push(0);
+        list.values.push(serde_json::Value::Null);
+        list
+    }
+
+    /// Appends a state record and its value, returning the record index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY, STATE_OFFSET_VALUE, STATE_MASK_VALUE, state_get};
+    /// use serde_json::json;
+    ///
+    /// let mut list = StateValueList::new();
+    /// let idx = list.push(42, json!("hello"));
+    ///
+    /// let record = list.get_record(idx).unwrap();
+    /// assert_eq!(state_get(record, STATE_OFFSET_KEY, STATE_MASK_KEY), 42);
+    ///
+    /// let value = list.get_value(idx).unwrap();
+    /// assert_eq!(value, &json!("hello"));
+    /// ```
+    pub fn push(&mut self, key_index: u16, value: serde_json::Value) -> u16 {
+        let value_index = self.values.len() as u16;
+        self.values.push(value);
+
+        let record = state_set(state_new(), STATE_OFFSET_KEY, STATE_MASK_KEY, key_index);
+        let record = state_set(record, STATE_OFFSET_VALUE, STATE_MASK_VALUE, value_index);
+        self.records.push(record);
+
+        (self.records.len() - 1) as u16
+    }
+
+    /// Updates the value at the given record index.
+    pub fn update(&mut self, index: u16, value: serde_json::Value) -> bool {
+        let record = match self.records.get(index as usize) {
+            Some(&r) => r,
+            None => return false,
+        };
+        let value_index = state_get(record, STATE_OFFSET_VALUE, STATE_MASK_VALUE) as usize;
+        if let Some(slot) = self.values.get_mut(value_index) {
+            *slot = value;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Removes a record by zeroing it (index remains valid, value becomes Null).
+    pub fn remove(&mut self, index: u16) -> bool {
+        let record = match self.records.get(index as usize) {
+            Some(&r) => r,
+            None => return false,
+        };
+        let value_index = state_get(record, STATE_OFFSET_VALUE, STATE_MASK_VALUE) as usize;
+        if let Some(slot) = self.values.get_mut(value_index) {
+            *slot = serde_json::Value::Null;
+            self.records[index as usize] = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_record(&self, index: u16) -> Option<StateRecord> {
+        self.records.get(index as usize).copied()
+    }
+
+    pub fn get_value(&self, index: u16) -> Option<&serde_json::Value> {
+        let record = self.records.get(index as usize)?;
+        let value_index = state_get(*record, STATE_OFFSET_VALUE, STATE_MASK_VALUE);
+        self.values.get(value_index as usize)
+    }
+}
+
+impl Default for StateValueList {
+    fn default() -> Self {
+        Self::new()
+    }
+}

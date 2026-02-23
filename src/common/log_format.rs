@@ -4,8 +4,8 @@ use serde_json::Value;
 /// ```
 /// use state_engine::common::log_format::LogFormat;
 ///
-/// let method_message = LogFormat::method("State", "get", &["'key'".to_string()]);
-/// assert_eq!(method_message, "State::get('key')");
+/// let fn_message = LogFormat::fun("State", "get", &["'key'".to_string()]);
+/// assert_eq!(fn_message, "State::get('key')");
 /// let error_message = LogFormat::error("State", "get", "not found");
 /// assert_eq!(error_message, "State::get: not found");
 /// ```
@@ -13,13 +13,13 @@ pub struct LogFormat;
 
 impl LogFormat {
 
-    pub fn method(class: &str, method: &str, args: &[String]) -> String {
+    pub fn fun(class: &str, fun: &str, args: &[String]) -> String {
         let args_str = args.join(", ");
-        format!("{}::{}({})", class, method, args_str)
+        format!("{}::{}({})", class, fun, args_str)
     }
 
-    pub fn error(class: &str, method: &str, message: &str) -> String {
-        format!("{}::{}: {}", class, method, message)
+    pub fn error(class: &str, fun: &str, message: &str) -> String {
+        format!("{}::{}: {}", class, fun, message)
     }
 
     /// Format JSON value for log output
@@ -83,18 +83,18 @@ impl LogFormat {
     }
 }
 
-/// Log macro: method call
+/// Log macro: fun call
 ///
 /// # Examples
 /// ```ignore
-/// use crate::method_log;
+/// use crate::fn_log;
 ///
-/// method_log!("State", "get", "cache.user");
+/// fn_log!("State", "get", "cache.user");
 /// // Logs: State::get('cache.user')
 /// ```
 #[macro_export]
-macro_rules! method_log {
-    ($class:expr, $method:expr $(, $arg:expr)*) => {{
+macro_rules! fn_log {
+    ($class:expr, $fun:expr $(, $arg:expr)*) => {{
         #[cfg(feature = "logging")]
         {
             let args: Vec<String> = vec![
@@ -102,7 +102,7 @@ macro_rules! method_log {
                     $crate::common::log_format::LogFormat::format_str_arg($arg),
                 )*
             ];
-            log::debug!("{}", $crate::common::log_format::LogFormat::method($class, $method, &args));
+            log::debug!("{}", $crate::common::log_format::LogFormat::fun($class, $fun, &args));
         }
     }};
 }
@@ -118,10 +118,10 @@ macro_rules! method_log {
 /// ```
 #[macro_export]
 macro_rules! error_log {
-    ($class:expr, $method:expr, $msg:expr) => {{
+    ($class:expr, $fun:expr, $msg:expr) => {{
         #[cfg(feature = "logging")]
         {
-            log::error!("{}", $crate::common::log_format::LogFormat::error($class, $method, $msg));
+            log::error!("{}", $crate::common::log_format::LogFormat::error($class, $fun, $msg));
         }
     }};
 }
@@ -137,10 +137,10 @@ macro_rules! error_log {
 /// ```
 #[macro_export]
 macro_rules! warn_log {
-    ($class:expr, $method:expr, $msg:expr) => {{
+    ($class:expr, $fun:expr, $msg:expr) => {{
         #[cfg(feature = "logging")]
         {
-            log::warn!("{}", $crate::common::log_format::LogFormat::error($class, $method, $msg));
+            log::warn!("{}", $crate::common::log_format::LogFormat::error($class, $fun, $msg));
         }
     }};
 }
@@ -151,8 +151,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_method_multiple_args() {
-        let result = LogFormat::method("State", "get", &[
+    fn test_fn_multiple_args() {
+        let result = LogFormat::fun("State", "get", &[
             "'cache.user'".to_string(),
             "null".to_string(),
         ]);

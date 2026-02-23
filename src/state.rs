@@ -3,7 +3,7 @@ use crate::ports::required::{KVSClient, InMemoryClient};
 use crate::common::{DotString, DotMapAccessor, Placeholder};
 use crate::store::Store;
 use crate::load::Load;
-use crate::method_log;
+use crate::fn_log;
 use crate::warn_log;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -148,7 +148,7 @@ impl<'a> StateTrait for State<'a> {
     /// assert!(state.get("connection.common").is_some());
     /// ```
     fn get(&mut self, key: &str) -> Option<Value> {
-        method_log!("State", "get", key);
+        fn_log!("State", "get", key);
 
         if self.called_keys.len() >= self.max_recursion {
             eprintln!(
@@ -329,7 +329,7 @@ impl<'a> StateTrait for State<'a> {
     /// assert!(ok);
     /// ```
     fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
-        method_log!("State", "set", key);
+        fn_log!("State", "set", key);
 
         self.called_keys.push(DotString::new(key));
 
@@ -397,7 +397,7 @@ impl<'a> StateTrait for State<'a> {
     /// assert_eq!(state.get("connection.common"), None);
     /// ```
     fn delete(&mut self, key: &str) -> bool {
-        method_log!("State", "delete", key);
+        fn_log!("State", "delete", key);
 
         self.called_keys.push(DotString::new(key));
 
@@ -482,7 +482,7 @@ impl<'a> StateTrait for State<'a> {
     /// assert!(state.exists("connection.common"));
     /// ```
     fn exists(&mut self, key: &str) -> bool {
-        method_log!("State", "exists", key);
+        fn_log!("State", "exists", key);
 
         self.called_keys.push(DotString::new(key));
 

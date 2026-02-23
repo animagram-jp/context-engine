@@ -20,7 +20,7 @@ It behaves as described in YAML DSL.
 
 ## Provided Functions
 
-| Mod | description | fun |
+| Mod | description | fn |
 |-------|------|---------|
 | **Manifest** | reads static YAMLs and returns processed obj | `get()`, `getMeta()` |
 | **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
@@ -84,8 +84,8 @@ user:
 
 2. Implement some Required Ports for your stores.
 
-| Interface | expected store | methods | sample |
-|-----------|----------------|---------|--------|
+| Interface | expected store | fn | sample |
+|-----------|----------------|-----|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
 | `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [KVSAdapter](./examples/adapters/kvs_client.rs) |
 | `DbClient` | SQL Database | `fetch()` | [DbAdapter](./examples/adapters/db_client.rs) |

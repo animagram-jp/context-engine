@@ -1,6 +1,6 @@
 use crate::ports::provided;
 use crate::common::{DotString, DotMapAccessor};
-use crate::method_log;
+use crate::fn_log;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -43,7 +43,7 @@ impl Manifest {
     /// assert_eq!(missing, json!("default"));
     /// ```
     pub fn get(&mut self, key: &str, default: Option<Value>) -> Value {
-        method_log!("Manifest", "get", key);
+        fn_log!("Manifest", "get", key);
 
         let mut parts = key.splitn(2, '.');
         let file = parts.next().unwrap_or("").to_string();
@@ -91,7 +91,7 @@ impl Manifest {
     /// assert!(map.keys().next().unwrap().starts_with("cache.user."));
     /// ```
     pub fn get_meta(&mut self, key: &str) -> HashMap<String, Value> {
-        method_log!("Manifest", "get_meta", key);
+        fn_log!("Manifest", "get_meta", key);
 
         use regex::Regex;
 
@@ -386,7 +386,7 @@ impl Manifest {
     /// assert!(!manifest.get_missing_keys().is_empty());
     /// ```
     pub fn get_value(&mut self, key: &DotString) -> Value {
-        method_log!("Manifest", "get_value", key.as_str());
+        fn_log!("Manifest", "get_value", key.as_str());
         let key_str = key.as_str();
         let mut parts = key_str.splitn(2, '.');
         let file = parts.next().unwrap_or("").to_string();

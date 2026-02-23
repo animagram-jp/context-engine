@@ -83,7 +83,7 @@ impl DotMapAccessor {
     }
 
     /// set Value
-    /// static method
+    /// static
     /// quarify data to object
     pub fn set(data: &mut Value, dot_string: &DotString, value: Value) {
         let key = dot_string.as_str();
@@ -127,7 +127,7 @@ impl DotMapAccessor {
     }
 
     /// insert or overwrite Value
-    /// static method
+    /// static
     ///
     /// dev note:
     /// マージ処理の各レベルで、既存値と新しい値の少なくとも一方がスカラー（非オブジェクト）である場合、上書き処理がされる。
@@ -199,7 +199,7 @@ impl DotMapAccessor {
     }
 
     /// check hit/miss key
-    /// static method
+    /// static
     pub fn has(data: &Value, dot_string: &DotString) -> bool {
         let key = dot_string.as_str();
 
@@ -221,7 +221,7 @@ impl DotMapAccessor {
     }
 
     /// unset {Key: Value}
-    /// static method
+    /// static
     /// no reaction when miss hit
     pub fn unset(data: &mut Value, dot_string: &DotString) {
         let key = dot_string.as_str();

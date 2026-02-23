@@ -4,6 +4,14 @@ use std::path::PathBuf;
 use super::parser::ParsedManifest;
 use super::bit;
 
+/// Indices of meta records for a given node, collected from root to node (child overrides parent).
+#[derive(Debug, Default)]
+pub struct MetaIndices {
+    pub load:  Option<u16>,
+    pub store: Option<u16>,
+    pub state: Option<u16>,
+}
+
 /// Manages parsed manifest files, keyed by filename (without extension).
 /// Each file is parsed on first access and cached as a `ParsedManifest`.
 pub struct ManifestStore {
@@ -159,6 +167,149 @@ impl ManifestStore {
         } else {
             vec![child_idx]
         }
+    }
+
+    /// Returns meta record indices (_load/_store/_state) for a dot-path node.
+    /// Collects from root to node; child overrides parent.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::manifest::ManifestStore;
+    ///
+    /// let mut store = ManifestStore::new("./examples/manifest");
+    /// store.load("cache").unwrap();
+    ///
+    /// let meta = store.get_meta("cache", "user");
+    /// assert!(meta.load.is_some());
+    /// assert!(meta.store.is_some());
+    ///
+    /// // leaf node has _state
+    /// let meta = store.get_meta("cache", "user.id");
+    /// assert!(meta.state.is_some());
+    /// ```
+    pub fn get_meta(&self, file: &str, path: &str) -> MetaIndices {
+        let Some(pm) = self.files.get(file) else {
+            return MetaIndices::default();
+        };
+
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split('.').collect()
+        };
+
+        let file_record = match pm.keys.get(1) {
+            Some(r) => r,
+            None => return MetaIndices::default(),
+        };
+
+        let mut meta = MetaIndices::default();
+
+        // collect meta from file root level
+        self.collect_meta(pm, file_record, &mut meta);
+
+        // walk path segments, collecting meta at each level
+        let mut candidates = self.children_of(pm, file_record);
+        for segment in &segments {
+            let mut found_idx = None;
+            for &idx in &candidates {
+                let record = match pm.keys.get(idx) {
+                    Some(r) => r,
+                    None => continue,
+                };
+                if bit::get(record, bit::OFFSET_ROOT, bit::MASK_ROOT) != bit::ROOT_NULL {
+                    continue;
+                }
+                let dyn_idx = bit::get(record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+                if pm.dynamic.get(dyn_idx) == Some(segment) {
+                    self.collect_meta(pm, record, &mut meta);
+                    found_idx = Some(idx);
+                    break;
+                }
+            }
+            match found_idx {
+                Some(idx) => {
+                    let record = pm.keys.get(idx).unwrap();
+                    candidates = self.children_of(pm, record);
+                }
+                None => return MetaIndices::default(),
+            }
+        }
+
+        meta
+    }
+
+    /// Scans children of `record` for meta records and updates `meta`.
+    fn collect_meta(&self, pm: &ParsedManifest, record: u64, meta: &mut MetaIndices) {
+        let children = self.children_of(pm, record);
+        for &idx in &children {
+            let child = match pm.keys.get(idx) {
+                Some(r) => r,
+                None => continue,
+            };
+            let root = bit::get(child, bit::OFFSET_ROOT, bit::MASK_ROOT);
+            match root {
+                bit::ROOT_LOAD  => meta.load  = Some(idx),
+                bit::ROOT_STORE => meta.store = Some(idx),
+                bit::ROOT_STATE => meta.state = Some(idx),
+                _ => {}
+            }
+        }
+    }
+
+    /// Returns indices of field-key leaf values for a node (meta keys and nulls excluded).
+    /// Returns a map of dynamic_index → yaml_value_index for each leaf child.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::manifest::ManifestStore;
+    ///
+    /// let mut store = ManifestStore::new("./examples/manifest");
+    /// store.load("connection").unwrap();
+    ///
+    /// // "tag", "driver", "charset" are static leaf values
+    /// let values = store.get_value("connection", "common");
+    /// assert!(!values.is_empty());
+    /// ```
+    pub fn get_value(&self, file: &str, path: &str) -> Vec<(u16, u16)> {
+        let Some(pm) = self.files.get(file) else {
+            return vec![];
+        };
+
+        let node_idx = match self.find(file, path) {
+            Some(idx) => idx,
+            None => return vec![],
+        };
+
+        let record = match pm.keys.get(node_idx) {
+            Some(r) => r,
+            None => return vec![],
+        };
+
+        let mut result = Vec::new();
+        let children = self.children_of(pm, record);
+
+        for &idx in &children {
+            let child = match pm.keys.get(idx) {
+                Some(r) => r,
+                None => continue,
+            };
+            // skip meta keys
+            if bit::get(child, bit::OFFSET_ROOT, bit::MASK_ROOT) != bit::ROOT_NULL {
+                continue;
+            }
+            // only leaf nodes with a value
+            if bit::get(child, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF) == 0 {
+                continue;
+            }
+            let dyn_idx   = bit::get(child, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+            let value_idx = bit::get(child, bit::OFFSET_CHILD,   bit::MASK_CHILD)   as u16;
+            result.push((dyn_idx, value_idx));
+        }
+
+        result
     }
 
     pub fn get_missing_keys(&self) -> &[String] {
