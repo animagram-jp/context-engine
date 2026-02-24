@@ -4,7 +4,7 @@ use serde_json::Value;
 /// ```
 /// use state_engine::common::log_format::LogFormat;
 ///
-/// let fn_message = LogFormat::fun("State", "get", &["'key'".to_string()]);
+/// let fn_message = LogFormat::call("State", "get", &["'key'".to_string()]);
 /// assert_eq!(fn_message, "State::get('key')");
 /// let error_message = LogFormat::error("State", "get", "not found");
 /// assert_eq!(error_message, "State::get: not found");
@@ -13,13 +13,13 @@ pub struct LogFormat;
 
 impl LogFormat {
 
-    pub fn fun(class: &str, fun: &str, args: &[String]) -> String {
+    pub fn call(class: &str, fn_name: &str, args: &[String]) -> String {
         let args_str = args.join(", ");
-        format!("{}::{}({})", class, fun, args_str)
+        format!("{}::{}({})", class, fn_name, args_str)
     }
 
-    pub fn error(class: &str, fun: &str, message: &str) -> String {
-        format!("{}::{}: {}", class, fun, message)
+    pub fn error(class: &str, fn_name: &str, message: &str) -> String {
+        format!("{}::{}: {}", class, fn_name, message)
     }
 
     /// Format JSON value for log output
@@ -83,7 +83,7 @@ impl LogFormat {
     }
 }
 
-/// Log macro: fun call
+/// Log macro: fn call
 ///
 /// # Examples
 /// ```ignore
@@ -102,7 +102,7 @@ macro_rules! fn_log {
                     $crate::common::log_format::LogFormat::format_str_arg($arg),
                 )*
             ];
-            log::debug!("{}", $crate::common::log_format::LogFormat::fun($class, $fun, &args));
+            log::debug!("{}", $crate::common::log_format::LogFormat::call($class, $fun, &args));
         }
     }};
 }
@@ -119,7 +119,7 @@ macro_rules! fn_log {
 #[macro_export]
 macro_rules! error_log {
     ($class:expr, $fun:expr, $msg:expr) => {{
-        let formatted = $crate::common::log_format::LogFormat::error($class, $method, $msg);
+        let formatted = $crate::common::log_format::LogFormat::error($class, $fun, $msg);
 
         eprintln!("{}", formatted);
         
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_fn_multiple_args() {
-        let result = LogFormat::fun("State", "get", &[
+        let result = LogFormat::call("State", "get", &[
             "'cache.user'".to_string(),
             "null".to_string(),
         ]);

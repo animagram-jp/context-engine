@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::manifest::Manifest;
 use crate::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
 use crate::common::bit;
@@ -12,7 +12,7 @@ pub struct State<'a> {
     store: Store<'a>,
     load: Load<'a>,
     max_recursion: usize,
-    called_keys: Vec<String>,
+    called_keys: HashSet<String>,
 }
 
 impl<'a> State<'a> {
@@ -33,7 +33,7 @@ impl<'a> State<'a> {
             store: Store::new(),
             load,
             max_recursion: 20,
-            called_keys: Vec::new(),
+            called_keys: HashSet::new(),
         }
     }
 
@@ -128,7 +128,10 @@ impl<'a> State<'a> {
         let mut config = HashMap::new();
 
         for &child_idx in &children {
-            let record = self.manifest.keys.get(child_idx)?;
+            let record = match self.manifest.keys.get(child_idx) {
+                Some(r) => r,
+                None => continue,
+            };
             let prop   = bit::get(record, bit::OFFSET_PROP,   bit::MASK_PROP)   as u8;
             let client = bit::get(record, bit::OFFSET_CLIENT, bit::MASK_CLIENT) as u8;
             let is_leaf = bit::get(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF) == 1;
@@ -266,26 +269,26 @@ impl<'a> State<'a> {
             return None;
         }
 
-        self.called_keys.push(key.to_string());
+        self.called_keys.insert(key.to_string());
 
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
 
         if self.manifest.load(&file).is_err() {
-            self.called_keys.pop();
+            self.called_keys.remove(key);
             return None;
         }
 
         let key_idx = match self.manifest.find(&file, &path) {
             Some(idx) => idx,
-            None => { self.called_keys.pop(); return None; }
+            None => { self.called_keys.remove(key); return None; }
         };
 
         // check state_values cache
         if let Some(sv_idx) = self.find_state_value(key_idx) {
             let val = self.state_values.get_value(sv_idx).cloned();
-            self.called_keys.pop();
+            self.called_keys.remove(key);
             return val;
         }
 
@@ -302,7 +305,7 @@ impl<'a> State<'a> {
                 if let Some(config) = self.build_config(store_idx) {
                     if let Some(value) = self.store.get(&config) {
                         self.state_values.push(key_idx, value.clone());
-                        self.called_keys.pop();
+                        self.called_keys.remove(key);
                         return Some(value);
                     }
                 }
@@ -313,7 +316,7 @@ impl<'a> State<'a> {
         let result = if let Some(load_idx) = meta.load {
             if let Some(mut config) = self.build_config(load_idx) {
                 if !config.contains_key("client") {
-                    self.called_keys.pop();
+                    self.called_keys.remove(key);
                     return None;
                 }
 
@@ -342,7 +345,7 @@ impl<'a> State<'a> {
             } else { None }
         } else { None };
 
-        self.called_keys.pop();
+        self.called_keys.remove(key);
         result
     }
 
