@@ -1,7 +1,7 @@
-// Integration tests for common::state::State (new fixed-length record implementation)
-use state_engine::common::state::State;
+// Integration tests for state::State
+use state_engine::State;
 use state_engine::load::Load;
-use state_engine::{InMemoryClient, KVSClient, EnvClient};
+use state_engine::{InMemoryClient, KVSClient};
 use serde_json::{json, Value};
 use crate::mocks::{MockInMemory, MockKVS, MockEnvClient};
 

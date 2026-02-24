@@ -1,131 +1,241 @@
-use crate::ports::provided::{Manifest as ManifestTrait, State as StateTrait};
-use crate::ports::required::{KVSClient, InMemoryClient};
-use crate::common::{DotString, DotMapAccessor, Placeholder};
-use crate::store::Store;
-use crate::load::Load;
-use crate::fn_log;
-use crate::warn_log;
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::manifest::Manifest;
+use crate::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
+use crate::common::bit;
+use crate::store::Store;
+use crate::load::Load;
 
 pub struct State<'a> {
-    dot_accessor: DotMapAccessor,
-    manifest: &'a mut dyn ManifestTrait,
-    load: Load<'a>,
+    manifest: Manifest,
+    state_values: StateValueList,
     store: Store<'a>,
+    load: Load<'a>,
     max_recursion: usize,
-    called_keys: Vec<DotString>,
-    cache: Value,
+    called_keys: Vec<String>,
 }
 
 impl<'a> State<'a> {
+    /// Creates a new State with the given manifest directory and load handler.
+    ///
     /// # Examples
     ///
     /// ```
-    /// use state_engine::{Manifest, State, Load};
+    /// use state_engine::State;
+    /// use state_engine::load::Load;
     ///
-    /// let mut manifest = Manifest::new("./examples/manifest");
-    /// let load = Load::new();
-    /// let mut state = State::new(&mut manifest, load);
+    /// let state = State::new("./examples/manifest", Load::new());
     /// ```
-    pub fn new(manifest: &'a mut dyn ManifestTrait, load: Load<'a>) -> Self {
+    pub fn new(manifest_dir: &str, load: Load<'a>) -> Self {
         Self {
-            manifest,
-            load,
+            manifest: Manifest::new(manifest_dir),
+            state_values: StateValueList::new(),
             store: Store::new(),
+            load,
             max_recursion: 20,
             called_keys: Vec::new(),
-            cache: Value::Object(serde_json::Map::new()),
-            dot_accessor: DotMapAccessor::new(),
         }
     }
 
-    pub fn with_in_memory(mut self, client: &'a mut dyn InMemoryClient) -> Self {
+    pub fn with_in_memory(mut self, client: &'a mut dyn crate::ports::required::InMemoryClient) -> Self {
         self.store = self.store.with_in_memory(client);
         self
     }
 
-    pub fn with_kvs_client(mut self, client: &'a mut dyn KVSClient) -> Self {
+    pub fn with_kvs_client(mut self, client: &'a mut dyn crate::ports::required::KVSClient) -> Self {
         self.store = self.store.with_kvs_client(client);
         self
     }
 
-    /// Returns the owner path where `_load` or `_store` is defined in the manifest.
-    ///
-    /// Derives from the first qualified key in `_load.map`; falls back to `called_key`
-    /// (is_load=true) or its parent path (is_load=false) when no map is present.
-    fn get_owner_path(&self, meta: &HashMap<String, Value>, is_load: bool) -> DotString {
-        meta.get("_load")
-            .and_then(|v| v.as_object())
-            .and_then(|obj| obj.get("map"))
-            .and_then(|v| v.as_object())
-            .and_then(|map| map.keys().next())
-            .and_then(|qualified_key| {
-                qualified_key.rfind('.').map(|pos| DotString::new(&qualified_key[..pos]))
-            })
-            .unwrap_or_else(|| {
-                if let Some(called_key) = self.called_keys.last() {
-                    if is_load {
-                        DotString::new(called_key.as_str())
-                    } else {
-                        if called_key.len() <= 1 {
-                            DotString::new("")
-                        } else {
-                            DotString::new(&called_key[..called_key.len() - 1].join("."))
-                        }
-                    }
-                } else {
-                    DotString::new("")
-                }
-            })
+    /// Splits "file.path" into ("file", "path").
+    fn split_key<'k>(key: &'k str) -> (&'k str, &'k str) {
+        match key.find('.') {
+            Some(pos) => (&key[..pos], &key[pos + 1..]),
+            None => (key, ""),
+        }
     }
 
-    /// Resolves `${path}` placeholders in a config map using the instance cache and `self.get()`.
-    fn resolve_config_placeholders(&mut self, config: &mut HashMap<String, Value>) {
-        let placeholder_names: Vec<String> = Placeholder::collect(config);
+    /// Resolves a yaml value record to a String (for use in store/load config keys).
+    fn resolve_value_to_string(&mut self, value_idx: u16) -> Option<String> {
+        crate::fn_log!("State", "resolve_value_to_string", &value_idx.to_string());
+        let vo = self.manifest.values.get(value_idx)?;
 
-        if placeholder_names.is_empty() {
-            return;
-        }
+        let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
 
-        let mut resolved_values: HashMap<String, Value> = HashMap::new();
-        let mut pending_paths: Vec<String> = Vec::new();
+        const TOKEN_OFFSETS: [(u32, u32); 6] = [
+            (bit::VO_OFFSET_T0_IS_PATH, bit::VO_OFFSET_T0_DYNAMIC),
+            (bit::VO_OFFSET_T1_IS_PATH, bit::VO_OFFSET_T1_DYNAMIC),
+            (bit::VO_OFFSET_T2_IS_PATH, bit::VO_OFFSET_T2_DYNAMIC),
+            (bit::VO_OFFSET_T3_IS_PATH, bit::VO_OFFSET_T3_DYNAMIC),
+            (bit::VO_OFFSET_T4_IS_PATH, bit::VO_OFFSET_T4_DYNAMIC),
+            (bit::VO_OFFSET_T5_IS_PATH, bit::VO_OFFSET_T5_DYNAMIC),
+        ];
 
-        for name in placeholder_names {
-            let name_dot = DotString::new(&name);
-            if let Some(cached) = self.dot_accessor.get(&self.cache, &name_dot) {
-                resolved_values.insert(name, cached.clone());
+        let mut result = String::new();
+
+        for (i, (off_is_path, off_dynamic)) in TOKEN_OFFSETS.iter().enumerate() {
+            let word = if i < 3 { 0 } else { 1 };
+            let is_path = bit::get(vo[word], *off_is_path, bit::VO_MASK_IS_PATH) == 1;
+            let dyn_idx = bit::get(vo[word], *off_dynamic, bit::VO_MASK_DYNAMIC) as u16;
+
+            if dyn_idx == 0 {
+                break;
+            }
+
+            if is_path {
+                let path_segments = self.manifest.path_map.get(dyn_idx)?.to_vec();
+                let path_key: String = path_segments.iter()
+                    .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(".");
+                crate::fn_log!("State", "resolve/get", &path_key);
+                let resolved = self.get(&path_key);
+                crate::fn_log!("State", "resolve/got", if resolved.is_some() { "Some" } else { "None" });
+                let resolved = resolved?;
+                let s = match &resolved {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => return None,
+                };
+                result.push_str(&s);
             } else {
-                pending_paths.push(name);
+                let s = self.manifest.dynamic.get(dyn_idx)?.to_string();
+                result.push_str(&s);
+            }
+
+            if !is_template {
+                break;
             }
         }
 
-        Placeholder::replace(config, &resolved_values);
+        Some(result)
+    }
 
-        for path in pending_paths {
-            if let Some(value) = self.get(&path) {
-                resolved_values.insert(path, value);
+    /// Builds a store/load config HashMap from a meta record index.
+    fn build_config(&mut self, meta_idx: u16) -> Option<HashMap<String, Value>> {
+        crate::fn_log!("State", "build_config", &meta_idx.to_string());
+        let record = self.manifest.keys.get(meta_idx)?;
+        let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        if child_idx == 0 { return None; }
+        let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
+        let children = if has_children == 1 {
+            self.manifest.children_map.get(child_idx)?.to_vec()
+        } else {
+            vec![child_idx]
+        };
+
+        let mut config = HashMap::new();
+
+        for &child_idx in &children {
+            let record = self.manifest.keys.get(child_idx)?;
+            let prop   = bit::get(record, bit::OFFSET_PROP,   bit::MASK_PROP)   as u8;
+            let client = bit::get(record, bit::OFFSET_CLIENT, bit::MASK_CLIENT) as u8;
+            let is_leaf = bit::get(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF) == 1;
+            let value_idx = if is_leaf {
+                bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16
+            } else { 0 };
+
+            if client != 0 {
+                let client_str = match client as u64 {
+                    bit::CLIENT_STATE     => "State",
+                    bit::CLIENT_IN_MEMORY => "InMemory",
+                    bit::CLIENT_ENV       => "Env",
+                    bit::CLIENT_KVS       => "KVS",
+                    bit::CLIENT_DB        => "Db",
+                    bit::CLIENT_API       => "API",
+                    bit::CLIENT_FILE      => "File",
+                    _ => continue,
+                };
+                config.insert("client".to_string(), Value::String(client_str.to_string()));
+                continue;
+            }
+
+            let prop_name = match prop as u64 {
+                bit::PROP_KEY        => "key",
+                bit::PROP_CONNECTION => "connection",
+                bit::PROP_MAP        => "map",
+                bit::PROP_TTL        => "ttl",
+                bit::PROP_TABLE      => "table",
+                bit::PROP_WHERE      => "where",
+                _ => continue,
+            };
+
+            if prop_name == "map" {
+                if let Some(map_val) = self.build_map_config(child_idx) {
+                    config.insert("map".to_string(), map_val);
+                }
+            } else if value_idx != 0 {
+                if let Some(s) = self.resolve_value_to_string(value_idx) {
+                    config.insert(prop_name.to_string(), Value::String(s));
+                }
             }
         }
 
-        let final_missing = Placeholder::replace(config, &resolved_values);
+        Some(config)
+    }
 
-        if !final_missing.is_empty() {
-            let missing_list = final_missing.join(", ");
-            warn_log!(
-                "State",
-                "resolve_config_placeholders",
-                &format!("Unresolved placeholders: {}", missing_list)
-            );
+    /// Builds a map config object from a map prop record's children.
+    fn build_map_config(&self, map_idx: u16) -> Option<Value> {
+        let record = self.manifest.keys.get(map_idx)?;
+        let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        if child_idx == 0 { return Some(Value::Object(serde_json::Map::new())); }
+
+        let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
+        let children = if has_children == 1 {
+            self.manifest.children_map.get(child_idx)?.to_vec()
+        } else {
+            vec![child_idx]
+        };
+
+        let mut map = serde_json::Map::new();
+        for &c in &children {
+            let child = self.manifest.keys.get(c)?;
+            let dyn_idx   = bit::get(child, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+            let value_idx = bit::get(child, bit::OFFSET_CHILD,   bit::MASK_CHILD)   as u16;
+            let is_path   = bit::get(child, bit::OFFSET_IS_PATH, bit::MASK_IS_PATH) == 1;
+
+            let key_str = if is_path {
+                let segs = self.manifest.path_map.get(dyn_idx)?;
+                segs.iter()
+                    .filter_map(|&s| self.manifest.dynamic.get(s).map(|x| x.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(".")
+            } else {
+                self.manifest.dynamic.get(dyn_idx)?.to_string()
+            };
+
+            let val_vo = self.manifest.values.get(value_idx)?;
+            let col_dyn = bit::get(val_vo[0], bit::VO_OFFSET_T0_DYNAMIC, bit::VO_MASK_DYNAMIC) as u16;
+            let col_str = self.manifest.dynamic.get(col_dyn)?.to_string();
+
+            map.insert(key_str, Value::String(col_str));
+        }
+
+        Some(Value::Object(map))
+    }
+
+    /// Finds a state_values record index by key_index.
+    fn find_state_value(&self, key_idx: u16) -> Option<u16> {
+        let mut i = 1u16;
+        loop {
+            let record = self.state_values.get_record(i)?;
+            if record == 0 { i += 1; continue; }
+            let k = ((record >> STATE_OFFSET_KEY) & (STATE_MASK_KEY as u32)) as u16;
+            if k == key_idx { return Some(i); }
+            i += 1;
         }
     }
-}
 
-impl<'a> StateTrait for State<'a> {
+    /// Returns the value for `key`, checking state cache → _store → _load in order.
+    /// Returns `None` on miss, unknown key, or missing manifest.
+    ///
     /// # Examples
     ///
     /// ```
-    /// use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// use state_engine::State;
+    /// use state_engine::load::Load;
+    /// use state_engine::InMemoryClient;
     /// use serde_json::{json, Value};
     ///
     /// struct MockInMemory { data: std::collections::HashMap<String, Value> }
@@ -136,183 +246,115 @@ impl<'a> StateTrait for State<'a> {
     ///     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
     /// }
     ///
-    /// let mut manifest = Manifest::new("./examples/manifest");
     /// let mut client = MockInMemory::new();
-    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
     ///
-    /// // store miss with no load client → None
+    /// // store miss with no load client configured → None
     /// assert_eq!(state.get("connection.common"), None);
     ///
-    /// // when set before get
+    /// // set then get
     /// state.set("connection.common", json!({"host": "localhost"}), None);
     /// assert!(state.get("connection.common").is_some());
     /// ```
-    fn get(&mut self, key: &str) -> Option<Value> {
-        fn_log!("State", "get", key);
-
+    pub fn get(&mut self, key: &str) -> Option<Value> {
+        crate::fn_log!("State", "get", key);
         if self.called_keys.len() >= self.max_recursion {
-            eprintln!(
-                "State::get: max recursion depth ({}) reached for key '{}'",
-                self.max_recursion, key
-            );
+            return None;
+        }
+        if self.called_keys.contains(&key.to_string()) {
             return None;
         }
 
-        self.called_keys.push(DotString::new(key));
+        self.called_keys.push(key.to_string());
 
-        // 1. cache check
-        let current_key = self.called_keys.last().unwrap();
-        if DotMapAccessor::has(&self.cache, current_key) {
-            let cached = self.dot_accessor.get(&self.cache, current_key).cloned();
-            self.called_keys.pop();
-            return cached;
-        }
+        let (file, path) = Self::split_key(key);
+        let file = file.to_string();
+        let path = path.to_string();
 
-        let meta = self.manifest.get_meta(key);
-        if meta.is_empty() {
+        if self.manifest.load(&file).is_err() {
             self.called_keys.pop();
             return None;
         }
 
-        // Skip _store when _load.client is "State" (intra-State reference)
-        let has_state_client = meta.get("_load")
-            .and_then(|v| v.as_object())
-            .and_then(|obj| obj.get("client"))
-            .and_then(|v| v.as_str())
-            == Some("State");
+        let key_idx = match self.manifest.find(&file, &path) {
+            Some(idx) => idx,
+            None => { self.called_keys.pop(); return None; }
+        };
 
-        // 2. Try _store
+        // check state_values cache
+        if let Some(sv_idx) = self.find_state_value(key_idx) {
+            let val = self.state_values.get_value(sv_idx).cloned();
+            self.called_keys.pop();
+            return val;
+        }
+
+        let meta = self.manifest.get_meta(&file, &path);
+
+        // check if _load client is State (load-only, no store read)
+        let has_state_client = meta.load.and_then(|load_idx| {
+            self.manifest.keys.get(load_idx)
+                .map(|r| bit::get(r, bit::OFFSET_CLIENT, bit::MASK_CLIENT) == bit::CLIENT_STATE)
+        }).unwrap_or(false);
+
         if !has_state_client {
-            if let Some(store_config_value) = meta.get("_store") {
-                if let Some(store_config_obj) = store_config_value.as_object() {
-                    let mut store_config: HashMap<String, Value> =
-                        store_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-                    self.resolve_config_placeholders(&mut store_config);
-
-                    if let Some(value) = self.store.get(&store_config) {
-                        let owner_path = self.get_owner_path(&meta, false);
-
-                        self.manifest.clear_missing_keys();
-                        let manifest_value = self.manifest.get_value(&owner_path);
-                        if self.manifest.get_missing_keys().is_empty() {
-                            DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
-                        }
-
-                        if value.is_object() {
-                            DotMapAccessor::merge(&mut self.cache, &owner_path, value);
-                        } else {
-                            let called_key = self.called_keys.last().unwrap();
-                            DotMapAccessor::set(&mut self.cache, called_key, value);
-                        }
-
-                        // Use has() before get() to avoid early-returning null nodes
-                        let called_key = self.called_keys.last().unwrap();
-                        if DotMapAccessor::has(&self.cache, called_key) {
-                            let extracted = self.dot_accessor.get(&self.cache, called_key).cloned();
-                            self.called_keys.pop();
-                            return extracted;
-                        }
+            if let Some(store_idx) = meta.store {
+                if let Some(config) = self.build_config(store_idx) {
+                    if let Some(value) = self.store.get(&config) {
+                        self.state_values.push(key_idx, value.clone());
+                        self.called_keys.pop();
+                        return Some(value);
                     }
                 }
             }
         }
 
-        // 3. Auto-load on miss
-        let result = if let Some(load_config_value) = meta.get("_load") {
-            if let Some(load_config_obj) = load_config_value.as_object() {
-                let mut load_config: HashMap<String, Value> =
-                    load_config_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-                if !load_config.contains_key("client") {
+        // try _load
+        let result = if let Some(load_idx) = meta.load {
+            if let Some(mut config) = self.build_config(load_idx) {
+                if !config.contains_key("client") {
                     self.called_keys.pop();
                     return None;
                 }
 
-                self.resolve_config_placeholders(&mut load_config);
-
-                let client_value = load_config.get("client").and_then(|v| v.as_str());
-
-                if client_value == Some("State") {
-                    if let Some(key_value) = load_config.get("key") {
-                        let current_key = self.called_keys.last().unwrap();
-                        DotMapAccessor::set(&mut self.cache, current_key, key_value.clone());
-
-                        self.called_keys.pop();
-                        return Some(key_value.clone());
+                // unqualify map keys for Load
+                if let Some(Value::Object(map_obj)) = config.get("map").cloned() {
+                    let mut unqualified = serde_json::Map::new();
+                    for (qk, v) in map_obj {
+                        let field = qk.rfind('.').map_or(qk.as_str(), |p| &qk[p+1..]);
+                        unqualified.insert(field.to_string(), v);
                     }
-                    self.called_keys.pop();
-                    None
-                } else {
-                    // Unqualify map keys (qualified path → relative field name) before passing to Load
-                    if let Some(map_value) = load_config.get("map") {
-                        if let Value::Object(map_obj) = map_value {
-                            let mut unqualified_map = serde_json::Map::new();
-                            for (qualified_key, db_column) in map_obj {
-                                if let Some(pos) = qualified_key.rfind('.') {
-                                    let field_name = &qualified_key[pos + 1..];
-                                    unqualified_map.insert(field_name.to_string(), db_column.clone());
-                                } else {
-                                    unqualified_map.insert(qualified_key.clone(), db_column.clone());
-                                }
-                            }
-                            load_config.insert("map".to_string(), Value::Object(unqualified_map));
-                        }
-                    }
-
-                    if let Ok(loaded) = self.load.handle(&load_config) {
-                        let owner_path = self.get_owner_path(&meta, true);
-
-                        self.manifest.clear_missing_keys();
-                        let manifest_value = self.manifest.get_value(&owner_path);
-                        if self.manifest.get_missing_keys().is_empty() {
-                            DotMapAccessor::merge(&mut self.cache, &owner_path, manifest_value);
-                        }
-
-                        DotMapAccessor::merge(&mut self.cache, &owner_path, loaded.clone());
-
-                        // On load success, persist merged cache value to _store
-                        if let Some(store_config_value) = meta.get("_store") {
-                            if let Some(store_config_obj) = store_config_value.as_object() {
-                                let mut store_config: HashMap<String, Value> = store_config_obj
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect();
-
-                                self.resolve_config_placeholders(&mut store_config);
-
-                                if let Some(cache_value) = self.dot_accessor.get(&self.cache, &owner_path) {
-                                    self.store.set(&store_config, cache_value.clone(), None);
-                                }
-                            }
-                        }
-
-                        // Use has() before get() to avoid early-returning null nodes
-                        let called_key = self.called_keys.last().unwrap();
-                        if DotMapAccessor::has(&self.cache, called_key) {
-                            self.dot_accessor.get(&self.cache, called_key).cloned()
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
+                    config.insert("map".to_string(), Value::Object(unqualified));
                 }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+
+                match self.load.handle(&config) {
+                    Ok(loaded) => {
+                        if let Some(store_idx) = meta.store {
+                            if let Some(store_config) = self.build_config(store_idx) {
+                                let _ = self.store.set(&store_config, loaded.clone(), None);
+                            }
+                        }
+                        self.state_values.push(key_idx, loaded.clone());
+                        Some(loaded)
+                    }
+                    Err(_) => None,
+                }
+            } else { None }
+        } else { None };
 
         self.called_keys.pop();
         result
     }
 
+    /// Writes `value` to the _store backend for `key`.
+    /// Returns `true` on success.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use state_engine::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
@@ -321,65 +363,54 @@ impl<'a> StateTrait for State<'a> {
     /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
     /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
     /// # }
-    /// let mut manifest = Manifest::new("./examples/manifest");
     /// let mut client = MockInMemory::new();
-    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
     ///
-    /// let ok = state.set("connection.common", json!({"host": "localhost"}), None);
-    /// assert!(ok);
+    /// assert!(state.set("connection.common", json!({"host": "localhost"}), None));
     /// ```
-    fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
-        fn_log!("State", "set", key);
+    pub fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
+        crate::fn_log!("State", "set", key);
+        let (file, path) = Self::split_key(key);
+        let file = file.to_string();
+        let path = path.to_string();
 
-        self.called_keys.push(DotString::new(key));
-
-        let meta = self.manifest.get_meta(key);
-        if meta.is_empty() {
-            eprintln!("State::set: meta is empty for key '{}'", key);
-            self.called_keys.pop();
+        if self.manifest.load(&file).is_err() {
             return false;
         }
 
-        let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
-            Some(config) => config,
-            None => {
-                eprintln!("State::set: no _store config for key '{}'", key);
-                self.called_keys.pop();
-                return false;
-            }
+        let key_idx = match self.manifest.find(&file, &path) {
+            Some(idx) => idx,
+            None => return false,
         };
 
-        let mut store_config_map: HashMap<String, Value> =
-            store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let meta = self.manifest.get_meta(&file, &path);
 
-        self.resolve_config_placeholders(&mut store_config_map);
-
-        let owner_path = self.get_owner_path(&meta, false);
-
-        // Pre-load owner object from store into cache to preserve sibling fields
-        if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
-            if let Some(store_value) = self.store.get(&store_config_map) {
-                DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
+        if let Some(store_idx) = meta.store {
+            if let Some(config) = self.build_config(store_idx) {
+                let ok = self.store.set(&config, value.clone(), ttl);
+                if ok {
+                    if let Some(sv_idx) = self.find_state_value(key_idx) {
+                        self.state_values.update(sv_idx, value);
+                    } else {
+                        self.state_values.push(key_idx, value);
+                    }
+                }
+                return ok;
             }
         }
-
-        let called_key = self.called_keys.last().unwrap();
-        DotMapAccessor::set(&mut self.cache, called_key, value);
-
-        let store_value = self.dot_accessor.get(&self.cache, &owner_path)
-            .cloned()
-            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-
-        let result = self.store.set(&store_config_map, store_value, ttl);
-
-        self.called_keys.pop();
-        result
+        false
     }
 
+    /// Removes the value for `key` from the _store backend.
+    /// Returns `true` on success.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use state_engine::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
@@ -388,83 +419,54 @@ impl<'a> StateTrait for State<'a> {
     /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
     /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
     /// # }
-    /// let mut manifest = Manifest::new("./examples/manifest");
     /// let mut client = MockInMemory::new();
-    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
     ///
     /// state.set("connection.common", json!({"host": "localhost"}), None);
     /// assert!(state.delete("connection.common"));
     /// assert_eq!(state.get("connection.common"), None);
     /// ```
-    fn delete(&mut self, key: &str) -> bool {
-        fn_log!("State", "delete", key);
+    pub fn delete(&mut self, key: &str) -> bool {
+        crate::fn_log!("State", "delete", key);
+        let (file, path) = Self::split_key(key);
+        let file = file.to_string();
+        let path = path.to_string();
 
-        self.called_keys.push(DotString::new(key));
-
-        let meta = self.manifest.get_meta(key);
-        if meta.is_empty() {
-            self.called_keys.pop();
+        if self.manifest.load(&file).is_err() {
             return false;
         }
 
-        let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
-            Some(config) => config,
-            None => {
-                self.called_keys.pop();
-                return false;
-            }
+        let key_idx = match self.manifest.find(&file, &path) {
+            Some(idx) => idx,
+            None => return false,
         };
 
-        let mut store_config_map: HashMap<String, Value> =
-            store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let meta = self.manifest.get_meta(&file, &path);
 
-        self.resolve_config_placeholders(&mut store_config_map);
-
-        let owner_path = self.get_owner_path(&meta, false);
-
-        // When key == owner_path, delete the entire owner object from store
-        if key == owner_path.as_str() {
-            let result = self.store.delete(&store_config_map);
-            if result {
-                let called_key = self.called_keys.last().unwrap();
-                DotMapAccessor::unset(&mut self.cache, called_key);
-            }
-            self.called_keys.pop();
-            return result;
-        }
-
-        // Pre-load owner object from store into cache to preserve sibling fields
-        if self.dot_accessor.get(&self.cache, &owner_path).is_none() {
-            if let Some(store_value) = self.store.get(&store_config_map) {
-                DotMapAccessor::merge(&mut self.cache, &owner_path, store_value);
+        if let Some(store_idx) = meta.store {
+            if let Some(config) = self.build_config(store_idx) {
+                let ok = self.store.delete(&config);
+                if ok {
+                    if let Some(sv_idx) = self.find_state_value(key_idx) {
+                        self.state_values.remove(sv_idx);
+                    }
+                }
+                return ok;
             }
         }
-
-        let cache_backup = self.cache.clone();
-
-        let called_key = self.called_keys.last().unwrap();
-        DotMapAccessor::unset(&mut self.cache, called_key);
-
-        let store_value = self.dot_accessor.get(&self.cache, &owner_path)
-            .cloned()
-            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-
-        let result = self.store.set(&store_config_map, store_value, None);
-
-        if !result {
-            self.cache = cache_backup;
-        }
-
-        // Github issue #22
-
-        self.called_keys.pop();
-        result
+        false
     }
 
+    /// Returns `true` if a value exists for `key` in state cache or _store.
+    /// Does not trigger _load.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::{Manifest, State, Load, StateTrait, InMemoryClient};
+    /// # use state_engine::State;
+    /// # use state_engine::load::Load;
+    /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
@@ -473,50 +475,40 @@ impl<'a> StateTrait for State<'a> {
     /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
     /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
     /// # }
-    /// let mut manifest = Manifest::new("./examples/manifest");
     /// let mut client = MockInMemory::new();
-    /// let mut state = State::new(&mut manifest, Load::new()).with_in_memory(&mut client);
+    /// let mut state = State::new("./examples/manifest", Load::new())
+    ///     .with_in_memory(&mut client);
     ///
     /// assert!(!state.exists("connection.common"));
     /// state.set("connection.common", json!({"host": "localhost"}), None);
     /// assert!(state.exists("connection.common"));
     /// ```
-    fn exists(&mut self, key: &str) -> bool {
-        fn_log!("State", "exists", key);
+    pub fn exists(&mut self, key: &str) -> bool {
+        crate::fn_log!("State", "exists", key);
+        let (file, path) = Self::split_key(key);
+        let file = file.to_string();
+        let path = path.to_string();
 
-        self.called_keys.push(DotString::new(key));
-
-        // 1. cache check (fastest path, no I/O)
-        let current_key = self.called_keys.last().unwrap();
-        if DotMapAccessor::has(&self.cache, current_key) {
-            self.called_keys.pop();
-            return true;
-        }
-
-        let meta = self.manifest.get_meta(key);
-        if meta.is_empty() {
-            self.called_keys.pop();
+        if self.manifest.load(&file).is_err() {
             return false;
         }
 
-        let store_config = match meta.get("_store").and_then(|v| v.as_object()) {
-            Some(config) => config,
-            None => {
-                self.called_keys.pop();
-                return false;
-            }
+        let key_idx = match self.manifest.find(&file, &path) {
+            Some(idx) => idx,
+            None => return false,
         };
 
-        let mut store_config_map: HashMap<String, Value> =
-            store_config.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        if let Some(sv_idx) = self.find_state_value(key_idx) {
+            return !self.state_values.get_value(sv_idx)
+                .map_or(true, |v| v.is_null());
+        }
 
-        self.resolve_config_placeholders(&mut store_config_map);
-
-        // Check store only — no auto-load (Github issue #4)
-        let result = self.store.get(&store_config_map).is_some();
-
-        self.called_keys.pop();
-        result
+        let meta = self.manifest.get_meta(&file, &path);
+        if let Some(store_idx) = meta.store {
+            if let Some(config) = self.build_config(store_idx) {
+                return self.store.get(&config).is_some();
+            }
+        }
+        false
     }
 }
-

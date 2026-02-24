@@ -66,7 +66,7 @@ impl<'a> Load<'a> {
             .ok_or("Load::handle: 'client' not found in _load config")?;
 
         match client {
-            "Env" | "Env" => self.load_from_env(config),
+            "Env" => self.load_from_env(config),
             "InMemory" => self.load_from_in_memory(config),
             "KVS" => self.load_from_kvs(config),
             "Db" => self.load_from_db(config),

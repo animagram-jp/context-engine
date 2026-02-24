@@ -83,6 +83,20 @@ impl PathMap {
     }
 
     /// Appends a path (as dynamic pool indices) and returns its index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::pool::PathMap;
+    ///
+    /// let mut map = PathMap::new();
+    /// let idx = map.push(vec![1, 2, 3]);
+    ///
+    /// assert_ne!(idx, 0);
+    /// assert_eq!(map.get(idx), Some([1u16, 2, 3].as_slice()));
+    /// assert_eq!(map.get(0), Some([].as_slice())); // null slot
+    /// assert_eq!(map.get(999), None);
+    /// ```
     pub fn push(&mut self, indices: Vec<u16>) -> u16 {
         let idx = self.slots.len() as u16;
         self.slots.push(indices);
@@ -115,6 +129,20 @@ impl ChildrenMap {
     }
 
     /// Appends a children list (as key list indices) and returns its index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::pool::ChildrenMap;
+    ///
+    /// let mut map = ChildrenMap::new();
+    /// let idx = map.push(vec![2, 3, 4]);
+    ///
+    /// assert_ne!(idx, 0);
+    /// assert_eq!(map.get(idx), Some([2u16, 3, 4].as_slice()));
+    /// assert_eq!(map.get(0), Some([].as_slice())); // null slot
+    /// assert_eq!(map.get(999), None);
+    /// ```
     pub fn push(&mut self, indices: Vec<u16>) -> u16 {
         let idx = self.slots.len() as u16;
         self.slots.push(indices);
@@ -147,6 +175,24 @@ impl KeyList {
     }
 
     /// Appends a key record and returns its index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::pool::KeyList;
+    ///
+    /// let mut list = KeyList::new();
+    /// let idx = list.push(0xDEAD_BEEF_u64);
+    ///
+    /// assert_ne!(idx, 0);
+    /// assert_eq!(list.get(idx), Some(0xDEAD_BEEF_u64));
+    /// assert_eq!(list.get(0), Some(0u64)); // null slot
+    /// assert_eq!(list.get(999), None);
+    ///
+    /// // set overwrites in place
+    /// list.set(idx, 0xCAFE);
+    /// assert_eq!(list.get(idx), Some(0xCAFE));
+    /// ```
     pub fn push(&mut self, record: u64) -> u16 {
         let idx = self.slots.len() as u16;
         self.slots.push(record);
@@ -186,6 +232,21 @@ impl YamlValueList {
     }
 
     /// Appends a value record and returns its index.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::common::pool::YamlValueList;
+    ///
+    /// let mut list = YamlValueList::new();
+    /// let record = [0xABCD_u64, 0x1234_u64];
+    /// let idx = list.push(record);
+    ///
+    /// assert_ne!(idx, 0);
+    /// assert_eq!(list.get(idx), Some([0xABCD_u64, 0x1234_u64]));
+    /// assert_eq!(list.get(0), Some([0u64, 0u64])); // null slot
+    /// assert_eq!(list.get(999), None);
+    /// ```
     pub fn push(&mut self, record: [u64; 2]) -> u16 {
         let idx = self.slots.len() as u16;
         self.slots.push(record);
