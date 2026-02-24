@@ -232,7 +232,7 @@ This is an explicit designation to reference another key within State without in
 - The Load::handle() match statement returns null in the default case
 
 **Recursion depth limit:**
-- MAX_RECURSION = 10
+- MAX_RECURSION = 20
 - Counter incremented with each recursive call
 - Throws error when exceeded
 - Counter decremented in finally block

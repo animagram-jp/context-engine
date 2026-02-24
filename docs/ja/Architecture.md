@@ -200,7 +200,7 @@ tenant_id:
 - Load::handle() のmatch文はdefaultケースでnullを返す
 
 **再帰深度制限:**
-- MAX_RECURSION = 10
+- MAX_RECURSION = 20
 - 再帰呼び出し毎にカウンターをインクリメント
 - 超過時にエラーをスロー
 - finallyブロックでカウンターをデクリメント
