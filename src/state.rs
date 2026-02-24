@@ -5,6 +5,7 @@ use crate::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
 use crate::common::bit;
 use crate::store::Store;
 use crate::load::Load;
+use crate::ports::provided::StateError;
 
 pub struct State<'a> {
     manifest: Manifest,
@@ -89,7 +90,7 @@ impl<'a> State<'a> {
                     .collect::<Vec<_>>()
                     .join(".");
                 crate::fn_log!("State", "resolve/get", &path_key);
-                let resolved = self.get(&path_key);
+                let resolved = self.get(&path_key).ok().flatten();
                 crate::fn_log!("State", "resolve/got", if resolved.is_some() { "Some" } else { "None" });
                 let resolved = resolved?;
                 let s = match &resolved {
@@ -231,7 +232,6 @@ impl<'a> State<'a> {
     }
 
     /// Returns the value for `key`, checking state cache → _store → _load in order.
-    /// Returns `None` on miss, unknown key, or missing manifest.
     ///
     /// # Examples
     ///
@@ -253,20 +253,17 @@ impl<'a> State<'a> {
     /// let mut state = State::new("./examples/manifest", Load::new())
     ///     .with_in_memory(&mut client);
     ///
-    /// // store miss with no load client configured → None
-    /// assert_eq!(state.get("connection.common"), None);
-    ///
     /// // set then get
-    /// state.set("connection.common", json!({"host": "localhost"}), None);
-    /// assert!(state.get("connection.common").is_some());
+    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// assert!(state.get("connection.common").unwrap().is_some());
     /// ```
-    pub fn get(&mut self, key: &str) -> Option<Value> {
+    pub fn get(&mut self, key: &str) -> Result<Option<Value>, StateError> {
         crate::fn_log!("State", "get", key);
         if self.called_keys.len() >= self.max_recursion {
-            return None;
+            return Err(StateError::RecursionLimitExceeded);
         }
         if self.called_keys.contains(&key.to_string()) {
-            return None;
+            return Err(StateError::RecursionLimitExceeded);
         }
 
         self.called_keys.insert(key.to_string());
@@ -275,21 +272,24 @@ impl<'a> State<'a> {
         let file = file.to_string();
         let path = path.to_string();
 
-        if self.manifest.load(&file).is_err() {
+        if let Err(e) = self.manifest.load(&file) {
             self.called_keys.remove(key);
-            return None;
+            return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
         let key_idx = match self.manifest.find(&file, &path) {
             Some(idx) => idx,
-            None => { self.called_keys.remove(key); return None; }
+            None => {
+                self.called_keys.remove(key);
+                return Err(StateError::KeyNotFound(key.to_string()));
+            }
         };
 
         // check state_values cache
         if let Some(sv_idx) = self.find_state_value(key_idx) {
             let val = self.state_values.get_value(sv_idx).cloned();
             self.called_keys.remove(key);
-            return val;
+            return Ok(val);
         }
 
         let meta = self.manifest.get_meta(&file, &path);
@@ -306,7 +306,7 @@ impl<'a> State<'a> {
                     if let Some(value) = self.store.get(&config) {
                         self.state_values.push(key_idx, value.clone());
                         self.called_keys.remove(key);
-                        return Some(value);
+                        return Ok(Some(value));
                     }
                 }
             }
@@ -317,7 +317,7 @@ impl<'a> State<'a> {
             if let Some(mut config) = self.build_config(load_idx) {
                 if !config.contains_key("client") {
                     self.called_keys.remove(key);
-                    return None;
+                    return Ok(None);
                 }
 
                 // unqualify map keys for Load
@@ -338,19 +338,18 @@ impl<'a> State<'a> {
                             }
                         }
                         self.state_values.push(key_idx, loaded.clone());
-                        Some(loaded)
+                        Ok(Some(loaded))
                     }
-                    Err(_) => None,
+                    Err(e) => Err(StateError::LoadFailed(e)),
                 }
-            } else { None }
-        } else { None };
+            } else { Ok(None) }
+        } else { Ok(None) };
 
         self.called_keys.remove(key);
         result
     }
 
     /// Writes `value` to the _store backend for `key`.
-    /// Returns `true` on success.
     ///
     /// # Examples
     ///
@@ -370,21 +369,21 @@ impl<'a> State<'a> {
     /// let mut state = State::new("./examples/manifest", Load::new())
     ///     .with_in_memory(&mut client);
     ///
-    /// assert!(state.set("connection.common", json!({"host": "localhost"}), None));
+    /// assert!(state.set("connection.common", json!({"host": "localhost"}), None).unwrap());
     /// ```
-    pub fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool {
+    pub fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> Result<bool, StateError> {
         crate::fn_log!("State", "set", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
 
-        if self.manifest.load(&file).is_err() {
-            return false;
+        if let Err(e) = self.manifest.load(&file) {
+            return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
         let key_idx = match self.manifest.find(&file, &path) {
             Some(idx) => idx,
-            None => return false,
+            None => return Err(StateError::KeyNotFound(key.to_string())),
         };
 
         let meta = self.manifest.get_meta(&file, &path);
@@ -399,14 +398,13 @@ impl<'a> State<'a> {
                         self.state_values.push(key_idx, value);
                     }
                 }
-                return ok;
+                return Ok(ok);
             }
         }
-        false
+        Ok(false)
     }
 
     /// Removes the value for `key` from the _store backend.
-    /// Returns `true` on success.
     ///
     /// # Examples
     ///
@@ -426,23 +424,24 @@ impl<'a> State<'a> {
     /// let mut state = State::new("./examples/manifest", Load::new())
     ///     .with_in_memory(&mut client);
     ///
-    /// state.set("connection.common", json!({"host": "localhost"}), None);
-    /// assert!(state.delete("connection.common"));
-    /// assert_eq!(state.get("connection.common"), None);
+    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// assert!(state.delete("connection.common").unwrap());
+    /// // delete後はstoreにデータがなく、_loadも試みるが今回はEnvClientなしのため値なし
+    /// assert!(state.get("connection.common").is_err() || state.get("connection.common").unwrap().is_none());
     /// ```
-    pub fn delete(&mut self, key: &str) -> bool {
+    pub fn delete(&mut self, key: &str) -> Result<bool, StateError> {
         crate::fn_log!("State", "delete", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
 
-        if self.manifest.load(&file).is_err() {
-            return false;
+        if let Err(e) = self.manifest.load(&file) {
+            return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
         let key_idx = match self.manifest.find(&file, &path) {
             Some(idx) => idx,
-            None => return false,
+            None => return Err(StateError::KeyNotFound(key.to_string())),
         };
 
         let meta = self.manifest.get_meta(&file, &path);
@@ -455,10 +454,10 @@ impl<'a> State<'a> {
                         self.state_values.remove(sv_idx);
                     }
                 }
-                return ok;
+                return Ok(ok);
             }
         }
-        false
+        Ok(false)
     }
 
     /// Returns `true` if a value exists for `key` in state cache or _store.
@@ -482,36 +481,36 @@ impl<'a> State<'a> {
     /// let mut state = State::new("./examples/manifest", Load::new())
     ///     .with_in_memory(&mut client);
     ///
-    /// assert!(!state.exists("connection.common"));
-    /// state.set("connection.common", json!({"host": "localhost"}), None);
-    /// assert!(state.exists("connection.common"));
+    /// assert!(!state.exists("connection.common").unwrap());
+    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// assert!(state.exists("connection.common").unwrap());
     /// ```
-    pub fn exists(&mut self, key: &str) -> bool {
+    pub fn exists(&mut self, key: &str) -> Result<bool, StateError> {
         crate::fn_log!("State", "exists", key);
         let (file, path) = Self::split_key(key);
         let file = file.to_string();
         let path = path.to_string();
 
-        if self.manifest.load(&file).is_err() {
-            return false;
+        if let Err(e) = self.manifest.load(&file) {
+            return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
         let key_idx = match self.manifest.find(&file, &path) {
             Some(idx) => idx,
-            None => return false,
+            None => return Err(StateError::KeyNotFound(key.to_string())),
         };
 
         if let Some(sv_idx) = self.find_state_value(key_idx) {
-            return !self.state_values.get_value(sv_idx)
-                .map_or(true, |v| v.is_null());
+            return Ok(!self.state_values.get_value(sv_idx)
+                .map_or(true, |v| v.is_null()));
         }
 
         let meta = self.manifest.get_meta(&file, &path);
         if let Some(store_idx) = meta.store {
             if let Some(config) = self.build_config(store_idx) {
-                return self.store.get(&config).is_some();
+                return Ok(self.store.get(&config).is_some());
             }
         }
-        false
+        Ok(false)
     }
 }

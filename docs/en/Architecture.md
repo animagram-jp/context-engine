@@ -13,8 +13,9 @@
   4. EnvClient
 
 - common modules (internal common modules)
-  1. DotString
-  2. DotMapAccessor
+  1. u64(bit.rs)
+  2. Pools & Maps(pool.rs)
+  3. ParsedManifest(parser.rs)
   3. Placeholder
   4. LogFormat
 
@@ -390,11 +391,3 @@ Pure string processing (no dependencies).
 **Type preservation:**
 - Single placeholder and entire string is `${...}` format → Preserve type
 - Multiple or within string placeholders → String replacement
-
-### DotMapAccessor
-
-Provides array access with dot notation.
-
-**Methods:**
-- `get(data, path)` - Get value with dot notation
-- Example: `get(data, "user.profile.name")`

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::common::parser::{ParsedManifest, parse};
 use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
 use crate::common::bit;
+use crate::ports::provided::ManifestError;
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).
 #[derive(Debug, Default)]
@@ -74,7 +75,7 @@ impl Manifest {
     /// let session_idx = store.find("session", "sso_user_id").unwrap();
     /// assert_ne!(cache_idx, session_idx);
     /// ```
-    pub fn load(&mut self, file: &str) -> Result<(), String> {
+    pub fn load(&mut self, file: &str) -> Result<(), ManifestError> {
         crate::fn_log!("Manifest", "load", file);
         if self.files.contains_key(file) {
             return Ok(());
@@ -86,10 +87,10 @@ impl Manifest {
         let yaml_exists = yaml_path.exists();
 
         if yml_exists && yaml_exists {
-            return Err(format!(
-                "Ambiguous file: both '{}.yml' and '{}.yaml' exist.",
+            return Err(ManifestError::AmbiguousFile(format!(
+                "both '{}.yml' and '{}.yaml' exist.",
                 file, file
-            ));
+            )));
         }
 
         let path = if yml_exists {
@@ -97,11 +98,13 @@ impl Manifest {
         } else if yaml_exists {
             yaml_path
         } else {
-            return Err(format!("File not found: '{}.yml' or '{}.yaml'", file, file));
+            return Err(ManifestError::FileNotFound(format!(
+                "'{}.yml' or '{}.yaml'", file, file
+            )));
         };
 
         let content = fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+            .map_err(|e| ManifestError::ReadError(e.to_string()))?;
 
         let pm = parse(
             file,
@@ -111,7 +114,7 @@ impl Manifest {
             &mut self.children_map,
             &mut self.keys,
             &mut self.values,
-        )?;
+        ).map_err(|e| ManifestError::ParseError(e))?;
 
         self.files.insert(file.to_string(), pm);
         Ok(())

@@ -13,8 +13,9 @@
   4. EnvClient
 
 - common modules (内部コモンモジュール)
-  1. DotString
-  2. DotMapAccessor
+  1. u64(bit.rs)
+  2. Pools & Maps(pool.rs)
+  3. ParsedManifest(parser.rs)
   3. Placeholder
   4. LogFormat
 
@@ -358,14 +359,6 @@ fn extract_field(data: Value, key: &str) -> Value {
 **型保持:**
 - 単一プレースホルダーかつ文字列全体が`${...}`形式 → 型を保持
 - 複数または文字列内プレースホルダー → 文字列置換
-
-### DotMapAccessor
-
-ドット記法での配列アクセスを提供。
-
-**メソッド:**
-- `get(data, path)` - ドット記法で値を取得
-- 例: `get(data, "user.profile.name")`
 
 ---
 

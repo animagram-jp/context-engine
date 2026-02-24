@@ -1,7 +1,57 @@
 // Provided Ports - ライブラリが提供するインターフェース
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::common::DotString;
+
+/// Manifest 操作のエラー型
+#[derive(Debug, PartialEq)]
+pub enum ManifestError {
+    /// ファイルが見つからない
+    FileNotFound(String),
+    /// .yml と .yaml の両方が存在する（曖昧）
+    AmbiguousFile(String),
+    /// ファイルの読み込みに失敗
+    ReadError(String),
+    /// YAML のパースに失敗
+    ParseError(String),
+}
+
+impl std::fmt::Display for ManifestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ManifestError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
+            ManifestError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
+            ManifestError::ReadError(msg)     => write!(f, "ReadError: {}", msg),
+            ManifestError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
+        }
+    }
+}
+
+/// State 操作のエラー型
+#[derive(Debug, PartialEq)]
+pub enum StateError {
+    /// マニフェストのロードに失敗
+    ManifestLoadFailed(String),
+    /// 指定キーがマニフェストに存在しない
+    KeyNotFound(String),
+    /// 再帰呼び出しの上限に達した
+    RecursionLimitExceeded,
+    /// ストアへの書き込み／削除に失敗
+    StoreFailed(String),
+    /// ロードに失敗
+    LoadFailed(String),
+}
+
+impl std::fmt::Display for StateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StateError::ManifestLoadFailed(msg)  => write!(f, "ManifestLoadFailed: {}", msg),
+            StateError::KeyNotFound(msg)          => write!(f, "KeyNotFound: {}", msg),
+            StateError::RecursionLimitExceeded    => write!(f, "RecursionLimitExceeded"),
+            StateError::StoreFailed(msg)          => write!(f, "StoreFailed: {}", msg),
+            StateError::LoadFailed(msg)           => write!(f, "LoadFailed: {}", msg),
+        }
+    }
+}
 
 /// YAMLマニフェストファイル読み込み・管理
 pub trait Manifest {
@@ -26,7 +76,16 @@ pub trait Manifest {
     /// - null 値のフィールドを除外
     ///
     /// 内部利用想定（State から呼ばれる）
-    fn get_value(&mut self, key: &DotString) -> Value;
+    fn get_value(&mut self, key: &str) -> Value;
+
+    /// YAMLファイルをロード（未ロードの場合のみ）
+    ///
+    /// # Errors
+    /// * `ManifestError::FileNotFound` - .yml/.yaml どちらも存在しない
+    /// * `ManifestError::AmbiguousFile` - .yml と .yaml の両方が存在する
+    /// * `ManifestError::ReadError` - ファイル読み込み失敗
+    /// * `ManifestError::ParseError` - YAML パース失敗
+    fn load_file(&mut self, file: &str) -> Result<(), ManifestError>;
 }
 
 /// State - 統一CRUD実装
@@ -44,9 +103,10 @@ pub trait State {
     /// * `key` - manifest key ("filename.node.field")
     ///
     /// # Returns
-    /// * `Some(Value)` - 値が存在する場合
-    /// * `None` - 値が存在せず、ロードも失敗した場合
-    fn get(&mut self, key: &str) -> Option<Value>;
+    /// * `Ok(Some(Value))` - 値が存在する場合
+    /// * `Ok(None)` - 値が存在せず、ロードも失敗した場合
+    /// * `Err(StateError)` - キー不正・再帰超過などエラーの場合
+    fn get(&mut self, key: &str) -> Result<Option<Value>, StateError>;
 
     /// 状態を設定
     ///
@@ -58,9 +118,10 @@ pub trait State {
     /// * `ttl` - TTL（秒）。KVS使用時のみ有効。Noneの場合はYAML定義に従う
     ///
     /// # Returns
-    /// * `true` - 保存成功
-    /// * `false` - 保存失敗
-    fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> bool;
+    /// * `Ok(true)` - 保存成功
+    /// * `Ok(false)` - _store 設定がなく保存できない（エラーではない）
+    /// * `Err(StateError)` - キー不正・マニフェスト未ロードなどエラーの場合
+    fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> Result<bool, StateError>;
 
     /// 状態を削除
     ///
@@ -70,9 +131,10 @@ pub trait State {
     /// * `key` - manifest key ("filename.node.field")
     ///
     /// # Returns
-    /// * `true` - 削除成功
-    /// * `false` - 削除失敗またはキーが存在しない
-    fn delete(&mut self, key: &str) -> bool;
+    /// * `Ok(true)` - 削除成功
+    /// * `Ok(false)` - キーが存在しない
+    /// * `Err(StateError)` - キー不正・マニフェスト未ロードなどエラーの場合
+    fn delete(&mut self, key: &str) -> Result<bool, StateError>;
 
     /// キーの存在確認（自動ロードなし）
     ///
@@ -83,7 +145,8 @@ pub trait State {
     /// * `key` - manifest key ("filename.node.field")
     ///
     /// # Returns
-    /// * `true` - キーが存在する（キャッシュまたはストアに存在）
-    /// * `false` - キーが存在しない
-    fn exists(&mut self, key: &str) -> bool;
+    /// * `Ok(true)` - キーが存在する（キャッシュまたはストアに存在）
+    /// * `Ok(false)` - キーが存在しない
+    /// * `Err(StateError)` - キー不正・マニフェスト未ロードなどエラーの場合
+    fn exists(&mut self, key: &str) -> Result<bool, StateError>;
 }

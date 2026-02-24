@@ -1,9 +1,27 @@
 # YAML Extended DSL guide
 
+## 基本構造
+
 ### Basic Structure
 
 ```yaml
-node_name:
+# filename.yml
+
+_metaKey:
+  metaKey:
+    leafKey: value
+
+fieldKey: # 
+  _metaKey:
+    metaKey:
+      leafKey: value
+
+  leafKey: value
+```
+
+```yaml
+# filename.yml
+fieldKey:
   _state: # Data type definition (optional)
   _store: # Where to save (required at root, inherited by children)
   _load:  # Where to load from (optional)
@@ -11,7 +29,7 @@ node_name:
 
 ### Core Concept
 
-#### 1. meta key inheritance
+#### 1. メタキー継承
 
 Child nodes inherit parent"s meta keys, and can override:
 

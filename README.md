@@ -92,7 +92,7 @@ user:
 | `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
 
 "Db" and "Env" will be used only in Loading(Read)
-It"s not essential to implement all *Client.
+It's not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.
 

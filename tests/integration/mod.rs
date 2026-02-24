@@ -10,5 +10,4 @@ fn init() {
         .try_init();
 }
 
-mod common_test;
-mod common_state_test;
+mod state_test;

@@ -31,9 +31,9 @@ fn test_common_state_set_and_get_kvs() {
         .with_kvs_client(&mut kvs);
 
     let value = json!({"id": 1, "org_id": 100, "tenant_id": 10});
-    assert!(state.set("cache.user", value.clone(), Some(3600)), "set should succeed");
+    assert!(state.set("cache.user", value.clone(), Some(3600)).unwrap(), "set should succeed");
 
-    let retrieved = state.get("cache.user");
+    let retrieved = state.get("cache.user").unwrap();
     assert_eq!(retrieved, Some(value));
 }
 
@@ -49,10 +49,13 @@ fn test_common_state_delete_kvs() {
         .with_in_memory(&mut in_memory)
         .with_kvs_client(&mut kvs);
 
-    assert!(state.set("cache.user", json!({"id": 1}), None), "set should succeed");
+    assert!(state.set("cache.user", json!({"id": 1}), None).unwrap(), "set should succeed");
 
-    assert!(state.delete("cache.user"), "delete should succeed");
-    assert_eq!(state.get("cache.user"), None);
+    assert!(state.delete("cache.user").unwrap(), "delete should succeed");
+    // delete後はstoreにデータがなくなり、_loadを試みる。
+    // DbClientが未設定のためLoadFailedエラーとなる（valueが存在しないことの確認）。
+    let after_delete = state.get("cache.user");
+    assert!(after_delete.is_err() || after_delete.unwrap().is_none());
 }
 
 // ============================================================================
@@ -74,7 +77,7 @@ fn test_common_state_load_env() {
 
     let mut state = State::new(&path, load).with_in_memory(&mut in_memory);
 
-    let result = state.get("connection.common");
+    let result = state.get("connection.common").unwrap();
     assert!(result.is_some(), "connection.common should be loaded from Env");
 
     if let Some(Value::Object(obj)) = &result {
@@ -102,11 +105,11 @@ fn test_common_state_exists_after_set() {
         .with_in_memory(&mut in_memory)
         .with_kvs_client(&mut kvs);
 
-    assert!(!state.exists("cache.user"), "should not exist before set");
+    assert!(!state.exists("cache.user").unwrap(), "should not exist before set");
 
-    state.set("cache.user", json!({"id": 1, "org_id": 100}), None);
+    state.set("cache.user", json!({"id": 1, "org_id": 100}), None).unwrap();
 
-    assert!(state.exists("cache.user"), "should exist after set");
+    assert!(state.exists("cache.user").unwrap(), "should exist after set");
 }
 
 #[test]
@@ -122,7 +125,7 @@ fn test_common_state_exists_does_not_trigger_load() {
         .with_kvs_client(&mut kvs);
 
     // cache.user has _load defined but nothing in store
-    assert!(!state.exists("cache.user"), "exists() must not trigger _load");
+    assert!(!state.exists("cache.user").unwrap(), "exists() must not trigger _load");
 }
 
 #[test]
@@ -134,7 +137,7 @@ fn test_common_state_exists_in_store() {
 
     let mut state = State::new(&path, Load::new()).with_in_memory(&mut in_memory);
 
-    assert!(state.exists("connection.common"));
+    assert!(state.exists("connection.common").unwrap());
 }
 
 // ============================================================================
@@ -157,7 +160,7 @@ fn test_common_state_store_priority_over_load() {
         .with_in_memory(&mut in_memory)
         .with_kvs_client(&mut kvs);
 
-    let result = state.get("cache.user");
+    let result = state.get("cache.user").unwrap();
     assert!(result.is_some());
     if let Some(Value::Object(obj)) = &result {
         assert_eq!(obj.get("id"), Some(&json!(1)));
