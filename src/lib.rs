@@ -5,7 +5,7 @@ pub mod load;
 pub mod store;
 pub mod state;
 
-pub use common::{Placeholder, LogFormat};
+pub use common::LogFormat;
 pub use manifest::Manifest;
 pub use ports::provided::State as StateTrait;
 pub use state::State;

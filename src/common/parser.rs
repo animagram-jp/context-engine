@@ -316,8 +316,7 @@ fn build_yaml_value(
 
     let tokens = split_template(&s);
     if tokens.len() > 6 {
-        crate::error_log!("parser", "build_yaml_value",
-            &format!("value '{}' has {} tokens, max 6 — excess tokens ignored", s, tokens.len()));
+        return Err(format!("value '{}' has {} tokens, max 6", s, tokens.len()));
     }
     let is_template = tokens.len() > 1 || tokens.first().map_or(false, |t| t.is_path);
 

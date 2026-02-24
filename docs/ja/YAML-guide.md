@@ -1,26 +1,24 @@
 # YAML Extended DSL guide
 
-## 基本構造
+## 用語
+
+- `meta keys`: `_`で始まるkey及び、それ以下のkey群
+- `field keys`: `meta keys`では無いkey群
+- `leaf keys`: 子keyを持たず値を持つkey群
+- `value`: leaf keysの値。YAML内で省略された場合はnullが入る
+- `path`: 出発keyから対象keyまで、`.`区切りでkey名を並べたパス表現
+- `qualified path`: 出発keyを対象keyの記述された`filename.`とした、一意な完全修飾パス
+- `placeholder`: ${path}の形で、指定keyのState.get()の結果を参照する記述形式
+- `template`: "user${user_id}"の様に、placeholderを文字列に埋め込む記述形式
+
+## rule
+
+- `---`によるYAML区切りは使用不可
+- `placeholder`, `template`はvalue内のみで使用可能
 
 ### Basic Structure
 
 ```yaml
-# filename.yml
-
-_metaKey:
-  metaKey:
-    leafKey: value
-
-fieldKey: # 
-  _metaKey:
-    metaKey:
-      leafKey: value
-
-  leafKey: value
-```
-
-```yaml
-# filename.yml
 fieldKey:
   _state: # Data type definition (optional)
   _store: # Where to save (required at root, inherited by children)

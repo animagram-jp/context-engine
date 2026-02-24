@@ -6,8 +6,6 @@ use serde_json::Value;
 ///
 /// let fn_message = LogFormat::call("State", "get", &["'key'".to_string()]);
 /// assert_eq!(fn_message, "State::get('key')");
-/// let error_message = LogFormat::error("State", "get", "not found");
-/// assert_eq!(error_message, "State::get: not found");
 /// ```
 pub struct LogFormat;
 
@@ -16,10 +14,6 @@ impl LogFormat {
     pub fn call(class: &str, fn_name: &str, args: &[String]) -> String {
         let args_str = args.join(", ");
         format!("{}::{}({})", class, fn_name, args_str)
-    }
-
-    pub fn error(class: &str, fn_name: &str, message: &str) -> String {
-        format!("{}::{}: {}", class, fn_name, message)
     }
 
     /// Format JSON value for log output
@@ -107,47 +101,6 @@ macro_rules! fn_log {
     }};
 }
 
-/// Log macro: error
-///
-/// # Examples
-/// ```ignore
-/// use state_engine::error_log;
-///
-/// error_log!("State", "get", "meta keys not found");
-/// // Logs: State::get: meta keys not found
-/// ```
-#[macro_export]
-macro_rules! error_log {
-    ($class:expr, $fun:expr, $msg:expr) => {{
-        let formatted = $crate::common::log_format::LogFormat::error($class, $fun, $msg);
-
-        eprintln!("{}", formatted);
-        
-        #[cfg(feature = "logging")]
-        {
-            log::error!("{}", formatted);
-        }
-    }};
-}
-
-/// Log macro: warning
-///
-/// # Examples
-/// ```ignore
-/// use crate::warn_log;
-///
-/// warn_log!("State", "resolve_config_placeholders", "unresolved placeholders: session.id");
-/// // Logs: State::resolve_config_placeholders: unresolved placeholders: session.id
-/// ```
-#[macro_export]
-macro_rules! warn_log {
-    ($class:expr, $fun:expr, $msg:expr) => {{
-        #[cfg(feature = "logging")]
-        {
-            log::warn!("{}", $crate::common::log_format::LogFormat::error($class, $fun, $msg));
-        }
-    }};
-}
 
 #[cfg(test)]
 mod tests {

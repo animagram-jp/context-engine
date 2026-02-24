@@ -1,5 +1,21 @@
 # YAML Extended DSL guide
 
+## terms
+
+- `meta keys`: keys prefixed with `_`, along with all keys nested beneath them
+- `field keys`: keys that are not meta keys
+- `leaf keys`: keys that hold a value instead of child keys
+- `value`: a leaf key's value; equals null when omitted in YAML
+- `path`: dot-separated key names leading from a start key to the target key
+- `qualified path`: a path starting with `filename.`, uniquely identifying a key across all files
+- `placeholder`: notation in the form `${path}` that references the result of `State::get()` for the specified key
+- `template`: notation that embeds one or more placeholders into a string, such as `"user:${user_id}"`
+
+## rules
+
+- YAML document separators (`---`) are not supported
+- `placeholder` and `template` are only valid inside values
+
 ### Basic Structure
 
 ```yaml
