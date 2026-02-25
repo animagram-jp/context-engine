@@ -188,18 +188,17 @@ see for details [Architecture.md](./docs/en/Architecture.md)
     app/
       db/
       src/
+        main.rs
+        adapters.rs
+        test_runner.rs # inetegration tests 
       Cargo.toml
       Dockerfile
       docker-compose.yml
-
-  tests/
-    mocks/
-    integration/
 ```
 
 ## tests
 
-unit tests, intergeration tests and example application test passed
+unit tests, intergeration tests on example app(docker compose) passed
 
 1. cargo test:
 ```bash

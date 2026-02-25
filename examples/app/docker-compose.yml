@@ -9,8 +9,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d
+      - ./db:/docker-entrypoint-initdb.d
+    tmpfs:
+      - /var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U state_user -d state_engine_dev"]
       interval: 5s
@@ -29,11 +30,11 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
+  test:
     build:
       context: ../..
       dockerfile: examples/app/Dockerfile
-    container_name: state-engine-app
+    container_name: state-engine-test
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +48,7 @@ services:
       - DB_PASSWORD=state_pass
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - RUST_LOG=debug
+    command: ["./state-engine-test"]
+    restart: no
 
-volumes:
-  postgres_data:

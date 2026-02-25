@@ -56,6 +56,28 @@ impl<'a> State<'a> {
         }
     }
 
+    /// Resolves a yaml value record to a Value (any type, for connection etc.).
+    /// For non-template single placeholder: returns the resolved Value as-is (including Object).
+    /// For string-compatible values: delegates to resolve_value_to_string.
+    fn resolve_value(&mut self, value_idx: u16) -> Option<Value> {
+        crate::fn_log!("State", "resolve_value", &value_idx.to_string());
+        let vo = self.manifest.values.get(value_idx)?;
+        let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
+        let is_path = bit::get(vo[0], bit::VO_OFFSET_T0_IS_PATH, bit::VO_MASK_IS_PATH) == 1;
+        let dyn_idx = bit::get(vo[0], bit::VO_OFFSET_T0_DYNAMIC, bit::VO_MASK_DYNAMIC) as u16;
+
+        if is_path && dyn_idx != 0 && !is_template {
+            let path_segments = self.manifest.path_map.get(dyn_idx)?.to_vec();
+            let path_key: String = path_segments.iter()
+                .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+                .join(".");
+            return self.get(&path_key).ok().flatten();
+        }
+
+        self.resolve_value_to_string(value_idx).map(Value::String)
+    }
+
     /// Resolves a yaml value record to a String (for use in store/load config keys).
     fn resolve_value_to_string(&mut self, value_idx: u16) -> Option<String> {
         crate::fn_log!("State", "resolve_value_to_string", &value_idx.to_string());
@@ -158,6 +180,12 @@ impl<'a> State<'a> {
             if prop_name == "map" {
                 if let Some(map_val) = self.build_map_config(child_idx) {
                     config.insert("map".to_string(), map_val);
+                }
+            } else if prop_name == "connection" {
+                if value_idx != 0 {
+                    if let Some(v) = self.resolve_value(value_idx) {
+                        config.insert("connection".to_string(), v);
+                    }
                 }
             } else if value_idx != 0 {
                 if let Some(s) = self.resolve_value_to_string(value_idx) {

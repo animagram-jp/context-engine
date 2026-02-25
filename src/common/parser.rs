@@ -318,7 +318,7 @@ fn build_yaml_value(
     if tokens.len() > 6 {
         return Err(format!("value '{}' has {} tokens, max 6", s, tokens.len()));
     }
-    let is_template = tokens.len() > 1 || tokens.first().map_or(false, |t| t.is_path);
+    let is_template = tokens.len() > 1;
 
     let mut vo = [0u64; 2];
 
