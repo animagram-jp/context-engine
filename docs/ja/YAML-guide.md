@@ -16,20 +16,20 @@
 - `---`によるYAML区切りは使用不可
 - `placeholder`, `template`はvalue内のみで使用可能
 
-### Basic Structure
+## 基本構造
 
 ```yaml
-node_name:
-  _state: # Data type definition (optional)
-  _store: # Where to save (required at root, inherited by children)
-  _load:  # Where to load from (optional)
+field_key:
+  _state: # ステートのメタデータ(オプション)
+  _store: # 保存先メタデータ (ファイルルートキーで必須, 子孫キーへ継承)
+  _load:  # 自動ロード元メタデータ (オプション)
 ```
 
-### Core Concept
+## コアコンセプト
 
-#### 1. meta key 継承
+### 1. meta key 継承
 
-Child nodes inherit parent"s meta keys, and can override:
+Each field key inherit parent's meta keys, and can override:
 
 ```yaml
 _store:
@@ -38,13 +38,13 @@ _store:
 
 user:
   _store:
-    key: "user:${sso_user_id}"  # Override only key, inherit client: KVS
+    key: "user:${sso_user_id}"  # キーが上書きされる, client: KVSは継承
 
   tenant_id:
-    # Inherits _store from parent (client: KVS, key: user:${sso_user_id})
+    # client: KVS, key: user:${sso_user_id}を継承
 ```
 
-#### 2. placeholder 解決
+### 2. placeholder 解決
 
 State engineは`${...}`を`State::get()`呼び出しで解決します:
 
@@ -55,23 +55,33 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get("user.tenant_id")
 ```
 
-**placeholderの完全修飾化方法:**
-
-parse時（`Manifest::load()`）に、相対placeholderは自動的に絶対パスに変換されます:
-
-```yaml
-# cache.yml
-user:
-  org_id:
-    _load:
-      where: "id=${tenant_id}"  # 相対参照
-```
+**placeholderの省略記法:**
 
 Manifestは`${tenant_id}`を`${cache.user.tenant_id}`（絶対パス）に変換します。
 
-Stateがplaceholderを解決する時点では、既に絶対パスに完全修飾されています。
+`${path}` のパスは、`.` を含むかどうかで絶対/相対が決まります:
 
-#### 3. クライアント種別
+- `.` を含まない → 相対パス。parse時に `filename.ancestors.path` へ自動修飾
+- `.` を含む → 絶対パスとみなし、そのまま使用
+
+```yaml
+# cache.yml の user.tenant_id 内
+key: "${org_id}"           # → cache.user.org_id（相対）
+key: "${cache.user.org_id}" # → cache.user.org_id（絶対、同じ結果）
+key: "${session.sso_user_id}" # → session.sso_user_id（別ファイル参照）
+```
+
+**制約:** 省略記法（相対パス）では `.` を使えないため、兄弟ノードの子を参照する場合は完全修飾パスで記述してください。
+
+```yaml
+# NG: user.id と書くと絶対パスとみなされ、意図しない参照になる
+key: "${user.id}"       # → State::get("user.id") ← ファイル名なし、KeyNotFound
+
+# OK: 完全修飾パスで記述する
+key: "${cache.user.id}" # → State::get("cache.user.id")
+```
+
+### 3. クライアント種別
 
 **_store用（保存先）:**
 ```yaml
@@ -83,26 +93,22 @@ _store:
 **_load用（読込元）:**
 ```yaml
 _load:
-  client: Env       # 環境変数
+  client: State     # 別のStateキーを参照
   client: InMemory  # プロセスメモリ
+  client: Env       # 環境変数
   client: KVS       # Redis, Memcached等
   client: Db        # データベース
-  client: State     # 別のStateキーを参照
 ```
 
 使用する各クライアントのアダプターを実装する必要があります（Required Ports参照）。
 
 #### クライアント固有のパラメータ
 
-**_load.client: Db**
+**_store.client: InMemory**
 ```yaml
-_load:
-  client: Db
-  connection: ${connection.tenant}  # (Value) 接続設定オブジェクトまたは参照
-  table: "users"                    # (string) テーブル名
-  where: "id=${user.id}"            # (string, optional) WHERE句
-  map:                               # (object, required) カラムマッピング
-    yaml_key: "db_column"
+_store:
+  client: InMemory
+  key: "session:${token}"            # (string) ストレージキー（プレースホルダー可）
 ```
 
 **_load.client: Env**
@@ -128,74 +134,13 @@ _store:
   ttl: 3600                          # (integer, optional) TTL（秒）
 ```
 
-**_store.client: InMemory**
+**_load.client: Db**
 ```yaml
-_store:
-  client: InMemory
-  key: "session:${token}"            # (string) ストレージキー（プレースホルダー可）
-```
-
-### State メソッド
-
-**State::get(key)** -> `Result<Option<Value>, StateError>`
-- インスタンスキャッシュ/ストアから値を取得
-- `_load`が定義されている場合、miss時に自動ロードをトリガー
-- hit時は`Ok(Some(value))`、miss時は`Ok(None)`、エラー時は`Err`を返す
-
-**State::set(key, value, ttl)** -> `Result<bool, StateError>`
-- 永続ストアとインスタンスキャッシュに値を保存
-- 自動ロードはトリガーしない
-- ttlパラメータはオプション（KVSのみ）
-
-**State::delete(key)** -> `Result<bool, StateError>`
-- 永続ストアとインスタンスキャッシュの両方からキーを削除
-- 削除後、キーはmissを示す
-
-**State::exists(key)** -> `Result<bool, StateError>`
-- 自動ロードをトリガーせずにキーの存在を確認
-- `Ok(true/false)`を返す
-- 条件分岐用の軽量な存在確認
-
-### 高度な例
-
-```yaml
-# example.yml
-
-_store:
-  client: # {InMemory, KVS}. 各クライアント用のアダプタークラスを作成
 _load:
-  client: # {Env, InMemory, KVS, Db, State}
-
-node_A:
-  _state: # オプション、meta keyのみ（型検証は未実装）
-    type: {integer, float, string, boolean, list, map}
-  _store: # ファイルルートで最低1つ必要。子ノードに継承され、上書き可能。
-    client: {InMemory, KVS}  # _storeで有効なのはInMemoryとKVSのみ
-  _load:
-    client: Db
-    connection: ${connection.tenant} # ${}はState::get()を意味する。parse時に絶対パスへ完全修飾済み。
-    table: "table_A"
-    map: # YAML記述に従い複数フィールドを一括ロード可能。最適化と意図しないロードに注意。
-      node_1: "node_1"
-      node_2: "node_2"
-  node_1:
-    _state:
-      ...:
-    _store:
-      ...:
-
-  node_2: # 追加のmeta設定が不要であれば省略可能
-    _state:
-      type: string
-  node_3:
-    _load:
-      key: ${node_1} # parse時に"example.node_A.node_1"へ完全修飾 → State::get("example.node_A.node_1")
-
-node_B:
-  node_2:
-    _load:
-      client: Db
-      table: "table-${example.node_A.node_1}" # "."を含むため絶対パスとみなす → State::get("example.node_A.node_1")
-    _store:
-...:
+  client: Db
+  connection: ${connection.tenant}  # (Value) 接続設定オブジェクトまたは参照
+  table: "users"                    # (string) テーブル名
+  where: "id=${user.id}"            # (string, optional) WHERE句
+  map:                               # (object, required) カラムマッピング
+    yaml_key: "db_column"
 ```

@@ -20,7 +20,7 @@ It behaves as described in YAML DSL.
 
 ## Provided Functions
 
-| Mod | description | fn |
+| mod | description | fn |
 |-------|------|---------|
 | **Manifest** | reads static YAMLs and returns processed obj | `get()`, `get_meta()` |
 | **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
@@ -60,15 +60,27 @@ state-engine = "0.1"
 1. Write a yaml file.
 
 ```yaml
-# manifest/cache.yml
+# manifest/example.yml
+session:
+  user-key:
+  _state:
+    type: integer
+  _store:
+    client: InMemory
+    key: "request-attributes-user-key"
+  _load:
+    client: InMemory
+    key: "request-header-user-key"
+
+
 user:
   _store:
     client: KVS
-    key: "user:1"
+    key: "user:${example.session.user-key}"
   _load:
     client: Db
     table: "users"
-    where: "id=1"
+    where: "id=${example.session.user-key}"
     map:
       name: "name"
   name:
@@ -116,7 +128,7 @@ let mut state = State::new("./manifest", load)
     .with_kvs_client(&mut kvs);
 
 // Use state-engine
-let user = state.get("cache.user.name")?;
+let user = state.get("example.user.name")?;
 ```
 
 Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
@@ -141,7 +153,7 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│    InMemory, KVS, Db, Env clients   │
+│    InMemory, Env, KVS, Db clients   │
 └─────────────────────────────────────┘
 ```
 
@@ -166,7 +178,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       provided.rs     # library provides
       required.rs     # Library requires
 
-    common/           # library common mod (pure logic)
+    common/           # library common mod
       bit.rs
       pool.rs
       parser.rs
@@ -190,7 +202,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       src/
         main.rs
         adapters.rs
-        test_runner.rs # inetegration tests 
+        test_runner.rs   # inetegration tests 
       Cargo.toml
       Dockerfile
       docker-compose.yml

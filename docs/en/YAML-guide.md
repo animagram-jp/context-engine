@@ -16,20 +16,20 @@
 - YAML document separators (`---`) are not supported
 - `placeholder` and `template` are only valid inside values
 
-### Basic Structure
+## Basic Structure
 
 ```yaml
-node_name:
+field_key:
   _state: # Data type definition (optional)
   _store: # Where to save (required at root, inherited by children)
   _load:  # Where to load from (optional)
 ```
 
-### Core Concept
+## Core Concepts
 
-#### 1. meta key inheritance
+### 1. meta key inheritance
 
-Child nodes inherit parent"s meta keys, and can override:
+Each field key inherits parent's meta keys, and can override:
 
 ```yaml
 _store:
@@ -44,9 +44,9 @@ user:
     # Inherits _store from parent (client: KVS, key: user:${sso_user_id})
 ```
 
-#### 2. Placeholder Resolution
+### 2. Placeholder Resolution
 
-State engine resolves ${...} by calling State::get():
+State engine resolves `${...}` by calling `State::get()`:
 
 ```yaml
 tenant:
@@ -55,23 +55,31 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get("user.tenant_id")
 ```
 
-**How placeholders are qualified:**
+**Placeholder shorthand:**
 
-At parse time (`Manifest::load()`), relative placeholders are automatically converted to absolute paths:
+Whether a path is absolute or relative is determined by whether it contains `.`:
+
+- No `.` → relative path, automatically qualified to `filename.ancestors.path` at parse time
+- Contains `.` → treated as absolute path, used as-is
 
 ```yaml
-# cache.yml
-user:
-  org_id:
-    _load:
-      where: "id=${tenant_id}"  # Relative reference
+# Inside user.tenant_id in cache.yml
+key: "${org_id}"            # → cache.user.org_id (relative)
+key: "${cache.user.org_id}" # → cache.user.org_id (absolute, same result)
+key: "${session.sso_user_id}" # → session.sso_user_id (cross-file reference)
 ```
 
-Manifest converts `${tenant_id}` to `${cache.user.tenant_id}` (absolute path).
+**Limitation:** The shorthand (relative path) cannot contain `.`, so to reference a child of a sibling node, use a fully qualified path:
 
-By the time State resolves the placeholder, it is already a qualified absolute path.
+```yaml
+# NG: treated as absolute path, KeyNotFound (no filename prefix)
+key: "${user.id}"       # → State::get("user.id")
 
-#### 3. Client Types
+# OK: use fully qualified path
+key: "${cache.user.id}" # → State::get("cache.user.id")
+```
+
+### 3. Client Types
 
 **For _store** (where to save):
 ```yaml
@@ -83,26 +91,22 @@ _store:
 **For _load** (where to load from):
 ```yaml
 _load:
-  client: Env       # Environment variables
+  client: State     # Reference another State key
   client: InMemory  # Process memory
+  client: Env       # Environment variables
   client: KVS       # Redis, Memcached
   client: Db        # Database
-  client: State     # Reference another State key
 ```
 
-You must implement adapter for each client you use (see Required Ports).
+You must implement an adapter for each client you use (see Required Ports).
 
 #### Client-Specific Parameters
 
-**_load.client: Db**
+**_store.client: InMemory**
 ```yaml
-_load:
-  client: Db
-  connection: ${connection.tenant}  # (Value) Connection config object or reference
-  table: "users"                    # (string) Table name
-  where: "id=${user.id}"            # (string, optional) WHERE clause
-  map:                               # (object, required) Column mapping
-    yaml_key: "db_column"
+_store:
+  client: InMemory
+  key: "session:${token}"            # (string) Storage key (placeholders allowed)
 ```
 
 **_load.client: Env**
@@ -110,7 +114,7 @@ _load:
 _load:
   client: Env
   map:                               # (object, required) Environment variable mapping
-    yaml_key: "Env_VAR_NAME"
+    yaml_key: "ENV_VAR_NAME"
 ```
 
 **_load.client: State**
@@ -128,14 +132,18 @@ _store:
   ttl: 3600                          # (integer, optional) TTL in seconds
 ```
 
-**_store.client: InMemory**
+**_load.client: Db**
 ```yaml
-_store:
-  client: InMemory
-  key: "session:${token}"            # (string) Storage key (placeholders allowed)
+_load:
+  client: Db
+  connection: ${connection.tenant}  # (Value) Connection config object or reference
+  table: "users"                    # (string) Table name
+  where: "id=${user.id}"            # (string, optional) WHERE clause
+  map:                               # (object, required) Column mapping
+    yaml_key: "db_column"
 ```
 
-### State Methods
+## State Methods
 
 **State::get(key)** -> `Result<Option<Value>, StateError>`
 - Retrieves value from instance cache / store
@@ -155,47 +163,3 @@ _store:
 - Checks if key exists without triggering auto-load
 - Returns `Ok(true/false)`
 - Lightweight existence check for conditional logic
-
-### Advanced Examples
-
-```yaml
-# example.yml
-
-_store:
-  client: # {InMemory, KVS}. Make adapter logic class for each client
-_load:
-  client: # {Env, InMemory, KVS, Db, State}
-
-node_A:
-  _state: # optional, meta key only (type validation not yet implemented)
-    type: {integer, float, string, boolean, list, map}
-  _store: # required at least in file root. Inherited by child nodes, can be overridden.
-    client: {InMemory, KVS}  # Only InMemory and KVS are valid for _store
-  _load:
-    client: Db
-    connection: ${connection.tenant} # ${} means State::get(). Qualified to absolute path at parse time.
-    table: "table_A"
-    map: # multiple fields can be loaded at once. Be careful about optimization and unintended loading.
-      node_1: "node_1"
-      node_2: "node_2"
-  node_1:
-    _state:
-      ...:
-    _store:
-      ...:
-
-  node_2: # optional if no extra meta is needed
-    _state:
-      type: string
-  node_3:
-    _load:
-      key: ${node_1} # qualified to "example.node_A.node_1" at parse time → State::get("example.node_A.node_1")
-
-node_B:
-  node_2:
-    _load:
-      client: Db
-      table: "table-${example.node_A.node_1}" # contains '.', treated as absolute path → State::get("example.node_A.node_1")
-    _store:
-...:
-```
