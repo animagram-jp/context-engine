@@ -22,7 +22,7 @@ It behaves as described in YAML DSL.
 
 | mod | description | fn |
 |-------|------|---------|
-| **Manifest** | reads static YAMLs and returns processed obj | `get()`, `get_meta()` |
+| **Manifest** | reads static YAMLs and returns processed obj | `get_value()`, `get_meta()` |
 | **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
 
 ## Why state-engine?
@@ -43,9 +43,9 @@ let user = redis.get(&cache_key).or_else(|| {
 let user = state.get("cache.user")?;
 ```
 
-- ✅ Multi-tenant DB without junction tables
-- ✅ Automatic KVS/DB synchronization
-- ✅ No manual cache invalidation
+- ✅ Multi-tenant DB without junction tables 
+- ✅ Automatic KVS/DB synchronization 
+- ✅ No manual cache invalidation 
 
 ## Installation
 
@@ -103,8 +103,8 @@ user:
 | `DbClient` | SQL Database | `fetch()` | [DbAdapter](./examples/adapters/db_client.rs) |
 | `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
 
-"Db" and "Env" will be used only in Loading(Read)
-It's not essential to implement all *Client.
+- "Db" and "Env" will be used only in Loading(Read).
+- It's not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.
 
