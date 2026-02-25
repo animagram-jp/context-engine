@@ -141,17 +141,7 @@ impl<'a> State<'a> {
             } else { 0 };
 
             if client != 0 {
-                let client_str = match client as u64 {
-                    bit::CLIENT_STATE     => "State",
-                    bit::CLIENT_IN_MEMORY => "InMemory",
-                    bit::CLIENT_ENV       => "Env",
-                    bit::CLIENT_KVS       => "KVS",
-                    bit::CLIENT_DB        => "Db",
-                    bit::CLIENT_API       => "API",
-                    bit::CLIENT_FILE      => "File",
-                    _ => continue,
-                };
-                config.insert("client".to_string(), Value::String(client_str.to_string()));
+                config.insert("client".to_string(), Value::Number(client.into()));
                 continue;
             }
 

@@ -1,5 +1,6 @@
 // Store module - handles InMemory and KVS client operations
 use crate::ports::required::{InMemoryClient, KVSClient};
+use crate::common::bit;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -33,15 +34,15 @@ impl<'a> Store<'a> {
     /// - client: "InMemory" or "KVS"
     /// - key: storage key
     pub fn get(&self, store_config: &HashMap<String, Value>) -> Option<Value> {
-        let client = store_config.get("client")?.as_str()?;
+        let client = store_config.get("client")?.as_u64()?;
 
         match client {
-            "InMemory" => {
+            bit::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
                 in_memory.get(key)
             }
-            "KVS" => {
+            bit::CLIENT_KVS => {
                 let kvs_client = self.kvs_client.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
                 let value_str = kvs_client.get(key)?;
@@ -65,13 +66,13 @@ impl<'a> Store<'a> {
         value: Value,
         ttl: Option<u64>,
     ) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_str()) {
+        let client = match store_config.get("client").and_then(|v| v.as_u64()) {
             Some(c) => c,
             None => return false,
         };
 
         match client {
-            "InMemory" => {
+            bit::CLIENT_IN_MEMORY => {
                 if let Some(in_memory) = self.in_memory.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
                         in_memory.set(key, value);
@@ -80,7 +81,7 @@ impl<'a> Store<'a> {
                 }
                 false
             }
-            "KVS" => {
+            bit::CLIENT_KVS => {
                 if let Some(kvs_client) = self.kvs_client.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
                         // serialize
@@ -106,13 +107,13 @@ impl<'a> Store<'a> {
     /// - client: "InMemory" or "KVS"
     /// - key: storage key
     pub fn delete(&mut self, store_config: &HashMap<String, Value>) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_str()) {
+        let client = match store_config.get("client").and_then(|v| v.as_u64()) {
             Some(c) => c,
             None => return false,
         };
 
         match client {
-            "InMemory" => {
+            bit::CLIENT_IN_MEMORY => {
                 if let Some(in_memory) = self.in_memory.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
                         return in_memory.delete(key);
@@ -120,7 +121,7 @@ impl<'a> Store<'a> {
                 }
                 false
             }
-            "KVS" => {
+            bit::CLIENT_KVS => {
                 if let Some(kvs_client) = self.kvs_client.as_mut() {
                     if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
                         return kvs_client.delete(key);
