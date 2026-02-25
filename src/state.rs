@@ -324,10 +324,13 @@ impl<'a> State<'a> {
                     Ok(loaded) => {
                         if let Some(store_idx) = meta.store {
                             if let Some(store_config) = self.build_config(store_idx) {
-                                let _ = self.store.set(&store_config, loaded.clone(), None);
+                                if self.store.set(&store_config, loaded.clone(), None) {
+                                    self.state_values.push(key_idx, loaded.clone());
+                                }
                             }
+                        } else {
+                            self.state_values.push(key_idx, loaded.clone());
                         }
-                        self.state_values.push(key_idx, loaded.clone());
                         Ok(Some(loaded))
                     }
                     Err(e) => Err(StateError::LoadFailed(e)),

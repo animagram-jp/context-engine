@@ -1,10 +1,8 @@
-// Store module - handles InMemory and KVS client operations
 use crate::ports::required::{InMemoryClient, KVSClient};
 use crate::common::bit;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Store manages data persistence to InMemory and KVS clients
 pub struct Store<'a> {
     in_memory: Option<&'a mut dyn InMemoryClient>,
     kvs_client: Option<&'a mut dyn KVSClient>,
@@ -29,10 +27,6 @@ impl<'a> Store<'a> {
     }
 
     /// Get value from store based on store_config
-    ///
-    /// store_config format:
-    /// - client: "InMemory" or "KVS"
-    /// - key: storage key
     pub fn get(&self, store_config: &HashMap<String, Value>) -> Option<Value> {
         let client = store_config.get("client")?.as_u64()?;
 
@@ -55,11 +49,6 @@ impl<'a> Store<'a> {
     }
 
     /// Set value to store based on store_config
-    ///
-    /// store_config format:
-    /// - client: "InMemory" or "KVS"
-    /// - key: storage key
-    /// - ttl: (optional) time to live in seconds (KVS only)
     pub fn set(
         &mut self,
         store_config: &HashMap<String, Value>,
@@ -102,10 +91,6 @@ impl<'a> Store<'a> {
     }
 
     /// Delete value from store based on store_config
-    ///
-    /// store_config format:
-    /// - client: "InMemory" or "KVS"
-    /// - key: storage key
     pub fn delete(&mut self, store_config: &HashMap<String, Value>) -> bool {
         let client = match store_config.get("client").and_then(|v| v.as_u64()) {
             Some(c) => c,
