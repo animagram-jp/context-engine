@@ -15,8 +15,8 @@ It behaves as described in YAML DSL.
 | Version | Status  | Date | description |
 |---------|---------|------|-------------|
 | 0.1   | Released  | 2026-2-12 | initial | 
-| 0.1.2 | Current   | 2026-2-14 | fix #11 | 
-| 0.1.3 | Scheduled | 2026-3-1 | improve #32 | 
+| 0.1.3 | Current   | 2026-2-14 | improve #32 | 
+| 0.1.4 | Scheduled | 2026-3-1  | improve #37 | 
 
 ## Provided Functions
 
@@ -210,7 +210,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
 ## tests
 
-unit tests, intergeration tests on example app(docker compose) passed
+unit tests, intergeration tests on example app (docker compose) passed
 
 1. cargo test:
 ```bash
