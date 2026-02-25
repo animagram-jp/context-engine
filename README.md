@@ -22,7 +22,7 @@ It behaves as described in YAML DSL.
 
 | Mod | description | fn |
 |-------|------|---------|
-| **Manifest** | reads static YAMLs and returns processed obj | `get()`, `getMeta()` |
+| **Manifest** | reads static YAMLs and returns processed obj | `get()`, `get_meta()` |
 | **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
 
 ## Why state-engine?
@@ -97,10 +97,7 @@ It's not essential to implement all *Client.
 3. Initialize State with your adapters and use it.
 
 ```rust
-use state_engine::{Manifest, State, Load};
-
-// Initialize Manifest
-let mut manifest = Manifest::new("./manifest");
+use state_engine::{State, Load};
 
 // Create adapter instances
 let mut in_memory = InMemoryAdapter::new();
@@ -109,12 +106,12 @@ let db = DbAdapter::new()?;
 
 // Build Load with adapters
 let load = Load::new()
-    .with_in_memory(&in_memory)
+    .with_in_memory(&mut in_memory)
     .with_kvs_client(&mut kvs)
     .with_db_client(&db);
 
 // Build State with adapters
-let mut state = State::new(&mut manifest, load)
+let mut state = State::new("./manifest", load)
     .with_in_memory(&mut in_memory)
     .with_kvs_client(&mut kvs);
 
@@ -170,9 +167,9 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       required.rs     # Library requires
 
     common/           # library common mod (pure logic)
-      dot_string.rs
-      dot_map_accessor.rs
-      placeholder.rs
+      bit.rs
+      pool.rs
+      parser.rs
       log_format.rs
 
     manifest.rs       # Manifest impl

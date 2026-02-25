@@ -11,13 +11,13 @@ Implementations of Required Ports are referred to as adapters in Hexagonal Archi
 impl InMemoryClient for InMemoryAdapter
 ```
 
-### 2. KVSAdapter
+## 2. KVSAdapter
 
 ```Rust
 impl KVSClient for KVSAdapter
 ```
 
-### 3. DbAdapter
+## 3. DbAdapter
 
 ```Rust
 impl DbClient for DbAdapter
@@ -27,12 +27,6 @@ impl DbClient for DbAdapter
 
 ```Rust
 impl EnvClient for EnvAdapter
-```
-
-### 4. DbAdapter
-
-```Rust
-impl DbClient for DbAdapter
 ```
 
 **!important**: 

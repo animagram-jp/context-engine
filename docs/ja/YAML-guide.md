@@ -19,7 +19,7 @@
 ### Basic Structure
 
 ```yaml
-fieldKey:
+node_name:
   _state: # Data type definition (optional)
   _store: # Where to save (required at root, inherited by children)
   _load:  # Where to load from (optional)
@@ -27,7 +27,7 @@ fieldKey:
 
 ### Core Concept
 
-#### 1. メタキー継承
+#### 1. meta key 継承
 
 Child nodes inherit parent"s meta keys, and can override:
 
@@ -44,7 +44,7 @@ user:
     # Inherits _store from parent (client: KVS, key: user:${sso_user_id})
 ```
 
-#### 2. プレースホルダー解決
+#### 2. placeholder 解決
 
 State engineは`${...}`を`State::get()`呼び出しで解決します:
 
@@ -55,9 +55,9 @@ tenant:
     where: "id=${user.tenant_id}"  # → State::get("user.tenant_id")
 ```
 
-**プレースホルダーの完全修飾化方法:**
+**placeholderの完全修飾化方法:**
 
-`Manifest::getMeta()`実行時、相対プレースホルダーは自動的に絶対パスに変換されます:
+parse時（`Manifest::load()`）に、相対placeholderは自動的に絶対パスに変換されます:
 
 ```yaml
 # cache.yml
@@ -69,7 +69,7 @@ user:
 
 Manifestは`${tenant_id}`を`${cache.user.tenant_id}`（絶対パス）に変換します。
 
-Stateがプレースホルダーを見る時点で、既に絶対パスに完全修飾されています。
+Stateがplaceholderを解決する時点では、既に絶対パスに完全修飾されています。
 
 #### 3. クライアント種別
 
@@ -135,25 +135,25 @@ _store:
   key: "session:${token}"            # (string) ストレージキー（プレースホルダー可）
 ```
 
-### Stateメソッド
+### State メソッド
 
-**State::get(key)**
-- キャッシュ/ストアから値を取得
+**State::get(key)** -> `Result<Option<Value>, StateError>`
+- インスタンスキャッシュ/ストアから値を取得
 - `_load`が定義されている場合、miss時に自動ロードをトリガー
-- 値またはNoneを返す
+- hit時は`Ok(Some(value))`、miss時は`Ok(None)`、エラー時は`Err`を返す
 
-**State::set(key, value, ttl)**
-- 永続ストアとキャッシュに値を保存
+**State::set(key, value, ttl)** -> `Result<bool, StateError>`
+- 永続ストアとインスタンスキャッシュに値を保存
 - 自動ロードはトリガーしない
 - ttlパラメータはオプション（KVSのみ）
 
-**State::delete(key)**
-- 永続ストアとキャッシュの両方からキーを削除
+**State::delete(key)** -> `Result<bool, StateError>`
+- 永続ストアとインスタンスキャッシュの両方からキーを削除
 - 削除後、キーはmissを示す
 
-**State::exists(key)**
+**State::exists(key)** -> `Result<bool, StateError>`
 - 自動ロードをトリガーせずにキーの存在を確認
-- 真偽値（true/false）を返す
+- `Ok(true/false)`を返す
 - 条件分岐用の軽量な存在確認
 
 ### 高度な例
@@ -173,9 +173,9 @@ node_A:
     client: {InMemory, KVS}  # _storeで有効なのはInMemoryとKVSのみ
   _load:
     client: Db
-    connection: ${connection.tenant} # reserved ${} means State::get(). State try "example.node_A.connection.tenant"(relative path) 1st and if not exists, "connection.tenant"(absolute path) 2nd.
+    connection: ${connection.tenant} # ${}はState::get()を意味する。parse時に絶対パスへ完全修飾済み。
     table: "table_A"
-    map: # It can load multiple nodes once following YAML coding. Be attention for optimization and unintended loading
+    map: # YAML記述に従い複数フィールドを一括ロード可能。最適化と意図しないロードに注意。
       node_1: "node_1"
       node_2: "node_2"
   node_1:
@@ -183,22 +183,19 @@ node_A:
       ...:
     _store:
       ...:
-    _load:
-      map:
-        node
 
-  node_2: # if no need extra data, this is optional
+  node_2: # 追加のmeta設定が不要であれば省略可能
     _state:
       type: string
   node_3:
     _load:
-      key: ${node_1} # It means State::get("example.node_A.node_1") (If not exist, State try "node_1" 2nd)
+      key: ${node_1} # parse時に"example.node_A.node_1"へ完全修飾 → State::get("example.node_A.node_1")
 
 node_B:
   node_2:
     _load:
       client: Db
-      table: "table-${example.node_A.node_1}" # It means State::get{"example.node_A.node_1"} (State try "example.node_B.example.node_A.node_1" 1st)
+      table: "table-${example.node_A.node_1}" # "."を含むため絶対パスとみなす → State::get("example.node_A.node_1")
     _store:
 ...:
 ```

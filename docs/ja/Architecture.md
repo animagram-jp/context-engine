@@ -16,7 +16,6 @@
   1. u64(bit.rs)
   2. Pools & Maps(pool.rs)
   3. ParsedManifest(parser.rs)
-  3. Placeholder
   4. LogFormat
 
 - internal modules (内部モジュール)
@@ -75,17 +74,13 @@
 
 ## Manifest
 
-1. `get(key: &str, default: Option<Value>)` -> Value
+1. `load(file: &str)` -> `Result<(), ManifestError>`
 
-2. `getMeta(key: &str)` -> HashMap<String, Value>
+2. `find(file: &str, path: &str)` -> `Option<u16>`
 
-3. `get_missing_keys()` -> &[String]
+3. `get_meta(file: &str, path: &str)` -> `MetaIndices`
 
-`get(), getMeta()`がインスタンスメモリに記録したmiss keyのlist(missingKeys)を返却する
-
-4. `clear_missing_keys()`
-
-インスタンスメモリのmissingKeysを空にする
+4. `get_value(file: &str, path: &str)` -> `Vec<(u16, u16)>`
 
 ## State
 
@@ -93,20 +88,19 @@
 
 指定されたノードが表すステート(state obj)を参照し、値またはcollectionを返却する。
 
+戻り値: `Result<Option<Value>, StateError>`
+
 **動作フロー:**
-1. `Manifest::getMeta()` でメタデータを取得
+1. `Manifest::get_meta()` でメタデータを取得
 2. `_store` 設定からストア種別を判定 (KVS/InMemory)
-3. プレースホルダーを解決 (`${session.sso_user_id}` など)
-4. ストアキーを構築
-5. **State.cache (インスタンスcollection object) をチェック** ← 最優先
-6. ストア (KVS/InMemoryClient) から値を取得
-7. データから個別フィールドを抽出
-8. **miss時、`Load::handle()` で自動ロード**
-9. 値を返却（型キャストは現在未実装）
+3. **state_values (インスタンスキャッシュ) をチェック** ← 最優先
+4. ストア (KVS/InMemoryClient) から値を取得
+5. **miss時、`Load::handle()` で自動ロード**
+6. 値を返却（型キャストは現在未実装）
 
 **自動ロード:**
 - 指定されたノードのステートキーがmissした場合、`Load::handle()` で自動取得を試みる
-- `Load::handle()` がエラーの場合、`None` を返す
+- `Load::handle()` がエラーの場合、`Err(StateError::LoadFailed)` を返す
 
 **_state.typeについての注意:**
 ```yaml
@@ -123,9 +117,11 @@ tenant_id:
 
 指定されたノードが表すステートに値をセットする。
 
+戻り値: `Result<bool, StateError>`
+
 **動作:**
 - 永続ストア (KVS/InMemoryClient) に保存
-- State.cache にも保存
+- state_values (インスタンスキャッシュ) にも保存
 - ストアがKVSの場合、TTLを設定可能
 
 **TTL動作:**
@@ -139,9 +135,11 @@ tenant_id:
 
 指定されたノードが表す {key:value} レコードを削除する。
 
+戻り値: `Result<bool, StateError>`
+
 **動作:**
 - 永続ストア (KVS/InMemoryClient) から削除
-- State.cache からも削除
+- state_values (インスタンスキャッシュ) からも削除
 - 削除後、そのノードは miss hit を示す
 
 ---
@@ -150,11 +148,13 @@ tenant_id:
 
 自動ロードをトリガーせずに、キーの存在確認を行う。
 
+戻り値: `Result<bool, StateError>`
+
 **動作:**
-- 最初に State.cache をチェック
+- 最初に state_values (インスタンスキャッシュ) をチェック
 - 次に永続ストア (KVS/InMemoryClient) をチェック
 - **自動ロードをトリガーしない** (`get()` とは異なる)
-- 真偽値を返す (存在する場合true、それ以外false)
+- 存在する場合 `Ok(true)`、それ以外 `Ok(false)` を返す
 
 **ユースケース:**
 - 高コスト操作の前の軽量な存在確認
@@ -201,51 +201,47 @@ tenant_id:
 - Load::handle() のmatch文はdefaultケースでnullを返す
 
 **再帰深度制限:**
-- MAX_RECURSION = 20
-- 再帰呼び出し毎にカウンターをインクリメント
-- 超過時にエラーをスロー
-- finallyブロックでカウンターをデクリメント
+- `max_recursion = 20`
+- `called_keys: HashSet<String>` で処理中のキーを管理
+- 上限超過または同一キーの再帰検出時に `Err(StateError::RecursionLimitExceeded)` を返す
 
 ---
 
 ## State::get() 詳細フロー
 
 ```
-1. Manifest::getMeta(key) → メタデータ取得
+1. called_keys チェック（再帰・上限検出）
    ↓
-2. _state から型情報を取得
+2. Manifest::load() → ファイルロード（未ロード時のみ）
    ↓
-3. _store から保存先を取得 (client: KVS/InMemory)
+3. Manifest::find() → key_idx 取得
    ↓
-4. store_config内のプレースホルダーを解決
+4. ★ state_values をチェック (key_idx) ← 最優先
+   if find_state_value(key_idx).is_some() { return Ok(Some(value)); }
    ↓
-5. ★ インメモリキャッシュをチェック (絶対キー) ← 最優先
-   if cache.contains_key(key) { return; }
+5. Manifest::get_meta() → MetaIndices 取得
    ↓
-6. storeKeyを構築
+6. _load.client == State の場合はストアをスキップ
+   それ以外: ストア (KVS/InMemoryClient) から取得
    ↓
-7. ストアから値を取得 (getFromStore)
-   ↓
-8. データから個別フィールドを抽出
-   ↓
-9. miss時、自動ロード
-   ├─→ Load::handle(loadConfig)
-   │    ├─→ client: Db → DbClient::fetchOne/fetchAll()
+7. miss時、自動ロード
+   ├─→ build_config() でプレースホルダーを解決
+   ├─→ Load::handle(config)
+   │    ├─→ client: Db → DbClient::fetch()
    │    ├─→ client: KVS → KVSClient::get()
    │    ├─→ client: Env → EnvClient::get()
-   │    ├─→ client: InMemory → InMemoryClient::get()
-   │    └─→ client: State → 指定キー値を直接返す（再帰）
-   ├─→ 永続ストアに保存 (setToStore)
-   └─→ インメモリキャッシュに保存
+   │    └─→ client: InMemory → InMemoryClient::get()
+   ├─→ 永続ストアに保存
+   └─→ state_values に保存
    ↓
-10. 値を返却
+8. Ok(Some(value)) / Ok(None) / Err(StateError) を返却
 ```
 
 ---
 
-## State.cache (インスタンスメモリキャッシュ)
+## state_values (インスタンスメモリキャッシュ)
 
-State構造体は、永続ストア（KVS/InMemoryClient）とは別に、インスタンスレベルのキャッシュ（`cache: Value`）を保持します。
+State構造体は、永続ストア（KVS/InMemoryClient）とは別に、インスタンスレベルのキャッシュ（`state_values: StateValueList`）を保持します。
 
 **重要:** これはInMemoryClientではありません。Stateインスタンス自体の変数です。
 
@@ -254,70 +250,41 @@ State構造体は、永続ストア（KVS/InMemoryClient）とは別に、イン
 2. **KVS/InMemoryClientへのアクセス回数を削減**
 3. **重複ロードを回避する設計**（同じキーを複数回ロードしない）
 
-**チェック順序（重要）:**
-```Rust
-// State::get() フロー
-1. メタデータ取得
-2. _state から型情報を取得
-3. _store から保存先を取得
-4. プレースホルダー解決
-5. ★ State.cache をチェック (絶対キー) ← 最初にチェック
-   if self.cache.contains_key(key) {
-       return self.cache[key];
-   }
-6. storeKey構築
-7. 永続ストア (KVS/InMemoryClient) から取得
-8. miss時、自動ロード → ロード後、State.cacheに保存
-```
-
-**キャッシュキー:**
-- **絶対パス**で保存 (`cache.user.tenant_id`)
-- ドット記法そのまま
+**インデックス:**
+- `key_idx: u16` — KeyList上のグローバルユニークなindex をキーとして保存
+- 永続ストアのキー文字列ではなく、key_idxで引く設計
 
 **保存タイミング:**
-- `State::get()`でロード成功時: `self.cache.insert(key, extracted)`
-- `State::set()`時: `self.cache.insert(key, value)`
+- `State::get()`でストアまたはロードから取得成功時
+- `State::set()`時
 
 **削除タイミング:**
-- `State::delete()`時: `self.cache.remove(key)`
+- `State::delete()`時
 
 **ライフサイクル:**
 - Stateインスタンス生成: 空
 - State稼働中: 蓄積
 - Stateインスタンス破棄: 破棄（メモリ解放）
 
-**重要な設計意図:**
-- State.cacheは永続ストア（KVS/InMemoryClient）より高優先でチェックされる
-- これにより外部ストアを包括的に扱う設計を実現
-- 同一データへの複数アクセスでも、1回のストアアクセス + N回のHashMapアクセスで済む
-
 ---
 
 ## プレースホルダー解決ルール
 
-プレースホルダー解決の優先順位。
+`${}` 内のパスは **parse時（`Manifest::load()`）に qualified path へ変換済み**。State実行時に変換処理は行わない。
 
-**解決順序:**
-1. **同一ディクショナリ参照（相対パス）**: `${org_id}` → `cache.user.org_id`
-2. **絶対パス**: `${org_id}` → `org_id`
+**parse時の qualify ルール（`qualify_path()`）:**
+- パスに `.` を含む場合 → 絶対パスとみなしそのまま使用
+- `.` を含まない場合 → `filename.ancestors.path` に変換
 
-**例（contextKey: "cache.user.tenant_id._load.key"）:**
+**例（`cache.yml` の `user._load.where` 内 `${tenant_id}`）:**
 ```
-// ディクショナリスコープを抽出
-dictScope = "cache.user"; // メタキー(_load)より前まで
-
-// 1. 同一ディクショナリ内を検索
-scopedKey = "cache.user.org_id";
-value = self.get(scopedKey); // → State::get("cache.user.org_id")
-if value.is_some() { return value; }
-
-// 2. 絶対パスを検索
-return self.get("org_id"); // → State::get("org_id")
+qualify_path("tenant_id", "cache", ["user"])
+→ "cache.user.tenant_id"
 ```
 
-**注意:**
-- ディクショナリスコープはメタキー（`_load`, `_store`等）または最後のフィールドまで辿る
-- `cache.user`がディクショナリ、`org_id`/`tenant_id`がフィールドという想定
+**State実行時のプレースホルダー解決（`resolve_value_to_string()`）:**
+- path_map から qualified path を取り出し
+- `State::get(qualified_path)` を呼んで値を取得
 
 ---
 
@@ -342,23 +309,6 @@ fn extract_field(data: Value, key: &str) -> Value {
     data.get(field_name).cloned().unwrap_or(Value::Null)
 }
 ```
-
----
-
-## 内部実装
-
-### Placeholder
-
-純粋な文字列処理（依存関係なし）。
-
-**メソッド:**
-- `extract_placeholders(template)` - テンプレートから変数名を抽出
-- `replace(template, params)` - 値で置換
-- `resolve_typed(value, resolver)` - JSON値内のプレースホルダーを再帰的に解決
-
-**型保持:**
-- 単一プレースホルダーかつ文字列全体が`${...}`形式 → 型を保持
-- 複数または文字列内プレースホルダー → 文字列置換
 
 ---
 

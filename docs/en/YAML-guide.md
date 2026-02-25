@@ -57,7 +57,7 @@ tenant:
 
 **How placeholders are qualified:**
 
-During `Manifest::getMeta()`, relative placeholders are automatically converted to absolute paths:
+At parse time (`Manifest::load()`), relative placeholders are automatically converted to absolute paths:
 
 ```yaml
 # cache.yml
@@ -69,7 +69,7 @@ user:
 
 Manifest converts `${tenant_id}` to `${cache.user.tenant_id}` (absolute path).
 
-By the time State sees the placeholder, it"s already qualified to an absolute path.
+By the time State resolves the placeholder, it is already a qualified absolute path.
 
 #### 3. Client Types
 
@@ -137,23 +137,23 @@ _store:
 
 ### State Methods
 
-**State::get(key)**
-- Retrieves value from cache/store
+**State::get(key)** -> `Result<Option<Value>, StateError>`
+- Retrieves value from instance cache / store
 - Triggers auto-load on miss if `_load` is defined
-- Returns the value or None
+- Returns `Ok(Some(value))` on hit, `Ok(None)` on miss with no load, `Err` on error
 
-**State::set(key, value, ttl)**
-- Saves value to persistent store and cache
+**State::set(key, value, ttl)** -> `Result<bool, StateError>`
+- Saves value to persistent store and instance cache
 - Does NOT trigger auto-load
 - TTL parameter is optional (KVS only)
 
-**State::delete(key)**
-- Removes key from both persistent store and cache
+**State::delete(key)** -> `Result<bool, StateError>`
+- Removes key from both persistent store and instance cache
 - Key will show as miss after deletion
 
-**State::exists(key)**
+**State::exists(key)** -> `Result<bool, StateError>`
 - Checks if key exists without triggering auto-load
-- Returns boolean (true/false)
+- Returns `Ok(true/false)`
 - Lightweight existence check for conditional logic
 
 ### Advanced Examples
@@ -173,9 +173,9 @@ node_A:
     client: {InMemory, KVS}  # Only InMemory and KVS are valid for _store
   _load:
     client: Db
-    connection: ${connection.tenant} # reserved ${} means State::get(). State try "example.node_A.connection.tenant"(relative path) 1st and if not exists, "connection.tenant"(absolute path) 2nd.
+    connection: ${connection.tenant} # ${} means State::get(). Qualified to absolute path at parse time.
     table: "table_A"
-    map: # It can load multiple nodes once following YAML coding. Be attention for optimization and unintended loading
+    map: # multiple fields can be loaded at once. Be careful about optimization and unintended loading.
       node_1: "node_1"
       node_2: "node_2"
   node_1:
@@ -183,22 +183,19 @@ node_A:
       ...:
     _store:
       ...:
-    _load:
-      map:
-        node
 
-  node_2: # if no need extra data, this is optional
+  node_2: # optional if no extra meta is needed
     _state:
       type: string
   node_3:
     _load:
-      key: ${node_1} # It means State::get("example.node_A.node_1") (If not exist, State try "node_1" 2nd)
+      key: ${node_1} # qualified to "example.node_A.node_1" at parse time → State::get("example.node_A.node_1")
 
 node_B:
   node_2:
     _load:
       client: Db
-      table: "table-${example.node_A.node_1}" # It means State::get{"example.node_A.node_1"} (State try "example.node_B.example.node_A.node_1" 1st)
+      table: "table-${example.node_A.node_1}" # contains '.', treated as absolute path → State::get("example.node_A.node_1")
     _store:
 ...:
 ```
