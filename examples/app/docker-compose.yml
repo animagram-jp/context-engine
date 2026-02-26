@@ -11,7 +11,7 @@ services:
     volumes:
       - ./db:/docker-entrypoint-initdb.d
     tmpfs:
-      - /var/lib/postgresql/data
+      - /var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U state_user -d state_engine_dev"]
       interval: 5s
@@ -21,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: state-engine-redis
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save "" --loglevel nothing
     ports:
       - "6379:6379"
     healthcheck:
@@ -51,4 +51,3 @@ services:
       - RUST_LOG=debug
     command: ["./state-engine-test"]
     restart: no
-
