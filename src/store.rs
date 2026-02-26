@@ -54,67 +54,58 @@ impl<'a> Store<'a> {
         store_config: &HashMap<String, Value>,
         value: Value,
         ttl: Option<u64>,
-    ) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_u64()) {
-            Some(c) => c,
-            None => return false,
-        };
+    ) -> Result<bool, String> {
+        let client = store_config
+            .get("client")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "Store::set: 'client' not found in store config".to_string())?;
 
         match client {
             bit::CLIENT_IN_MEMORY => {
-                if let Some(in_memory) = self.in_memory.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        in_memory.set(key, value);
-                        return true;
-                    }
-                }
-                false
+                let in_memory = self.in_memory.as_mut()
+                    .ok_or_else(|| "Store::set: InMemoryClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                in_memory.set(key, value);
+                Ok(true)
             }
             bit::CLIENT_KVS => {
-                if let Some(kvs_client) = self.kvs_client.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        // serialize
-                        let serialized = match serde_json::to_string(&value) {
-                            Ok(s) => s,
-                            Err(_) => return false,
-                        };
-
-                        let final_ttl =
-                            ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
-                        return kvs_client.set(key, serialized, final_ttl);
-                    }
-                }
-                false
+                let kvs_client = self.kvs_client.as_mut()
+                    .ok_or_else(|| "Store::set: KVSClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                let serialized = serde_json::to_string(&value)
+                    .map_err(|e| format!("Store::set: JSON serialize error: {}", e))?;
+                let final_ttl = ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
+                Ok(kvs_client.set(key, serialized, final_ttl))
             }
-            _ => false,
+            _ => Err(format!("Store::set: unsupported client '{}'", client)),
         }
     }
 
     /// Delete value from store based on store_config
-    pub fn delete(&mut self, store_config: &HashMap<String, Value>) -> bool {
-        let client = match store_config.get("client").and_then(|v| v.as_u64()) {
-            Some(c) => c,
-            None => return false,
-        };
+    pub fn delete(&mut self, store_config: &HashMap<String, Value>) -> Result<bool, String> {
+        let client = store_config
+            .get("client")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "Store::delete: 'client' not found in store config".to_string())?;
 
         match client {
             bit::CLIENT_IN_MEMORY => {
-                if let Some(in_memory) = self.in_memory.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        return in_memory.delete(key);
-                    }
-                }
-                false
+                let in_memory = self.in_memory.as_mut()
+                    .ok_or_else(|| "Store::delete: InMemoryClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                Ok(in_memory.delete(key))
             }
             bit::CLIENT_KVS => {
-                if let Some(kvs_client) = self.kvs_client.as_mut() {
-                    if let Some(key) = store_config.get("key").and_then(|v| v.as_str()) {
-                        return kvs_client.delete(key);
-                    }
-                }
-                false
+                let kvs_client = self.kvs_client.as_mut()
+                    .ok_or_else(|| "Store::delete: KVSClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                Ok(kvs_client.delete(key))
             }
-            _ => false,
+            _ => Err(format!("Store::delete: unsupported client '{}'", client)),
         }
     }
 }

@@ -59,29 +59,38 @@ impl<'a> State<'a> {
     /// Resolves a yaml value record to a Value (any type, for connection etc.).
     /// For non-template single placeholder: returns the resolved Value as-is (including Object).
     /// For string-compatible values: delegates to resolve_value_to_string.
-    fn resolve_value(&mut self, value_idx: u16) -> Option<Value> {
+    fn resolve_value(&mut self, value_idx: u16) -> Result<Option<Value>, StateError> {
         crate::fn_log!("State", "resolve_value", &value_idx.to_string());
-        let vo = self.manifest.values.get(value_idx)?;
+        let vo = match self.manifest.values.get(value_idx) {
+            Some(v) => v,
+            None => return Ok(None),
+        };
         let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
         let is_path = bit::get(vo[0], bit::VO_OFFSET_T0_IS_PATH, bit::VO_MASK_IS_PATH) == 1;
         let dyn_idx = bit::get(vo[0], bit::VO_OFFSET_T0_DYNAMIC, bit::VO_MASK_DYNAMIC) as u16;
 
         if is_path && dyn_idx != 0 && !is_template {
-            let path_segments = self.manifest.path_map.get(dyn_idx)?.to_vec();
+            let path_segments = match self.manifest.path_map.get(dyn_idx) {
+                Some(s) => s.to_vec(),
+                None => return Ok(None),
+            };
             let path_key: String = path_segments.iter()
                 .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
                 .collect::<Vec<_>>()
                 .join(".");
-            return self.get(&path_key).ok().flatten();
+            return self.get(&path_key);
         }
 
-        self.resolve_value_to_string(value_idx).map(Value::String)
+        Ok(self.resolve_value_to_string(value_idx)?.map(Value::String))
     }
 
     /// Resolves a yaml value record to a String (for use in store/load config keys).
-    fn resolve_value_to_string(&mut self, value_idx: u16) -> Option<String> {
+    fn resolve_value_to_string(&mut self, value_idx: u16) -> Result<Option<String>, StateError> {
         crate::fn_log!("State", "resolve_value_to_string", &value_idx.to_string());
-        let vo = self.manifest.values.get(value_idx)?;
+        let vo = match self.manifest.values.get(value_idx) {
+            Some(v) => v,
+            None => return Ok(None),
+        };
 
         let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
 
@@ -106,24 +115,33 @@ impl<'a> State<'a> {
             }
 
             if is_path {
-                let path_segments = self.manifest.path_map.get(dyn_idx)?.to_vec();
+                let path_segments = match self.manifest.path_map.get(dyn_idx) {
+                    Some(s) => s.to_vec(),
+                    None => return Ok(None),
+                };
                 let path_key: String = path_segments.iter()
                     .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
                     .collect::<Vec<_>>()
                     .join(".");
                 crate::fn_log!("State", "resolve/get", &path_key);
-                let resolved = self.get(&path_key).ok().flatten();
+                let resolved = self.get(&path_key)?;
                 crate::fn_log!("State", "resolve/got", if resolved.is_some() { "Some" } else { "None" });
-                let resolved = resolved?;
+                let resolved = match resolved {
+                    Some(v) => v,
+                    None => return Ok(None),
+                };
                 let s = match &resolved {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
-                    _ => return None,
+                    _ => return Ok(None),
                 };
                 result.push_str(&s);
             } else {
-                let s = self.manifest.dynamic.get(dyn_idx)?.to_string();
+                let s = match self.manifest.dynamic.get(dyn_idx) {
+                    Some(s) => s.to_string(),
+                    None => return Ok(None),
+                };
                 result.push_str(&s);
             }
 
@@ -132,18 +150,24 @@ impl<'a> State<'a> {
             }
         }
 
-        Some(result)
+        Ok(Some(result))
     }
 
     /// Builds a store/load config HashMap from a meta record index.
-    fn build_config(&mut self, meta_idx: u16) -> Option<HashMap<String, Value>> {
+    fn build_config(&mut self, meta_idx: u16) -> Result<Option<HashMap<String, Value>>, StateError> {
         crate::fn_log!("State", "build_config", &meta_idx.to_string());
-        let record = self.manifest.keys.get(meta_idx)?;
+        let record = match self.manifest.keys.get(meta_idx) {
+            Some(r) => r,
+            None => return Ok(None),
+        };
         let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
-        if child_idx == 0 { return None; }
+        if child_idx == 0 { return Ok(None); }
         let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
         let children = if has_children == 1 {
-            self.manifest.children_map.get(child_idx)?.to_vec()
+            match self.manifest.children_map.get(child_idx) {
+                Some(c) => c.to_vec(),
+                None => return Ok(None),
+            }
         } else {
             vec![child_idx]
         };
@@ -183,18 +207,18 @@ impl<'a> State<'a> {
                 }
             } else if prop_name == "connection" {
                 if value_idx != 0 {
-                    if let Some(v) = self.resolve_value(value_idx) {
+                    if let Some(v) = self.resolve_value(value_idx)? {
                         config.insert("connection".to_string(), v);
                     }
                 }
             } else if value_idx != 0 {
-                if let Some(s) = self.resolve_value_to_string(value_idx) {
+                if let Some(s) = self.resolve_value_to_string(value_idx)? {
                     config.insert(prop_name.to_string(), Value::String(s));
                 }
             }
         }
 
-        Some(config)
+        Ok(Some(config))
     }
 
     /// Builds a map config object from a map prop record's children.
@@ -320,11 +344,18 @@ impl<'a> State<'a> {
 
         if !has_state_client {
             if let Some(store_idx) = meta.store {
-                if let Some(config) = self.build_config(store_idx) {
-                    if let Some(value) = self.store.get(&config) {
-                        self.state_values.push(key_idx, value.clone());
+                match self.build_config(store_idx) {
+                    Ok(Some(config)) => {
+                        if let Some(value) = self.store.get(&config) {
+                            self.state_values.push(key_idx, value.clone());
+                            self.called_keys.remove(key);
+                            return Ok(Some(value));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
                         self.called_keys.remove(key);
-                        return Ok(Some(value));
+                        return Err(e);
                     }
                 }
             }
@@ -332,38 +363,50 @@ impl<'a> State<'a> {
 
         // try _load
         let result = if let Some(load_idx) = meta.load {
-            if let Some(mut config) = self.build_config(load_idx) {
-                if !config.contains_key("client") {
-                    self.called_keys.remove(key);
-                    return Ok(None);
-                }
-
-                // unqualify map keys for Load
-                if let Some(Value::Object(map_obj)) = config.get("map").cloned() {
-                    let mut unqualified = serde_json::Map::new();
-                    for (qk, v) in map_obj {
-                        let field = qk.rfind('.').map_or(qk.as_str(), |p| &qk[p+1..]);
-                        unqualified.insert(field.to_string(), v);
+            match self.build_config(load_idx) {
+                Ok(Some(mut config)) => {
+                    if !config.contains_key("client") {
+                        self.called_keys.remove(key);
+                        return Ok(None);
                     }
-                    config.insert("map".to_string(), Value::Object(unqualified));
-                }
 
-                match self.load.handle(&config) {
-                    Ok(loaded) => {
-                        if let Some(store_idx) = meta.store {
-                            if let Some(store_config) = self.build_config(store_idx) {
-                                if self.store.set(&store_config, loaded.clone(), None) {
-                                    self.state_values.push(key_idx, loaded.clone());
-                                }
-                            }
-                        } else {
-                            self.state_values.push(key_idx, loaded.clone());
+                    // unqualify map keys for Load
+                    if let Some(Value::Object(map_obj)) = config.get("map").cloned() {
+                        let mut unqualified = serde_json::Map::new();
+                        for (qk, v) in map_obj {
+                            let field = qk.rfind('.').map_or(qk.as_str(), |p| &qk[p+1..]);
+                            unqualified.insert(field.to_string(), v);
                         }
-                        Ok(Some(loaded))
+                        config.insert("map".to_string(), Value::Object(unqualified));
                     }
-                    Err(e) => Err(StateError::LoadFailed(e)),
+
+                    match self.load.handle(&config) {
+                        Ok(loaded) => {
+                            if let Some(store_idx) = meta.store {
+                                match self.build_config(store_idx) {
+                                    Ok(Some(store_config)) => {
+                                        if self.store.set(&store_config, loaded.clone(), None).unwrap_or(false) {
+                                            self.state_values.push(key_idx, loaded.clone());
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        self.state_values.push(key_idx, loaded.clone());
+                                    }
+                                    Err(_) => {
+                                        // write-through cache failure is non-fatal
+                                    }
+                                }
+                            } else {
+                                self.state_values.push(key_idx, loaded.clone());
+                            }
+                            Ok(Some(loaded))
+                        }
+                        Err(e) => Err(StateError::LoadFailed(e)),
+                    }
                 }
-            } else { Ok(None) }
+                Ok(None) => Ok(None),
+                Err(e) => Err(e),
+            }
         } else { Ok(None) };
 
         self.called_keys.remove(key);
@@ -410,16 +453,23 @@ impl<'a> State<'a> {
         let meta = self.manifest.get_meta(&file, &path);
 
         if let Some(store_idx) = meta.store {
-            if let Some(config) = self.build_config(store_idx) {
-                let ok = self.store.set(&config, value.clone(), ttl);
-                if ok {
-                    if let Some(sv_idx) = self.find_state_value(key_idx) {
-                        self.state_values.update(sv_idx, value);
-                    } else {
-                        self.state_values.push(key_idx, value);
-                    }
+            match self.build_config(store_idx)? {
+                Some(config) => {
+                    return match self.store.set(&config, value.clone(), ttl) {
+                        Ok(ok) => {
+                            if ok {
+                                if let Some(sv_idx) = self.find_state_value(key_idx) {
+                                    self.state_values.update(sv_idx, value);
+                                } else {
+                                    self.state_values.push(key_idx, value);
+                                }
+                            }
+                            Ok(ok)
+                        }
+                        Err(e) => Err(StateError::StoreFailed(e)),
+                    };
                 }
-                return Ok(ok);
+                None => {}
             }
         }
         Ok(false)
@@ -468,14 +518,21 @@ impl<'a> State<'a> {
         let meta = self.manifest.get_meta(&file, &path);
 
         if let Some(store_idx) = meta.store {
-            if let Some(config) = self.build_config(store_idx) {
-                let ok = self.store.delete(&config);
-                if ok {
-                    if let Some(sv_idx) = self.find_state_value(key_idx) {
-                        self.state_values.remove(sv_idx);
-                    }
+            match self.build_config(store_idx)? {
+                Some(config) => {
+                    return match self.store.delete(&config) {
+                        Ok(ok) => {
+                            if ok {
+                                if let Some(sv_idx) = self.find_state_value(key_idx) {
+                                    self.state_values.remove(sv_idx);
+                                }
+                            }
+                            Ok(ok)
+                        }
+                        Err(e) => Err(StateError::StoreFailed(e)),
+                    };
                 }
-                return Ok(ok);
+                None => {}
             }
         }
         Ok(false)
@@ -528,7 +585,7 @@ impl<'a> State<'a> {
 
         let meta = self.manifest.get_meta(&file, &path);
         if let Some(store_idx) = meta.store {
-            if let Some(config) = self.build_config(store_idx) {
+            if let Some(config) = self.build_config(store_idx)? {
                 return Ok(self.store.get(&config).is_some());
             }
         }

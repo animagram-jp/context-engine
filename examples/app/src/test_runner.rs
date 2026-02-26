@@ -246,6 +246,53 @@ fn run_tests() -> (usize, usize) {
         assert!(obj.get("org_id").is_some(), "org_id should be present");
     });
 
+    // =========================================================================
+    // placeholder resolution error cases
+    // =========================================================================
+    println!("\n[placeholder]");
+
+    test!("set cache.user without session.sso_user_id returns Err", {
+        // cache.user._store.key = "user:${session.sso_user_id}"
+        // session.sso_user_id が未セットなので placeholder が解決できず Err になるはず
+        let env = EnvAdapter::new();
+        let mut kl = KVSAdapter::new().unwrap();
+        let mut ks = KVSAdapter::new().unwrap();
+        let mut db = DbAdapter::new();
+        let mut iml = InMemoryAdapter::new();
+        let mut ims = InMemoryAdapter::new();
+        let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
+
+        let result = state.set("cache.user", serde_json::json!({"id": 1}), None);
+        assert!(result.is_err(), "should fail when placeholder cannot be resolved");
+    });
+
+    test!("get cache.user without session.sso_user_id returns Err", {
+        // store read と load の両方で ${session.sso_user_id} が未解決になる
+        let env = EnvAdapter::new();
+        let mut kl = KVSAdapter::new().unwrap();
+        let mut ks = KVSAdapter::new().unwrap();
+        let mut db = DbAdapter::new();
+        let mut iml = InMemoryAdapter::new();
+        let mut ims = InMemoryAdapter::new();
+        let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
+
+        let result = state.get("cache.user");
+        assert!(result.is_err(), "should fail when placeholder cannot be resolved");
+    });
+
+    test!("get nonexistent key returns KeyNotFound", {
+        let env = EnvAdapter::new();
+        let mut kl = KVSAdapter::new().unwrap();
+        let mut ks = KVSAdapter::new().unwrap();
+        let mut db = DbAdapter::new();
+        let mut iml = InMemoryAdapter::new();
+        let mut ims = InMemoryAdapter::new();
+        let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
+
+        let result = state.get("session.nonexistent");
+        assert!(matches!(result, Err(state_engine::StateError::KeyNotFound(_))));
+    });
+
     (passed, failed)
 }
 
