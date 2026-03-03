@@ -44,7 +44,7 @@ impl std::fmt::Display for StateError {
 pub trait Manifest {
     fn get_value(&mut self, key: &str, default: Option<Value>) -> Value;
     fn get_meta(&mut self, key: &str) -> HashMap<String, Value>;
-    fn load_file(&mut self, file: &str) -> Result<(), ManifestError>;
+    fn load(&mut self, file: &str) -> Result<(), ManifestError>;
 }
 
 /// The primary interface for state-engine. Manages state per manifest definition.

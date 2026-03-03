@@ -91,12 +91,14 @@
 戻り値: `Result<Option<Value>, StateError>`
 
 **動作フロー:**
-1. `Manifest::get_meta()` でメタデータを取得
-2. `_store` 設定からストア種別を判定 (KVS/InMemory)
-3. **state_values (インスタンスキャッシュ) をチェック** ← 最優先
-4. ストア (KVS/InMemoryClient) から値を取得
-5. **miss時、`Load::handle()` で自動ロード**
-6. 値を返却（型キャストは現在未実装）
+1. `called_keys` チェック（再帰・上限検出）
+2. `Manifest::load()` → ファイルロード（未ロード時のみ）
+3. `Manifest::find()` → key_idx 取得
+4. **state_values (インスタンスキャッシュ) をチェック** ← 最優先
+5. `Manifest::get_meta()` → MetaIndices 取得
+6. `_load.client == State` の場合はストアをスキップ。それ以外: ストア (KVS/InMemoryClient) から取得
+7. **miss時、`Load::handle()` で自動ロード**
+8. `Ok(Some(value))` / `Ok(None)` / `Err(StateError)` を返却
 
 **自動ロード:**
 - 指定されたノードのステートキーがmissした場合、`Load::handle()` で自動取得を試みる

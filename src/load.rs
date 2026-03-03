@@ -178,7 +178,7 @@ impl<'a> Load<'a> {
         Ok(Value::Object(result))
     }
 
-    // feature function: load with API Cleint
+    // feature function: load with API Client
     // fn load_from_api(
     //     &self,
     //     config: &HashMap<String, Value>,

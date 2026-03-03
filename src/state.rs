@@ -497,7 +497,7 @@ impl<'a> State<'a> {
     ///
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
     /// assert!(state.delete("connection.common").unwrap());
-    /// // delete後はstoreにデータがなく、_loadも試みるが今回はEnvClientなしのため値なし
+    /// // after delete, store has no data; _load is attempted but EnvClient is not configured here
     /// assert!(state.get("connection.common").is_err() || state.get("connection.common").unwrap().is_none());
     /// ```
     pub fn delete(&mut self, key: &str) -> Result<bool, StateError> {
