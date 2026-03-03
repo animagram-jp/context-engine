@@ -2,7 +2,7 @@
     "name": "animagram/state-engine",
     "autoload": {
         "psr-4": {
-            "Animagram\\": "php/src/"
+            "Animagram\\StateEngine\\": "php/src/"
         }
     }
 }
