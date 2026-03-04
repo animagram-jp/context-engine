@@ -1,0 +1,51 @@
+services:
+  example-app:
+    build:
+      context: ../../..
+      dockerfile: rust/examples/app/Dockerfile
+    container_name: example-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - RUST_LOG=debug
+    command: ["./state-engine-sample"]
+    restart: no
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: example-postgres
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: none
+
+  redis:
+    image: redis:7-alpine
+    container_name: example-redis
+    command: redis-server --save "" --loglevel nothing
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: none

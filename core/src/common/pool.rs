@@ -22,7 +22,7 @@ impl DynamicPool {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::DynamicPool;
+    /// use state_engine_core::common::pool::DynamicPool;
     ///
     /// let mut pool = DynamicPool::new();
     /// let i0 = pool.intern("foo");
@@ -50,7 +50,7 @@ impl DynamicPool {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::DynamicPool;
+    /// use state_engine_core::common::pool::DynamicPool;
     ///
     /// let mut pool = DynamicPool::new();
     /// let i0 = pool.intern("foo");
@@ -87,7 +87,7 @@ impl PathMap {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::PathMap;
+    /// use state_engine_core::common::pool::PathMap;
     ///
     /// let mut map = PathMap::new();
     /// let idx = map.push(vec![1, 2, 3]);
@@ -133,7 +133,7 @@ impl ChildrenMap {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::ChildrenMap;
+    /// use state_engine_core::common::pool::ChildrenMap;
     ///
     /// let mut map = ChildrenMap::new();
     /// let idx = map.push(vec![2, 3, 4]);
@@ -179,7 +179,7 @@ impl KeyList {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::KeyList;
+    /// use state_engine_core::common::pool::KeyList;
     ///
     /// let mut list = KeyList::new();
     /// let idx = list.push(0xDEAD_BEEF_u64);
@@ -236,7 +236,7 @@ impl YamlValueList {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::YamlValueList;
+    /// use state_engine_core::common::pool::YamlValueList;
     ///
     /// let mut list = YamlValueList::new();
     /// let record = [0xABCD_u64, 0x1234_u64];
@@ -315,7 +315,7 @@ impl StateValueList {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY, STATE_OFFSET_VALUE, STATE_MASK_VALUE, state_get};
+    /// use state_engine_core::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY, STATE_OFFSET_VALUE, STATE_MASK_VALUE, state_get};
     /// use serde_json::json;
     ///
     /// let mut list = StateValueList::new();

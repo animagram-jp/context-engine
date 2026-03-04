@@ -14,9 +14,9 @@ pub struct ParsedManifest {
 /// # Examples
 ///
 /// ```
-/// use state_engine::common::parser::parse;
-/// use state_engine::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
-/// use state_engine::common::bit;
+/// use state_engine_core::common::parser::parse;
+/// use state_engine_core::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
+/// use state_engine_core::common::bit;
 ///
 /// let yaml = "
 /// user:

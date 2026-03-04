@@ -1,10 +1,3 @@
-/// state-engine Integration Test Runner
-///
-/// Runs integration tests against real Db/KVS/Env backends.
-/// Requires docker compose services (postgres, redis) to be running.
-///
-/// Usage: cargo run --bin state-engine-test
-
 mod adapters;
 
 use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DbAdapter};
@@ -110,7 +103,6 @@ fn run_tests() -> (usize, usize) {
         let mut db = DbAdapter::new();
         let mut iml = InMemoryAdapter::new();
         let mut ims = InMemoryAdapter::new();
-        // session.sso_user_id needed for KVS key resolution (both load and store side)
         iml.set("request-attributes-user-key", serde_json::json!(1));
         ims.set("request-attributes-user-key", serde_json::json!(1));
         let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
@@ -154,8 +146,6 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("cache.user.tenant_id resolved via State client from org_id", {
-        // tenant_id._load.client = State, key = ${org_id}
-        // org_id をsetすると tenant_id は org_id の値から解決される
         let env = EnvAdapter::new();
         let mut kl = KVSAdapter::new().unwrap();
         let mut ks = KVSAdapter::new().unwrap();
@@ -166,11 +156,9 @@ fn run_tests() -> (usize, usize) {
         ims.set("request-attributes-user-key", serde_json::json!(1));
         let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
 
-        // org_id をsetしておく（tenant_id解決の元になる）
         let ttl = Some(14400);
         assert!(state.set("cache.user.org_id", serde_json::json!(100), ttl).unwrap());
 
-        // tenant_id は State client経由で org_id の値(100)を返す
         let got = state.get("cache.user.tenant_id").unwrap();
         assert_eq!(got, Some(serde_json::json!(100)));
     });
@@ -197,7 +185,6 @@ fn run_tests() -> (usize, usize) {
     println!("\n[cache.user DB load]");
 
     test!("get cache.user loads from DB via _load", {
-        // 解決順: sso_user_id → org_id → tenant_id(State) → connection.tenant → cache.user(DB)
         let env = EnvAdapter::new();
         let mut kl = KVSAdapter::new().unwrap();
         let mut ks = KVSAdapter::new().unwrap();
@@ -211,19 +198,13 @@ fn run_tests() -> (usize, usize) {
         let db_username = std::env::var("DB_USERNAME").unwrap_or("state_user".into());
         let db_password = std::env::var("DB_PASSWORD").unwrap_or("state_pass".into());
 
-        // 1. sso_user_id=1 をセット（KVSキー解決に必要）
         iml.set("request-attributes-user-key", serde_json::json!(1));
         ims.set("request-attributes-user-key", serde_json::json!(1));
 
         let mut state = make_state(&env, &mut kl, &mut ks, &mut db, &mut iml, &mut ims);
 
-        // 2. org_id をセット（tenant_id の State client解決元）
         state.set("cache.user.org_id", serde_json::json!(100), Some(14400)).unwrap();
 
-        // 3. connection.tenant をセット（tenant_id=1 に対応）
-        //    tenant_id は org_id(100) から State client経由で解決されるが、
-        //    connection.tenant の _store.key = "connection.tenant${cache.user.tenant_id}" なので
-        //    tenant_id が確定した上で connection.tenant をセットする必要がある
         state.set("cache.user.tenant_id", serde_json::json!(1), Some(14400)).unwrap();
         let tenant_conn = serde_json::json!({
             "tag": "tenant",
@@ -236,8 +217,6 @@ fn run_tests() -> (usize, usize) {
         });
         state.set("connection.tenant", tenant_conn, None).unwrap();
 
-        // 4. cache.user を DB から取得（sso_user_id=1 → users テーブル）
-        // leaf key set で KVS に断片が入っている可能性があるので先に削除
         state.delete("cache.user").ok();
         let result = state.get("cache.user").unwrap();
         assert!(result.is_some(), "cache.user should be loaded from DB");
@@ -252,8 +231,6 @@ fn run_tests() -> (usize, usize) {
     println!("\n[placeholder]");
 
     test!("set cache.user without session.sso_user_id returns Err", {
-        // cache.user._store.key = "user:${session.sso_user_id}"
-        // session.sso_user_id が未セットなので placeholder が解決できず Err になるはず
         let env = EnvAdapter::new();
         let mut kl = KVSAdapter::new().unwrap();
         let mut ks = KVSAdapter::new().unwrap();
@@ -267,7 +244,6 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("get cache.user without session.sso_user_id returns Err", {
-        // store read と load の両方で ${session.sso_user_id} が未解決になる
         let env = EnvAdapter::new();
         let mut kl = KVSAdapter::new().unwrap();
         let mut ks = KVSAdapter::new().unwrap();

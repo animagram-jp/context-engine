@@ -1,7 +1,3 @@
-/// Sample adapters for state-engine
-///
-/// These implementations demonstrate how to implement the Required Ports.
-
 pub mod in_memory;
 pub mod env_client;
 pub mod kvs_client;

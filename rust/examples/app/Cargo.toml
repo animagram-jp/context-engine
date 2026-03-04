@@ -9,9 +9,6 @@ license = "MIT"
 name = "state-engine-sample"
 path = "src/main.rs"
 
-[[bin]]
-name = "state-engine-test"
-path = "src/test_runner.rs"
 
 [dependencies]
 state-engine = { path = "../.." }

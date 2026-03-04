@@ -84,7 +84,7 @@ pub const MASK_CHILD: u64        = 0xFFFF;
 /// # Examples
 ///
 /// ```
-/// use state_engine::common::bit;
+/// use state_engine_core::common::bit;
 ///
 /// let ko = bit::new();
 /// assert_eq!(ko, 0u64);
@@ -139,7 +139,7 @@ pub fn new() -> u64 {
 /// # Examples
 ///
 /// ```
-/// use state_engine::common::bit;
+/// use state_engine_core::common::bit;
 ///
 /// let ko = 0b11u64 << bit::OFFSET_ROOT; // root index at offset 59
 /// assert_eq!(bit::get(ko, bit::OFFSET_ROOT, bit::MASK_ROOT), 0b11);
@@ -154,7 +154,7 @@ pub fn get(ko: u64, offset: u32, mask: u64) -> u64 {
 /// # Examples
 ///
 /// ```
-/// use state_engine::common::bit;
+/// use state_engine_core::common::bit;
 ///
 /// let ko = bit::new();
 ///
