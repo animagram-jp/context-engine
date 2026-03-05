@@ -12,4 +12,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 state-engine-core = { path = "../core" }
-state-engine = { path = "../rust" }
+state-engine = { path = "../crate" }

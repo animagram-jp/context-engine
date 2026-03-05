@@ -2,7 +2,7 @@ services:
   example-app:
     build:
       context: ../../..
-      dockerfile: rust/examples/app/Dockerfile
+      dockerfile: crate/examples/app/Dockerfile
     container_name: example-app
     depends_on:
       postgres:
