@@ -173,39 +173,39 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       README.md
       Architecture.md
       YAML-guide.md
-  src/
-    ports/            # library external interface traits
-      provided.rs     # library provides
-      required.rs     # Library requires
+  core/
+    Cargo.toml
+    src/
+      common/           # library common mod
+        fix_bits.rs
+        pool.rs
+        parser.rs
+        log_format.rs
+  crate/
+    Cargo.toml
+    src/
+      ports/            # library external interface traits
+        provided.rs     # library provides
+        required.rs     # Library requires
+        manifest.rs       # Manifest impl
+        state.rs          # State impl
+        store.rs          # Store internal mod
+        load.rs           # Load internal mod
 
-    common/           # library common mod
-      bit.rs
-      pool.rs
-      parser.rs
-      log_format.rs
-
-    manifest.rs       # Manifest impl
-    state.rs          # State impl
-    store.rs          # Store internal mod
-    load.rs           # Load internal mod
-
-  examples/
-    manifest/         # manifest YAML examples
-      connection.yml  # sample 1
-      cache.yml       # sample 2
-      session.yml     # sample 3
-
-    adapters/
-
-    app/
-      db/
-      src/
-        main.rs
-        adapters.rs
-        test_runner.rs   # inetegration tests 
-      Cargo.toml
-      Dockerfile
-      docker-compose.yml
+    examples/
+      manifest/         # manifest YAML examples
+        connection.yml  # sample 1
+        cache.yml       # sample 2
+        session.yml     # sample 3
+      adapters/
+      app/
+        docker-compose.yml
+        Cargo.toml
+        Dockerfile
+        db/
+        src/
+          main.rs
+          adapters.rs
 ```
 
 ## tests
@@ -219,7 +219,7 @@ cargo test --features=logging -- --nocapture
 
 2. example application test:
 ```bash
-cd examples/app
+cd crate/examples/app
 docker compose up --build
 ```
 

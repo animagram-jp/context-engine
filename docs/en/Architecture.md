@@ -13,7 +13,7 @@
   4. EnvClient
 
 - common modules (internal common modules)
-  1. u64(bit.rs)
+  1. u64(fix_bits.rs)
   2. Pools & Maps(pool.rs)
   3. ParsedManifest(parser.rs)
   4. LogFormat
