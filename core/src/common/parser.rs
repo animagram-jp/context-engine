@@ -1,6 +1,6 @@
 use serde_yaml_ng::Value;
 use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
-use crate::common::bit;
+use crate::common::fixed_bits;
 
 /// Thin record for a single loaded manifest file.
 /// Stores only the key_idx of the file root record in the shared KeyList.
@@ -16,7 +16,7 @@ pub struct ParsedManifest {
 /// ```
 /// use state_engine_core::common::parser::parse;
 /// use state_engine_core::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
-/// use state_engine_core::common::bit;
+/// use state_engine_core::common::fixed_bits;
 ///
 /// let yaml = "
 /// user:
@@ -39,7 +39,7 @@ pub struct ParsedManifest {
 ///
 /// // file root record is at pm.file_key_idx
 /// let root = keys.get(pm.file_key_idx).unwrap();
-/// let dyn_idx = bit::get(root, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+/// let dyn_idx = fixed_bits::get(root, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
 /// assert_eq!(dynamic.get(dyn_idx), Some("cache"));
 /// ```
 pub fn parse(
@@ -60,8 +60,8 @@ pub fn parse(
 
     // filename root record (placeholder, child index filled below)
     let dyn_idx = dynamic.intern(filename);
-    let mut file_record = bit::new();
-    file_record = bit::set(file_record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC, dyn_idx as u64);
+    let mut file_record = fixed_bits::new();
+    file_record = fixed_bits::set(file_record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
     let file_idx = keys.push(file_record);
 
     // traverse top-level keys
@@ -76,11 +76,11 @@ pub fn parse(
     let file_record = keys.get(file_idx).unwrap();
     let file_record = match child_indices.len() {
         0 => file_record,
-        1 => bit::set(file_record, bit::OFFSET_CHILD, bit::MASK_CHILD, child_indices[0] as u64),
+        1 => fixed_bits::set(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
         _ => {
             let children_idx = children_map.push(child_indices);
-            let r = bit::set(file_record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN, 1);
-            bit::set(r, bit::OFFSET_CHILD, bit::MASK_CHILD, children_idx as u64)
+            let r = fixed_bits::set(file_record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
+            fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
         }
     };
     keys.set(file_idx, file_record);
@@ -102,9 +102,9 @@ fn traverse_field_key(
     values: &mut YamlValueList,
 ) -> Result<u16, String> {
     let dyn_idx = dynamic.intern(key_str);
-    let mut record = bit::new();
-    record = bit::set(record, bit::OFFSET_ROOT, bit::MASK_ROOT, bit::ROOT_NULL);
-    record = bit::set(record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC, dyn_idx as u64);
+    let mut record = fixed_bits::new();
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, fixed_bits::ROOT_NULL);
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
 
     let key_idx = keys.push(record);
 
@@ -134,11 +134,11 @@ fn traverse_field_key(
         let record = keys.get(key_idx).unwrap();
         let record = match all_children.len() {
             0 => record,
-            1 => bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, all_children[0] as u64),
+            1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, all_children[0] as u64),
             _ => {
                 let children_idx = children_map.push(all_children);
-                let r = bit::set(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN, 1);
-                bit::set(r, bit::OFFSET_CHILD, bit::MASK_CHILD, children_idx as u64)
+                let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
+                fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
             }
         };
         keys.set(key_idx, record);
@@ -146,8 +146,8 @@ fn traverse_field_key(
         // scalar value → is_leaf
         let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
         let record = keys.get(key_idx).unwrap();
-        let record = bit::set(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF, 1);
-        let record = bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, val_idx as u64);
+        let record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
+        let record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
         keys.set(key_idx, record);
     }
 
@@ -167,14 +167,14 @@ fn traverse_meta_key(
     values: &mut YamlValueList,
 ) -> Result<u16, String> {
     let root_val = match key_str {
-        "_load"  => bit::ROOT_LOAD,
-        "_store" => bit::ROOT_STORE,
-        "_state" => bit::ROOT_STATE,
-        _ => bit::ROOT_NULL,
+        "_load"  => fixed_bits::ROOT_LOAD,
+        "_store" => fixed_bits::ROOT_STORE,
+        "_state" => fixed_bits::ROOT_STATE,
+        _ => fixed_bits::ROOT_NULL,
     };
 
-    let mut record = bit::new();
-    record = bit::set(record, bit::OFFSET_ROOT, bit::MASK_ROOT, root_val);
+    let mut record = fixed_bits::new();
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, root_val);
 
     let key_idx = keys.push(record);
 
@@ -190,11 +190,11 @@ fn traverse_meta_key(
         let record = keys.get(key_idx).unwrap();
         let record = match child_indices.len() {
             0 => record,
-            1 => bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, child_indices[0] as u64),
+            1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
             _ => {
                 let children_idx = children_map.push(child_indices);
-                let r = bit::set(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN, 1);
-                bit::set(r, bit::OFFSET_CHILD, bit::MASK_CHILD, children_idx as u64)
+                let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
+                fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
             }
         };
         keys.set(key_idx, record);
@@ -216,24 +216,24 @@ fn traverse_prop_key(
     values: &mut YamlValueList,
 ) -> Result<u16, String> {
     let (prop_val, client_val) = match key_str {
-        "client"     => (bit::PROP_NULL, parse_client(value)),
-        "type"       => (bit::PROP_TYPE, bit::CLIENT_NULL),
-        "key"        => (bit::PROP_KEY, bit::CLIENT_NULL),
-        "connection" => (bit::PROP_CONNECTION, bit::CLIENT_NULL),
-        "map"        => (bit::PROP_MAP, bit::CLIENT_NULL),
-        "ttl"        => (bit::PROP_TTL, bit::CLIENT_NULL),
-        "table"      => (bit::PROP_TABLE, bit::CLIENT_NULL),
-        "where"      => (bit::PROP_WHERE, bit::CLIENT_NULL),
-        _            => (bit::PROP_NULL, bit::CLIENT_NULL),
+        "client"     => (fixed_bits::PROP_NULL, parse_client(value)),
+        "type"       => (fixed_bits::PROP_TYPE, fixed_bits::CLIENT_NULL),
+        "key"        => (fixed_bits::PROP_KEY, fixed_bits::CLIENT_NULL),
+        "connection" => (fixed_bits::PROP_CONNECTION, fixed_bits::CLIENT_NULL),
+        "map"        => (fixed_bits::PROP_MAP, fixed_bits::CLIENT_NULL),
+        "ttl"        => (fixed_bits::PROP_TTL, fixed_bits::CLIENT_NULL),
+        "table"      => (fixed_bits::PROP_TABLE, fixed_bits::CLIENT_NULL),
+        "where"      => (fixed_bits::PROP_WHERE, fixed_bits::CLIENT_NULL),
+        _            => (fixed_bits::PROP_NULL, fixed_bits::CLIENT_NULL),
     };
 
-    let mut record = bit::new();
-    record = bit::set(record, bit::OFFSET_PROP, bit::MASK_PROP, prop_val);
-    record = bit::set(record, bit::OFFSET_CLIENT, bit::MASK_CLIENT, client_val);
+    let mut record = fixed_bits::new();
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_PROP, fixed_bits::K_MASK_PROP, prop_val);
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT, client_val);
 
     if key_str == "type" {
         let type_val = parse_type(value);
-        record = bit::set(record, bit::OFFSET_TYPE, bit::MASK_TYPE, type_val);
+        record = fixed_bits::set(record, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE, type_val);
     }
 
     let key_idx = keys.push(record);
@@ -249,11 +249,11 @@ fn traverse_prop_key(
             let record = keys.get(key_idx).unwrap();
             let record = match child_indices.len() {
                 0 => record,
-                1 => bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, child_indices[0] as u64),
+                1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
                 _ => {
                     let children_idx = children_map.push(child_indices);
-                    let r = bit::set(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN, 1);
-                    bit::set(r, bit::OFFSET_CHILD, bit::MASK_CHILD, children_idx as u64)
+                    let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
+                    fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
                 }
             };
             keys.set(key_idx, record);
@@ -261,8 +261,8 @@ fn traverse_prop_key(
     } else if key_str != "client" {
         let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
         let record = keys.get(key_idx).unwrap();
-        let record = bit::set(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF, 1);
-        let record = bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, val_idx as u64);
+        let record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
+        let record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
         keys.set(key_idx, record);
     }
 
@@ -286,13 +286,13 @@ fn traverse_map_key(
         .collect();
     let path_idx = path_map.push(seg_indices);
 
-    let mut record = bit::new();
-    record = bit::set(record, bit::OFFSET_IS_PATH, bit::MASK_IS_PATH, 1);
-    record = bit::set(record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC, path_idx as u64);
+    let mut record = fixed_bits::new();
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_PATH, fixed_bits::K_MASK_IS_PATH, 1);
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, path_idx as u64);
 
     let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
-    record = bit::set(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF, 1);
-    record = bit::set(record, bit::OFFSET_CHILD, bit::MASK_CHILD, val_idx as u64);
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
+    record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
 
     Ok(keys.push(record))
 }
@@ -323,16 +323,16 @@ fn build_yaml_value(
     let mut vo = [0u64; 2];
 
     if is_template {
-        vo[0] = bit::set(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE, 1);
+        vo[0] = fixed_bits::set(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE, 1);
     }
 
     const TOKEN_OFFSETS: [(u32, u32); 6] = [
-        (bit::VO_OFFSET_T0_IS_PATH, bit::VO_OFFSET_T0_DYNAMIC),
-        (bit::VO_OFFSET_T1_IS_PATH, bit::VO_OFFSET_T1_DYNAMIC),
-        (bit::VO_OFFSET_T2_IS_PATH, bit::VO_OFFSET_T2_DYNAMIC),
-        (bit::VO_OFFSET_T3_IS_PATH, bit::VO_OFFSET_T3_DYNAMIC),
-        (bit::VO_OFFSET_T4_IS_PATH, bit::VO_OFFSET_T4_DYNAMIC),
-        (bit::VO_OFFSET_T5_IS_PATH, bit::VO_OFFSET_T5_DYNAMIC),
+        (fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_OFFSET_T0_DYNAMIC),
+        (fixed_bits::V_OFFSET_T1_IS_PATH, fixed_bits::V_OFFSET_T1_DYNAMIC),
+        (fixed_bits::V_OFFSET_T2_IS_PATH, fixed_bits::V_OFFSET_T2_DYNAMIC),
+        (fixed_bits::V_OFFSET_T3_IS_PATH, fixed_bits::V_OFFSET_T3_DYNAMIC),
+        (fixed_bits::V_OFFSET_T4_IS_PATH, fixed_bits::V_OFFSET_T4_DYNAMIC),
+        (fixed_bits::V_OFFSET_T5_IS_PATH, fixed_bits::V_OFFSET_T5_DYNAMIC),
     ];
 
     for (i, token) in tokens.iter().enumerate().take(6) {
@@ -348,8 +348,8 @@ fn build_yaml_value(
 
         let word = if i < 3 { 0 } else { 1 };
         let (off_is_path, off_dynamic) = TOKEN_OFFSETS[i];
-        vo[word] = bit::set(vo[word], off_is_path, bit::VO_MASK_IS_PATH, token.is_path as u64);
-        vo[word] = bit::set(vo[word], off_dynamic, bit::VO_MASK_DYNAMIC, dyn_idx as u64);
+        vo[word] = fixed_bits::set(vo[word], off_is_path, fixed_bits::V_MASK_IS_PATH, token.is_path as u64);
+        vo[word] = fixed_bits::set(vo[word], off_dynamic, fixed_bits::V_MASK_DYNAMIC, dyn_idx as u64);
     }
 
     Ok(values.push(vo))
@@ -358,26 +358,26 @@ fn build_yaml_value(
 fn parse_client(value: &Value) -> u64 {
     let s = match value { Value::String(s) => s.as_str(), _ => "" };
     match s {
-        "State"    => bit::CLIENT_STATE,
-        "InMemory" => bit::CLIENT_IN_MEMORY,
-        "Env"      => bit::CLIENT_ENV,
-        "KVS"      => bit::CLIENT_KVS,
-        "Db"       => bit::CLIENT_DB,
-        "API"      => bit::CLIENT_API,
-        "File"     => bit::CLIENT_FILE,
-        _          => bit::CLIENT_NULL,
+        "State"    => fixed_bits::CLIENT_STATE,
+        "InMemory" => fixed_bits::CLIENT_IN_MEMORY,
+        "Env"      => fixed_bits::CLIENT_ENV,
+        "KVS"      => fixed_bits::CLIENT_KVS,
+        "Db"       => fixed_bits::CLIENT_DB,
+        "API"      => fixed_bits::CLIENT_API,
+        "File"     => fixed_bits::CLIENT_FILE,
+        _          => fixed_bits::CLIENT_NULL,
     }
 }
 
 fn parse_type(value: &Value) -> u64 {
     let s = match value { Value::String(s) => s.as_str(), _ => "" };
     match s {
-        "integer"  => bit::TYPE_I64,
-        "string"   => bit::TYPE_UTF8,
-        "float"    => bit::TYPE_F64,
-        "boolean"  => bit::TYPE_BOOLEAN,
-        "datetime" => bit::TYPE_DATETIME,
-        _          => bit::TYPE_NULL,
+        "integer"  => fixed_bits::TYPE_I64,
+        "string"   => fixed_bits::TYPE_UTF8,
+        "float"    => fixed_bits::TYPE_F64,
+        "boolean"  => fixed_bits::TYPE_BOOLEAN,
+        "datetime" => fixed_bits::TYPE_DATETIME,
+        _          => fixed_bits::TYPE_NULL,
     }
 }
 
@@ -452,7 +452,7 @@ fn yaml_str(value: &Value) -> Result<&str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::bit;
+    use crate::common::fixed_bits;
 
     fn make_pools() -> (DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList) {
         (DynamicPool::new(), PathMap::new(), ChildrenMap::new(), KeyList::new(), YamlValueList::new())
@@ -509,9 +509,9 @@ user:
 
         // first child of file record should be a field key (ROOT_NULL)
         let file_record = keys.get(pm.file_key_idx).unwrap();
-        let child_idx = bit::get(file_record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        let child_idx = fixed_bits::get(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
         let record = keys.get(child_idx).unwrap();
-        assert_eq!(bit::get(record, bit::OFFSET_ROOT, bit::MASK_ROOT), bit::ROOT_NULL);
+        assert_eq!(fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), fixed_bits::ROOT_NULL);
     }
 
     #[test]
@@ -523,7 +523,7 @@ user:
         let start = pm.file_key_idx;
         for i in start..start + 20 {
             if let Some(r) = keys.get(i) {
-                if bit::get(r, bit::OFFSET_ROOT, bit::MASK_ROOT) == bit::ROOT_STATE {
+                if fixed_bits::get(r, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) == fixed_bits::ROOT_STATE {
                     found = true;
                     break;
                 }
@@ -541,7 +541,7 @@ user:
         let start = pm.file_key_idx;
         for i in start..start + 20 {
             if let Some(r) = keys.get(i) {
-                if bit::get(r, bit::OFFSET_TYPE, bit::MASK_TYPE) == bit::TYPE_I64 {
+                if fixed_bits::get(r, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE) == fixed_bits::TYPE_I64 {
                     found = true;
                     break;
                 }
@@ -567,7 +567,7 @@ user:
         let mut found = false;
         for i in 1..=30 {
             if let Some(vo) = values.get(i) {
-                if bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1 {
+                if fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1 {
                     found = true;
                     break;
                 }
@@ -634,7 +634,7 @@ user:
         let start = pm.file_key_idx;
         for i in start..start + 30 {
             if let Some(r) = keys.get(i) {
-                if bit::get(r, bit::OFFSET_CLIENT, bit::MASK_CLIENT) == bit::CLIENT_KVS {
+                if fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) == fixed_bits::CLIENT_KVS {
                     found = true;
                     break;
                 }
@@ -655,11 +655,11 @@ user:
 
         // each file root record holds correct dynamic string
         let sess_rec = keys.get(pm_session.file_key_idx).unwrap();
-        let sess_dyn = bit::get(sess_rec, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+        let sess_dyn = fixed_bits::get(sess_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
         assert_eq!(dynamic.get(sess_dyn), Some("session"));
 
         let cache_rec = keys.get(pm_cache.file_key_idx).unwrap();
-        let cache_dyn = bit::get(cache_rec, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+        let cache_dyn = fixed_bits::get(cache_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
         assert_eq!(dynamic.get(cache_dyn), Some("cache"));
     }
 }

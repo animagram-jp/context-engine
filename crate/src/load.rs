@@ -2,7 +2,7 @@ use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
     InMemoryClient,
 };
-use crate::common::bit;
+use crate::common::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -50,10 +50,10 @@ impl<'a> Load<'a> {
             .ok_or("Load::handle: 'client' not found in _load config")?;
 
         match client {
-            bit::CLIENT_ENV       => self.load_from_env(config),
-            bit::CLIENT_IN_MEMORY => self.load_from_in_memory(config),
-            bit::CLIENT_KVS       => self.load_from_kvs(config),
-            bit::CLIENT_DB        => self.load_from_db(config),
+            fixed_bits::CLIENT_ENV       => self.load_from_env(config),
+            fixed_bits::CLIENT_IN_MEMORY => self.load_from_in_memory(config),
+            fixed_bits::CLIENT_KVS       => self.load_from_kvs(config),
+            fixed_bits::CLIENT_DB        => self.load_from_db(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -226,7 +226,7 @@ mod tests {
         let load = Load::new().with_env_client(&env_client);
 
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(bit::CLIENT_ENV.into()));
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_ENV.into()));
 
         let mut map = serde_json::Map::new();
         map.insert("host".to_string(), Value::String("Db_HOST".to_string()));

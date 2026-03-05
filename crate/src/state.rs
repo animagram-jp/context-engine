@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use crate::manifest::Manifest;
 use crate::common::pool::{StateValueList, STATE_OFFSET_KEY, STATE_MASK_KEY};
-use crate::common::bit;
+use crate::common::fixed_bits;
 use crate::store::Store;
 use crate::load::Load;
 use crate::ports::provided::StateError;
@@ -65,9 +65,9 @@ impl<'a> State<'a> {
             Some(v) => v,
             None => return Ok(None),
         };
-        let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
-        let is_path = bit::get(vo[0], bit::VO_OFFSET_T0_IS_PATH, bit::VO_MASK_IS_PATH) == 1;
-        let dyn_idx = bit::get(vo[0], bit::VO_OFFSET_T0_DYNAMIC, bit::VO_MASK_DYNAMIC) as u16;
+        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
+        let is_path = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_MASK_IS_PATH) == 1;
+        let dyn_idx = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
 
         if is_path && dyn_idx != 0 && !is_template {
             let path_segments = match self.manifest.path_map.get(dyn_idx) {
@@ -92,23 +92,23 @@ impl<'a> State<'a> {
             None => return Ok(None),
         };
 
-        let is_template = bit::get(vo[0], bit::VO_OFFSET_IS_TEMPLATE, bit::VO_MASK_IS_TEMPLATE) == 1;
+        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
 
         const TOKEN_OFFSETS: [(u32, u32); 6] = [
-            (bit::VO_OFFSET_T0_IS_PATH, bit::VO_OFFSET_T0_DYNAMIC),
-            (bit::VO_OFFSET_T1_IS_PATH, bit::VO_OFFSET_T1_DYNAMIC),
-            (bit::VO_OFFSET_T2_IS_PATH, bit::VO_OFFSET_T2_DYNAMIC),
-            (bit::VO_OFFSET_T3_IS_PATH, bit::VO_OFFSET_T3_DYNAMIC),
-            (bit::VO_OFFSET_T4_IS_PATH, bit::VO_OFFSET_T4_DYNAMIC),
-            (bit::VO_OFFSET_T5_IS_PATH, bit::VO_OFFSET_T5_DYNAMIC),
+            (fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_OFFSET_T0_DYNAMIC),
+            (fixed_bits::V_OFFSET_T1_IS_PATH, fixed_bits::V_OFFSET_T1_DYNAMIC),
+            (fixed_bits::V_OFFSET_T2_IS_PATH, fixed_bits::V_OFFSET_T2_DYNAMIC),
+            (fixed_bits::V_OFFSET_T3_IS_PATH, fixed_bits::V_OFFSET_T3_DYNAMIC),
+            (fixed_bits::V_OFFSET_T4_IS_PATH, fixed_bits::V_OFFSET_T4_DYNAMIC),
+            (fixed_bits::V_OFFSET_T5_IS_PATH, fixed_bits::V_OFFSET_T5_DYNAMIC),
         ];
 
         let mut result = String::new();
 
         for (i, (off_is_path, off_dynamic)) in TOKEN_OFFSETS.iter().enumerate() {
             let word = if i < 3 { 0 } else { 1 };
-            let is_path = bit::get(vo[word], *off_is_path, bit::VO_MASK_IS_PATH) == 1;
-            let dyn_idx = bit::get(vo[word], *off_dynamic, bit::VO_MASK_DYNAMIC) as u16;
+            let is_path = fixed_bits::get(vo[word], *off_is_path, fixed_bits::V_MASK_IS_PATH) == 1;
+            let dyn_idx = fixed_bits::get(vo[word], *off_dynamic, fixed_bits::V_MASK_DYNAMIC) as u16;
 
             if dyn_idx == 0 {
                 break;
@@ -160,9 +160,9 @@ impl<'a> State<'a> {
             Some(r) => r,
             None => return Ok(None),
         };
-        let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
         if child_idx == 0 { return Ok(None); }
-        let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
+        let has_children = fixed_bits::get(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN);
         let children = if has_children == 1 {
             match self.manifest.children_map.get(child_idx) {
                 Some(c) => c.to_vec(),
@@ -179,11 +179,11 @@ impl<'a> State<'a> {
                 Some(r) => r,
                 None => continue,
             };
-            let prop   = bit::get(record, bit::OFFSET_PROP,   bit::MASK_PROP)   as u8;
-            let client = bit::get(record, bit::OFFSET_CLIENT, bit::MASK_CLIENT) as u8;
-            let is_leaf = bit::get(record, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF) == 1;
+            let prop   = fixed_bits::get(record, fixed_bits::K_OFFSET_PROP,   fixed_bits::K_MASK_PROP)   as u8;
+            let client = fixed_bits::get(record, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) as u8;
+            let is_leaf = fixed_bits::get(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF) == 1;
             let value_idx = if is_leaf {
-                bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16
+                fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16
             } else { 0 };
 
             if client != 0 {
@@ -192,12 +192,12 @@ impl<'a> State<'a> {
             }
 
             let prop_name = match prop as u64 {
-                bit::PROP_KEY        => "key",
-                bit::PROP_CONNECTION => "connection",
-                bit::PROP_MAP        => "map",
-                bit::PROP_TTL        => "ttl",
-                bit::PROP_TABLE      => "table",
-                bit::PROP_WHERE      => "where",
+                fixed_bits::PROP_KEY        => "key",
+                fixed_bits::PROP_CONNECTION => "connection",
+                fixed_bits::PROP_MAP        => "map",
+                fixed_bits::PROP_TTL        => "ttl",
+                fixed_bits::PROP_TABLE      => "table",
+                fixed_bits::PROP_WHERE      => "where",
                 _ => continue,
             };
 
@@ -224,10 +224,10 @@ impl<'a> State<'a> {
     /// Builds a map config object from a map prop record's children.
     fn build_map_config(&self, map_idx: u16) -> Option<Value> {
         let record = self.manifest.keys.get(map_idx)?;
-        let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
         if child_idx == 0 { return Some(Value::Object(serde_json::Map::new())); }
 
-        let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
+        let has_children = fixed_bits::get(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN);
         let children = if has_children == 1 {
             self.manifest.children_map.get(child_idx)?.to_vec()
         } else {
@@ -237,9 +237,9 @@ impl<'a> State<'a> {
         let mut map = serde_json::Map::new();
         for &c in &children {
             let child = self.manifest.keys.get(c)?;
-            let dyn_idx   = bit::get(child, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
-            let value_idx = bit::get(child, bit::OFFSET_CHILD,   bit::MASK_CHILD)   as u16;
-            let is_path   = bit::get(child, bit::OFFSET_IS_PATH, bit::MASK_IS_PATH) == 1;
+            let dyn_idx   = fixed_bits::get(child, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
+            let value_idx = fixed_bits::get(child, fixed_bits::K_OFFSET_CHILD,   fixed_bits::K_MASK_CHILD)   as u16;
+            let is_path   = fixed_bits::get(child, fixed_bits::K_OFFSET_IS_PATH, fixed_bits::K_MASK_IS_PATH) == 1;
 
             let key_str = if is_path {
                 let segs = self.manifest.path_map.get(dyn_idx)?;
@@ -252,7 +252,7 @@ impl<'a> State<'a> {
             };
 
             let val_vo = self.manifest.values.get(value_idx)?;
-            let col_dyn = bit::get(val_vo[0], bit::VO_OFFSET_T0_DYNAMIC, bit::VO_MASK_DYNAMIC) as u16;
+            let col_dyn = fixed_bits::get(val_vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
             let col_str = self.manifest.dynamic.get(col_dyn)?.to_string();
 
             map.insert(key_str, Value::String(col_str));
@@ -339,7 +339,7 @@ impl<'a> State<'a> {
         // check if _load client is State (load-only, no store read)
         let has_state_client = meta.load.and_then(|load_idx| {
             self.manifest.keys.get(load_idx)
-                .map(|r| bit::get(r, bit::OFFSET_CLIENT, bit::MASK_CLIENT) == bit::CLIENT_STATE)
+                .map(|r| fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) == fixed_bits::CLIENT_STATE)
         }).unwrap_or(false);
 
         if !has_state_client {

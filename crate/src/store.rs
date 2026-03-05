@@ -1,5 +1,5 @@
 use crate::ports::required::{InMemoryClient, KVSClient};
-use crate::common::bit;
+use crate::common::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -31,12 +31,12 @@ impl<'a> Store<'a> {
         let client = store_config.get("client")?.as_u64()?;
 
         match client {
-            bit::CLIENT_IN_MEMORY => {
+            fixed_bits::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
                 in_memory.get(key)
             }
-            bit::CLIENT_KVS => {
+            fixed_bits::CLIENT_KVS => {
                 let kvs_client = self.kvs_client.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
                 let value_str = kvs_client.get(key)?;
@@ -61,7 +61,7 @@ impl<'a> Store<'a> {
             .ok_or_else(|| "Store::set: 'client' not found in store config".to_string())?;
 
         match client {
-            bit::CLIENT_IN_MEMORY => {
+            fixed_bits::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_mut()
                     .ok_or_else(|| "Store::set: InMemoryClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
@@ -69,7 +69,7 @@ impl<'a> Store<'a> {
                 in_memory.set(key, value);
                 Ok(true)
             }
-            bit::CLIENT_KVS => {
+            fixed_bits::CLIENT_KVS => {
                 let kvs_client = self.kvs_client.as_mut()
                     .ok_or_else(|| "Store::set: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
@@ -91,14 +91,14 @@ impl<'a> Store<'a> {
             .ok_or_else(|| "Store::delete: 'client' not found in store config".to_string())?;
 
         match client {
-            bit::CLIENT_IN_MEMORY => {
+            fixed_bits::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_mut()
                     .ok_or_else(|| "Store::delete: InMemoryClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
                 Ok(in_memory.delete(key))
             }
-            bit::CLIENT_KVS => {
+            fixed_bits::CLIENT_KVS => {
                 let kvs_client = self.kvs_client.as_mut()
                     .ok_or_else(|| "Store::delete: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())

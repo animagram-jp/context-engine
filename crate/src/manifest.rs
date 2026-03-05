@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use crate::common::parser::{ParsedManifest, parse};
 use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
-use crate::common::bit;
+use crate::common::fixed_bits;
 use crate::ports::provided::ManifestError;
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).
@@ -167,11 +167,11 @@ impl Manifest {
             let record = self.keys.get(idx)?;
 
             // skip meta keys
-            if bit::get(record, bit::OFFSET_ROOT, bit::MASK_ROOT) != bit::ROOT_NULL {
+            if fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) != fixed_bits::ROOT_NULL {
                 continue;
             }
 
-            let dyn_idx = bit::get(record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+            let dyn_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
             if self.dynamic.get(dyn_idx)? != target {
                 continue;
             }
@@ -192,11 +192,11 @@ impl Manifest {
 
     /// Returns the direct field-key children indices of a record.
     fn children_of(&self, record: u64) -> Vec<u16> {
-        let child_idx = bit::get(record, bit::OFFSET_CHILD, bit::MASK_CHILD) as u16;
+        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
         if child_idx == 0 {
             return vec![];
         }
-        let has_children = bit::get(record, bit::OFFSET_HAS_CHILDREN, bit::MASK_HAS_CHILDREN);
+        let has_children = fixed_bits::get(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN);
         if has_children == 1 {
             self.children_map.get(child_idx)
                 .map(|s| s.to_vec())
@@ -257,10 +257,10 @@ impl Manifest {
                     Some(r) => r,
                     None => continue,
                 };
-                if bit::get(record, bit::OFFSET_ROOT, bit::MASK_ROOT) != bit::ROOT_NULL {
+                if fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) != fixed_bits::ROOT_NULL {
                     continue;
                 }
-                let dyn_idx = bit::get(record, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
+                let dyn_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
                 if self.dynamic.get(dyn_idx) == Some(segment) {
                     self.collect_meta(record, &mut meta);
                     found_idx = Some(idx);
@@ -287,11 +287,11 @@ impl Manifest {
                 Some(r) => r,
                 None => continue,
             };
-            let root = bit::get(child, bit::OFFSET_ROOT, bit::MASK_ROOT);
+            let root = fixed_bits::get(child, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT);
             match root {
-                bit::ROOT_LOAD  => meta.load  = Some(idx),
-                bit::ROOT_STORE => meta.store = Some(idx),
-                bit::ROOT_STATE => meta.state = Some(idx),
+                fixed_bits::ROOT_LOAD  => meta.load  = Some(idx),
+                fixed_bits::ROOT_STORE => meta.store = Some(idx),
+                fixed_bits::ROOT_STATE => meta.state = Some(idx),
                 _ => {}
             }
         }
@@ -332,15 +332,15 @@ impl Manifest {
                 None => continue,
             };
             // skip meta keys
-            if bit::get(child, bit::OFFSET_ROOT, bit::MASK_ROOT) != bit::ROOT_NULL {
+            if fixed_bits::get(child, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) != fixed_bits::ROOT_NULL {
                 continue;
             }
             // only leaf nodes with a value
-            if bit::get(child, bit::OFFSET_IS_LEAF, bit::MASK_IS_LEAF) == 0 {
+            if fixed_bits::get(child, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF) == 0 {
                 continue;
             }
-            let dyn_idx   = bit::get(child, bit::OFFSET_DYNAMIC, bit::MASK_DYNAMIC) as u16;
-            let value_idx = bit::get(child, bit::OFFSET_CHILD,   bit::MASK_CHILD)   as u16;
+            let dyn_idx   = fixed_bits::get(child, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
+            let value_idx = fixed_bits::get(child, fixed_bits::K_OFFSET_CHILD,   fixed_bits::K_MASK_CHILD)   as u16;
             result.push((dyn_idx, value_idx));
         }
 
