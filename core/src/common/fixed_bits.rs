@@ -97,7 +97,7 @@ pub const CLIENT_IN_MEMORY: u64 = 0b0010;
 pub const CLIENT_ENV:       u64 = 0b0011;
 pub const CLIENT_KVS:       u64 = 0b0100;
 pub const CLIENT_DB:        u64 = 0b0101;
-pub const CLIENT_API:       u64 = 0b0110;
+pub const CLIENT_HTTP:       u64 = 0b0110;
 pub const CLIENT_FILE:      u64 = 0b0111;
 
 pub const PROP_NULL:       u64 = 0b0000;

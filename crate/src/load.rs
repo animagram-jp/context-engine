@@ -178,14 +178,14 @@ impl<'a> Load<'a> {
         Ok(Value::Object(result))
     }
 
-    // feature function: load with API Client
+    // feature function: load with HTTP Client
     // fn load_from_api(
     //     &self,
     //     config: &HashMap<String, Value>,
     // ) -> Result<Value, String> {
     //     let api_client = self
     //         .api_client
-    //         .ok_or("Load::load_from_api: APIClient not configured")?;
+    //         .ok_or("Load::load_from_api: HTTPClient not configured")?;
 
     //     let url = config
     //         .get("url")

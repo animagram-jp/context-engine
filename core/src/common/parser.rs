@@ -1,21 +1,28 @@
 use serde_yaml_ng::Value;
-use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
+use crate::common::pool::DynamicPool;
 use crate::common::fixed_bits;
 
 /// Thin record for a single loaded manifest file.
-/// Stores only the key_idx of the file root record in the shared KeyList.
+/// Stores only the key_idx of the file root record in the shared keys vec.
 pub struct ParsedManifest {
     pub file_key_idx: u16,
 }
 
-/// Parses a YAML manifest string, appending into shared pool structures.
+/// Parses a YAML manifest string, appending into caller-owned vecs.
 /// Returns a `ParsedManifest` referencing the file root record's index.
+///
+/// - `keys`: Vec<u64> — fixed-bits key records
+/// - `values`: Vec<[u64; 2]> — fixed-bits value records
+/// - `path_map`: Vec<Vec<u16>> — path segment index sequences
+/// - `children_map`: Vec<Vec<u16>> — multi-child index lists
+///
+/// Index 0 of each vec is reserved as null by the caller.
 ///
 /// # Examples
 ///
 /// ```
 /// use state_engine_core::common::parser::parse;
-/// use state_engine_core::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
+/// use state_engine_core::common::pool::DynamicPool;
 /// use state_engine_core::common::fixed_bits;
 ///
 /// let yaml = "
@@ -30,15 +37,15 @@ pub struct ParsedManifest {
 /// ";
 ///
 /// let mut dynamic = DynamicPool::new();
-/// let mut path_map = PathMap::new();
-/// let mut children_map = ChildrenMap::new();
-/// let mut keys = KeyList::new();
-/// let mut values = YamlValueList::new();
+/// let mut keys: Vec<u64> = vec![0];
+/// let mut values: Vec<[u64; 2]> = vec![[0, 0]];
+/// let mut path_map: Vec<Vec<u16>> = vec![vec![]];
+/// let mut children_map: Vec<Vec<u16>> = vec![vec![]];
 ///
-/// let pm = parse("cache", yaml, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+/// let pm = parse("cache", yaml, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 ///
 /// // file root record is at pm.file_key_idx
-/// let root = keys.get(pm.file_key_idx).unwrap();
+/// let root = keys[pm.file_key_idx as usize];
 /// let dyn_idx = fixed_bits::get(root, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
 /// assert_eq!(dynamic.get(dyn_idx), Some("cache"));
 /// ```
@@ -46,10 +53,10 @@ pub fn parse(
     filename: &str,
     yaml: &str,
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    children_map: &mut ChildrenMap,
-    keys: &mut KeyList,
-    values: &mut YamlValueList,
+    keys: &mut Vec<u64>,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
+    children_map: &mut Vec<Vec<u16>>,
 ) -> Result<ParsedManifest, String> {
     let root: Value = serde_yaml_ng::from_str(yaml)
         .map_err(|e| format!("YAML parse error: {}", e))?;
@@ -62,28 +69,30 @@ pub fn parse(
     let dyn_idx = dynamic.intern(filename);
     let mut file_record = fixed_bits::new();
     file_record = fixed_bits::set(file_record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
-    let file_idx = keys.push(file_record);
+    let file_idx = keys.len() as u16;
+    keys.push(file_record);
 
     // traverse top-level keys
     let mut child_indices: Vec<u16> = Vec::new();
     for (key, value) in &mapping {
         let key_str = yaml_str(key)?;
-        let child_idx = traverse_field_key(key_str, value, filename, &[], dynamic, path_map, children_map, keys, values)?;
+        let child_idx = traverse_field_key(key_str, value, filename, &[], dynamic, keys, values, path_map, children_map)?;
         child_indices.push(child_idx);
     }
 
     // update file record with children
-    let file_record = keys.get(file_idx).unwrap();
+    let file_record = keys[file_idx as usize];
     let file_record = match child_indices.len() {
         0 => file_record,
         1 => fixed_bits::set(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
         _ => {
-            let children_idx = children_map.push(child_indices);
+            let children_idx = children_map.len() as u16;
+            children_map.push(child_indices);
             let r = fixed_bits::set(file_record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
             fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
         }
     };
-    keys.set(file_idx, file_record);
+    keys[file_idx as usize] = file_record;
 
     Ok(ParsedManifest { file_key_idx: file_idx })
 }
@@ -96,17 +105,18 @@ fn traverse_field_key(
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    children_map: &mut ChildrenMap,
-    keys: &mut KeyList,
-    values: &mut YamlValueList,
+    keys: &mut Vec<u64>,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
+    children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let dyn_idx = dynamic.intern(key_str);
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, fixed_bits::ROOT_NULL);
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
 
-    let key_idx = keys.push(record);
+    let key_idx = keys.len() as u16;
+    keys.push(record);
 
     let mut current: Vec<&str> = ancestors.to_vec();
     current.push(key_str);
@@ -118,10 +128,10 @@ fn traverse_field_key(
         for (k, v) in mapping {
             let k_str = yaml_str(k)?;
             if k_str.starts_with('_') {
-                let meta_idx = traverse_meta_key(k_str, v, filename, &current, dynamic, path_map, children_map, keys, values)?;
+                let meta_idx = traverse_meta_key(k_str, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
                 meta_indices.push(meta_idx);
             } else {
-                let child_idx = traverse_field_key(k_str, v, filename, &current, dynamic, path_map, children_map, keys, values)?;
+                let child_idx = traverse_field_key(k_str, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
                 child_indices.push(child_idx);
             }
         }
@@ -131,24 +141,25 @@ fn traverse_field_key(
             .copied()
             .collect();
 
-        let record = keys.get(key_idx).unwrap();
+        let record = keys[key_idx as usize];
         let record = match all_children.len() {
             0 => record,
             1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, all_children[0] as u64),
             _ => {
-                let children_idx = children_map.push(all_children);
+                let children_idx = children_map.len() as u16;
+                children_map.push(all_children);
                 let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
                 fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
             }
         };
-        keys.set(key_idx, record);
+        keys[key_idx as usize] = record;
     } else {
         // scalar value → is_leaf
-        let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
-        let record = keys.get(key_idx).unwrap();
+        let val_idx = build_yaml_value(value, filename, ancestors, dynamic, values, path_map)?;
+        let record = keys[key_idx as usize];
         let record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
         let record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
-        keys.set(key_idx, record);
+        keys[key_idx as usize] = record;
     }
 
     Ok(key_idx)
@@ -161,10 +172,10 @@ fn traverse_meta_key(
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    children_map: &mut ChildrenMap,
-    keys: &mut KeyList,
-    values: &mut YamlValueList,
+    keys: &mut Vec<u64>,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
+    children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let root_val = match key_str {
         "_load"  => fixed_bits::ROOT_LOAD,
@@ -176,28 +187,30 @@ fn traverse_meta_key(
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, root_val);
 
-    let key_idx = keys.push(record);
+    let key_idx = keys.len() as u16;
+    keys.push(record);
 
     if let Value::Mapping(mapping) = value {
         let mut child_indices: Vec<u16> = Vec::new();
 
         for (k, v) in mapping {
             let k_str = yaml_str(k)?;
-            let child_idx = traverse_prop_key(k_str, v, filename, ancestors, dynamic, path_map, children_map, keys, values)?;
+            let child_idx = traverse_prop_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
             child_indices.push(child_idx);
         }
 
-        let record = keys.get(key_idx).unwrap();
+        let record = keys[key_idx as usize];
         let record = match child_indices.len() {
             0 => record,
             1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
             _ => {
-                let children_idx = children_map.push(child_indices);
+                let children_idx = children_map.len() as u16;
+                children_map.push(child_indices);
                 let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
                 fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
             }
         };
-        keys.set(key_idx, record);
+        keys[key_idx as usize] = record;
     }
 
     Ok(key_idx)
@@ -210,10 +223,10 @@ fn traverse_prop_key(
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    children_map: &mut ChildrenMap,
-    keys: &mut KeyList,
-    values: &mut YamlValueList,
+    keys: &mut Vec<u64>,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
+    children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let (prop_val, client_val) = match key_str {
         "client"     => (fixed_bits::PROP_NULL, parse_client(value)),
@@ -236,34 +249,36 @@ fn traverse_prop_key(
         record = fixed_bits::set(record, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE, type_val);
     }
 
-    let key_idx = keys.push(record);
+    let key_idx = keys.len() as u16;
+    keys.push(record);
 
     if key_str == "map" {
         if let Value::Mapping(mapping) = value {
             let mut child_indices: Vec<u16> = Vec::new();
             for (k, v) in mapping {
                 let k_str = yaml_str(k)?;
-                let child_idx = traverse_map_key(k_str, v, filename, ancestors, dynamic, path_map, keys, values)?;
+                let child_idx = traverse_map_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map)?;
                 child_indices.push(child_idx);
             }
-            let record = keys.get(key_idx).unwrap();
+            let record = keys[key_idx as usize];
             let record = match child_indices.len() {
                 0 => record,
                 1 => fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, child_indices[0] as u64),
                 _ => {
-                    let children_idx = children_map.push(child_indices);
+                    let children_idx = children_map.len() as u16;
+                    children_map.push(child_indices);
                     let r = fixed_bits::set(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN, 1);
                     fixed_bits::set(r, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, children_idx as u64)
                 }
             };
-            keys.set(key_idx, record);
+            keys[key_idx as usize] = record;
         }
     } else if key_str != "client" {
-        let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
-        let record = keys.get(key_idx).unwrap();
+        let val_idx = build_yaml_value(value, filename, ancestors, dynamic, values, path_map)?;
+        let record = keys[key_idx as usize];
         let record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
         let record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
-        keys.set(key_idx, record);
+        keys[key_idx as usize] = record;
     }
 
     Ok(key_idx)
@@ -276,25 +291,28 @@ fn traverse_map_key(
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    keys: &mut KeyList,
-    values: &mut YamlValueList,
+    keys: &mut Vec<u64>,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let qualified = build_qualified_path(filename, ancestors, key_str);
     let seg_indices: Vec<u16> = qualified.split('.')
         .map(|seg| dynamic.intern(seg))
         .collect();
-    let path_idx = path_map.push(seg_indices);
+    let path_idx = path_map.len() as u16;
+    path_map.push(seg_indices);
 
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_PATH, fixed_bits::K_MASK_IS_PATH, 1);
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, path_idx as u64);
 
-    let val_idx = build_yaml_value(value, filename, ancestors, dynamic, path_map, values)?;
+    let val_idx = build_yaml_value(value, filename, ancestors, dynamic, values, path_map)?;
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD, val_idx as u64);
 
-    Ok(keys.push(record))
+    let key_idx = keys.len() as u16;
+    keys.push(record);
+    Ok(key_idx)
 }
 
 /// Builds a YAML value record ([u64; 2]) from a scalar or template string.
@@ -303,8 +321,8 @@ fn build_yaml_value(
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
-    path_map: &mut PathMap,
-    values: &mut YamlValueList,
+    values: &mut Vec<[u64; 2]>,
+    path_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let s = match value {
         Value::String(s) => s.clone(),
@@ -341,7 +359,9 @@ fn build_yaml_value(
             let seg_indices: Vec<u16> = qualified.split('.')
                 .map(|seg| dynamic.intern(seg))
                 .collect();
-            path_map.push(seg_indices)
+            let path_idx = path_map.len() as u16;
+            path_map.push(seg_indices);
+            path_idx
         } else {
             dynamic.intern(&token.text)
         };
@@ -352,7 +372,9 @@ fn build_yaml_value(
         vo[word] = fixed_bits::set(vo[word], off_dynamic, fixed_bits::V_MASK_DYNAMIC, dyn_idx as u64);
     }
 
-    Ok(values.push(vo))
+    let val_idx = values.len() as u16;
+    values.push(vo);
+    Ok(val_idx)
 }
 
 fn parse_client(value: &Value) -> u64 {
@@ -363,7 +385,7 @@ fn parse_client(value: &Value) -> u64 {
         "Env"      => fixed_bits::CLIENT_ENV,
         "KVS"      => fixed_bits::CLIENT_KVS,
         "Db"       => fixed_bits::CLIENT_DB,
-        "API"      => fixed_bits::CLIENT_API,
+        "HTTP"      => fixed_bits::CLIENT_HTTP,
         "File"     => fixed_bits::CLIENT_FILE,
         _          => fixed_bits::CLIENT_NULL,
     }
@@ -454,8 +476,8 @@ mod tests {
     use super::*;
     use crate::common::fixed_bits;
 
-    fn make_pools() -> (DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList) {
-        (DynamicPool::new(), PathMap::new(), ChildrenMap::new(), KeyList::new(), YamlValueList::new())
+    fn make_vecs() -> (DynamicPool, Vec<u64>, Vec<[u64; 2]>, Vec<Vec<u16>>, Vec<Vec<u16>>) {
+        (DynamicPool::new(), vec![0], vec![[0, 0]], vec![vec![]], vec![vec![]])
     }
 
     const YAML_SESSION: &str = "
@@ -494,35 +516,35 @@ user:
 
     #[test]
     fn test_parse_session_yaml() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let idx = dynamic.intern("sso_user_id");
         assert_ne!(idx, 0);
-        assert!(keys.get(pm.file_key_idx).is_some());
+        assert!(keys.get(pm.file_key_idx as usize).is_some());
     }
 
     #[test]
     fn test_field_key_record_root_is_null() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         // first child of file record should be a field key (ROOT_NULL)
-        let file_record = keys.get(pm.file_key_idx).unwrap();
-        let child_idx = fixed_bits::get(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
-        let record = keys.get(child_idx).unwrap();
+        let file_record = keys[pm.file_key_idx as usize];
+        let child_idx = fixed_bits::get(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
+        let record = keys[child_idx];
         assert_eq!(fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), fixed_bits::ROOT_NULL);
     }
 
     #[test]
     fn test_meta_key_record_root_index() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let mut found = false;
         let start = pm.file_key_idx;
         for i in start..start + 20 {
-            if let Some(r) = keys.get(i) {
+            if let Some(&r) = keys.get(i as usize) {
                 if fixed_bits::get(r, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) == fixed_bits::ROOT_STATE {
                     found = true;
                     break;
@@ -534,13 +556,13 @@ user:
 
     #[test]
     fn test_type_index_integer() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm = parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let mut found = false;
         let start = pm.file_key_idx;
         for i in start..start + 20 {
-            if let Some(r) = keys.get(i) {
+            if let Some(&r) = keys.get(i as usize) {
                 if fixed_bits::get(r, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE) == fixed_bits::TYPE_I64 {
                     found = true;
                     break;
@@ -552,8 +574,8 @@ user:
 
     #[test]
     fn test_static_value_interned() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let idx = dynamic.intern("request-attributes-user-key");
         assert_ne!(idx, 0);
@@ -561,12 +583,12 @@ user:
 
     #[test]
     fn test_template_value_is_template_flag() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        parse("cache", YAML_CACHE, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        parse("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let mut found = false;
         for i in 1..=30 {
-            if let Some(vo) = values.get(i) {
+            if let Some(&vo) = values.get(i as usize) {
                 if fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1 {
                     found = true;
                     break;
@@ -578,8 +600,8 @@ user:
 
     #[test]
     fn test_path_token_stored_in_path_map() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        parse("cache", YAML_CACHE, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        parse("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         assert!(path_map.get(1).is_some(), "path map is empty");
     }
@@ -627,13 +649,13 @@ user:
 
     #[test]
     fn test_client_kvs_record() {
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm = parse("cache", YAML_CACHE, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm = parse("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         let mut found = false;
         let start = pm.file_key_idx;
         for i in start..start + 30 {
-            if let Some(r) = keys.get(i) {
+            if let Some(&r) = keys.get(i as usize) {
                 if fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) == fixed_bits::CLIENT_KVS {
                     found = true;
                     break;
@@ -646,19 +668,19 @@ user:
     #[test]
     fn test_two_files_globally_unique_key_idx() {
         // Both session and cache parsed into the same pools — key_idx must be globally unique
-        let (mut dynamic, mut path_map, mut children_map, mut keys, mut values) = make_pools();
-        let pm_session = parse("session", YAML_SESSION, &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
-        let pm_cache   = parse("cache",   YAML_CACHE,   &mut dynamic, &mut path_map, &mut children_map, &mut keys, &mut values).unwrap();
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let pm_session = parse("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+        let pm_cache   = parse("cache",   YAML_CACHE,   &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
         // file root indices must differ
         assert_ne!(pm_session.file_key_idx, pm_cache.file_key_idx);
 
         // each file root record holds correct dynamic string
-        let sess_rec = keys.get(pm_session.file_key_idx).unwrap();
+        let sess_rec = keys[pm_session.file_key_idx as usize];
         let sess_dyn = fixed_bits::get(sess_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
         assert_eq!(dynamic.get(sess_dyn), Some("session"));
 
-        let cache_rec = keys.get(pm_cache.file_key_idx).unwrap();
+        let cache_rec = keys[pm_cache.file_key_idx as usize];
         let cache_dyn = fixed_bits::get(cache_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
         assert_eq!(dynamic.get(cache_dyn), Some("cache"));
     }

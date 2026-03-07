@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use crate::common::parser::{ParsedManifest, parse};
-use crate::common::pool::{DynamicPool, PathMap, ChildrenMap, KeyList, YamlValueList};
+use crate::common::pool::DynamicPool;
 use crate::common::fixed_bits;
 use crate::ports::provided::ManifestError;
 
@@ -14,8 +14,8 @@ pub struct MetaIndices {
     pub state: Option<u16>,
 }
 
-/// Manages parsed manifest files with all pools shared globally across files.
-/// Each file is parsed on first access and appended to the shared pools.
+/// Manages parsed manifest files with all vecs shared globally across files.
+/// Each file is parsed on first access and appended to the shared vecs.
 ///
 /// # Examples
 ///
@@ -29,12 +29,11 @@ pub struct MetaIndices {
 pub struct Manifest {
     manifest_dir: PathBuf,
     files: HashMap<String, ParsedManifest>,
-    // shared pools across all loaded files
     pub dynamic: DynamicPool,
-    pub path_map: PathMap,
-    pub children_map: ChildrenMap,
-    pub keys: KeyList,
-    pub values: YamlValueList,
+    pub keys: Vec<u64>,
+    pub values: Vec<[u64; 2]>,
+    pub path_map: Vec<Vec<u16>>,
+    pub children_map: Vec<Vec<u16>>,
 }
 
 impl Manifest {
@@ -43,10 +42,10 @@ impl Manifest {
             manifest_dir: PathBuf::from(manifest_dir),
             files: HashMap::new(),
             dynamic: DynamicPool::new(),
-            path_map: PathMap::new(),
-            children_map: ChildrenMap::new(),
-            keys: KeyList::new(),
-            values: YamlValueList::new(),
+            keys: vec![0],
+            values: vec![[0, 0]],
+            path_map: vec![vec![]],
+            children_map: vec![vec![]],
         }
     }
 
@@ -110,10 +109,10 @@ impl Manifest {
             file,
             &content,
             &mut self.dynamic,
-            &mut self.path_map,
-            &mut self.children_map,
             &mut self.keys,
             &mut self.values,
+            &mut self.path_map,
+            &mut self.children_map,
         ).map_err(|e| ManifestError::ParseError(e))?;
 
         self.files.insert(file.to_string(), pm);
@@ -147,7 +146,7 @@ impl Manifest {
     /// ```
     pub fn find(&self, file: &str, path: &str) -> Option<u16> {
         let file_idx = self.files.get(file)?.file_key_idx;
-        let file_record = self.keys.get(file_idx)?;
+        let file_record = self.keys.get(file_idx as usize).copied()?;
 
         if path.is_empty() {
             return Some(file_idx);
@@ -164,7 +163,7 @@ impl Manifest {
         let rest   = &segments[1..];
 
         for &idx in candidates {
-            let record = self.keys.get(idx)?;
+            let record = self.keys.get(idx as usize).copied()?;
 
             // skip meta keys
             if fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) != fixed_bits::ROOT_NULL {
@@ -192,7 +191,7 @@ impl Manifest {
 
     /// Returns the direct field-key children indices of a record.
     fn children_of(&self, record: u64) -> Vec<u16> {
-        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16;
+        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
         if child_idx == 0 {
             return vec![];
         }
@@ -202,7 +201,7 @@ impl Manifest {
                 .map(|s| s.to_vec())
                 .unwrap_or_default()
         } else {
-            vec![child_idx]
+            vec![child_idx as u16]
         }
     }
 
@@ -232,7 +231,7 @@ impl Manifest {
             None => return MetaIndices::default(),
         };
 
-        let file_record = match self.keys.get(file_idx) {
+        let file_record = match self.keys.get(file_idx as usize).copied() {
             Some(r) => r,
             None => return MetaIndices::default(),
         };
@@ -253,7 +252,7 @@ impl Manifest {
         for segment in &segments {
             let mut found_idx = None;
             for &idx in &candidates {
-                let record = match self.keys.get(idx) {
+                let record = match self.keys.get(idx as usize).copied() {
                     Some(r) => r,
                     None => continue,
                 };
@@ -269,7 +268,7 @@ impl Manifest {
             }
             match found_idx {
                 Some(idx) => {
-                    let record = self.keys.get(idx).unwrap();
+                    let record = self.keys[idx as usize];
                     candidates = self.children_of(record);
                 }
                 None => return MetaIndices::default(),
@@ -283,7 +282,7 @@ impl Manifest {
     fn collect_meta(&self, record: u64, meta: &mut MetaIndices) {
         let children = self.children_of(record);
         for &idx in &children {
-            let child = match self.keys.get(idx) {
+            let child = match self.keys.get(idx as usize).copied() {
                 Some(r) => r,
                 None => continue,
             };
@@ -318,7 +317,7 @@ impl Manifest {
             None => return vec![],
         };
 
-        let record = match self.keys.get(node_idx) {
+        let record = match self.keys.get(node_idx as usize).copied() {
             Some(r) => r,
             None => return vec![],
         };
@@ -327,7 +326,7 @@ impl Manifest {
         let children = self.children_of(record);
 
         for &idx in &children {
-            let child = match self.keys.get(idx) {
+            let child = match self.keys.get(idx as usize).copied() {
                 Some(r) => r,
                 None => continue,
             };
