@@ -10,7 +10,7 @@ resolver = "2"
 
 [workspace.package]
 name = "state-engine"
-version = "0.2.0"
+version = "0.1.4"
 authors = ["Andyou <andyou@animagram.jp>"]
 description = "Declarative state data management system for process"
 edition = "2024"

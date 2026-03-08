@@ -1,6 +1,6 @@
 [package]
 name = "state-engine"
-version = "0.1.4"
+version.workspace = true
 authors.workspace = true
 description.workspace = true
 edition.workspace = true
