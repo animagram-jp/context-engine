@@ -19,7 +19,7 @@ RUN mkdir -p core/src crate/src crate/examples/adapters crate/examples/app/src &
         --manifest-path crate/examples/app/Cargo.toml ; \
     rm -rf core/src crate/src crate/examples/adapters crate/examples/app/src && \
     rm -rf crate/examples/app/target/release/.fingerprint/state-engine-* \
-           crate/examples/app/target/release/.fingerprint/state-engine-core-* \
+           crate/examples/app/target/release/.fingerprint/core-* \
            crate/examples/app/target/release/state-engine-sample \
            crate/examples/app/target/release/deps/state_engine-* \
            crate/examples/app/target/release/deps/state_engine_core-* \

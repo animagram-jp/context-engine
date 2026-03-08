@@ -1,10 +1,10 @@
 [package]
-name = "state-engine"
-version = "0.1.3"
-authors = ["Andyou <qebju@animagram.jp>"]
-edition = "2024"
-license = "MIT"
-description = "Declarative state data management system for a process"
+name.workspace = true
+version.workspace = "0.1.4"
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+license.workspace = true
 
 repository = "https://github.com/animagram-jp/state-engine"
 homepage = "https://github.com/animagram-jp/"
@@ -13,7 +13,7 @@ keywords = ["web", "yaml", "state-management", "declarative", "dsl"]
 categories = ["caching", "data-structures", "web-programming"]
 
 [dependencies]
-state-engine-core = { path = "../core" }
+core = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml_ng = "0.10"

@@ -1,0 +1,16 @@
+{
+  "name": "state-engine",
+  "version": "0.2.0",
+  "description": "Declarative state data management system for process",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir dist"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.14.0"
+  }
+}

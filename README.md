@@ -164,8 +164,9 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 ```
 ./
   README.md           # this file
-  Cargo.toml
-  docs/               # guide documents
+  Cargo.toml          # workspace
+
+  docs/               # guides
     en/
       Architecture.md
       YAML-guide.md
@@ -173,25 +174,14 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       README.md
       Architecture.md
       YAML-guide.md
-  core/
-    Cargo.toml
-    src/
-      common/           # library common mod
-        fix_bits.rs
-        pool.rs
-        parser.rs
-        log_format.rs
-  crate/
-    Cargo.toml
-    src/
-      ports/            # library external interface traits
-        provided.rs     # library provides
-        required.rs     # Library requires
-        manifest.rs       # Manifest impl
-        state.rs          # State impl
-        store.rs          # Store internal mod
-        load.rs           # Load internal mod
 
+  core/                 # pure logic module
+    Cargo.toml
+    src/
+
+  crate/                # for native application
+    Cargo.toml
+    src/
     examples/
       manifest/         # manifest YAML examples
         connection.yml  # sample 1

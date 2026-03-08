@@ -132,7 +132,7 @@ pub fn get(ko: u64, offset: u32, mask: u64) -> u64 {
 /// # Examples
 ///
 /// ```
-/// use state_engine_core::common::fixed_bits;
+/// use state_engine_core::fixed_bits;
 ///
 /// let ko = fixed_bits::new();
 ///

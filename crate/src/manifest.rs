@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use crate::common::parser::{ParsedManifest, parse};
-use crate::common::pool::DynamicPool;
-use crate::common::fixed_bits;
+use crate::parser::{ParsedManifest, parse};
+use crate::pool::DynamicPool;
+use crate::fixed_bits;
 use crate::ports::provided::ManifestError;
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).

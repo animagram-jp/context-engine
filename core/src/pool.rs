@@ -22,7 +22,7 @@ impl DynamicPool {
     /// # Examples
     ///
     /// ```
-    /// use state_engine_core::common::pool::DynamicPool;
+    /// use state_engine_core::pool::DynamicPool;
     ///
     /// let mut pool = DynamicPool::new();
     /// let i0 = pool.intern("foo");
@@ -50,7 +50,7 @@ impl DynamicPool {
     /// # Examples
     ///
     /// ```
-    /// use state_engine_core::common::pool::DynamicPool;
+    /// use state_engine_core::pool::DynamicPool;
     ///
     /// let mut pool = DynamicPool::new();
     /// let i0 = pool.intern("foo");

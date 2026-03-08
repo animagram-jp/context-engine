@@ -1,6 +1,6 @@
 use serde_yaml_ng::Value;
-use crate::common::pool::DynamicPool;
-use crate::common::fixed_bits;
+use crate::pool::DynamicPool;
+use crate::fixed_bits;
 
 /// Thin record for a single loaded manifest file.
 /// Stores only the key_idx of the file root record in the shared keys vec.
@@ -21,9 +21,9 @@ pub struct ParsedManifest {
 /// # Examples
 ///
 /// ```
-/// use state_engine_core::common::parser::parse;
-/// use state_engine_core::common::pool::DynamicPool;
-/// use state_engine_core::common::fixed_bits;
+/// use state_engine_core::parser::parse;
+/// use state_engine_core::pool::DynamicPool;
+/// use state_engine_core::fixed_bits;
 ///
 /// let yaml = "
 /// user:
@@ -474,7 +474,7 @@ fn yaml_str(value: &Value) -> Result<&str, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::fixed_bits;
+    use crate::fixed_bits;
 
     fn make_vecs() -> (DynamicPool, Vec<u64>, Vec<[u64; 2]>, Vec<Vec<u16>>, Vec<Vec<u16>>) {
         (DynamicPool::new(), vec![0], vec![[0, 0]], vec![vec![]], vec![vec![]])
