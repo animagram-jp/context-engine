@@ -2,7 +2,7 @@ use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
     InMemoryClient,
 };
-use crate::fixed_bits;
+use core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
 

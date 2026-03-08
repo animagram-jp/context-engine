@@ -21,9 +21,9 @@ pub struct ParsedManifest {
 /// # Examples
 ///
 /// ```
-/// use state_engine_core::parser::parse;
-/// use state_engine_core::pool::DynamicPool;
-/// use state_engine_core::fixed_bits;
+/// use core::parser::parse;
+/// use core::pool::DynamicPool;
+/// use core::fixed_bits;
 ///
 /// let yaml = "
 /// user:

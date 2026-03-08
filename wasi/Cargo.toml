@@ -1,5 +1,5 @@
 [package]
-name.workspace = true
+name = "wasi-binding"
 version.workspace = true
 authors.workspace = true
 description.workspace = true

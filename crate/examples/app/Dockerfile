@@ -22,7 +22,7 @@ RUN mkdir -p core/src crate/src crate/examples/adapters crate/examples/app/src &
            crate/examples/app/target/release/.fingerprint/core-* \
            crate/examples/app/target/release/state-engine-sample \
            crate/examples/app/target/release/deps/state_engine-* \
-           crate/examples/app/target/release/deps/state_engine_core-* \
+           crate/examples/app/target/release/deps/core-* \
            crate/examples/app/target/release/deps/state_engine_sample-*
 
 COPY core/ ./core/

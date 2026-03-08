@@ -2,7 +2,7 @@ use serde_json::Value;
 
 /// # Examples
 /// ```
-/// use state_engine::log_format::LogFormat;
+/// use state_engine::common::LogFormat;
 ///
 /// let fn_message = LogFormat::call("State", "get", &["'key'".to_string()]);
 /// assert_eq!(fn_message, "State::get('key')");
@@ -20,7 +20,7 @@ impl LogFormat {
     ///
     /// # Examples
     /// ```
-    /// use state_engine::log_format::LogFormat;
+    /// use state_engine::common::LogFormat;
     /// use serde_json::json;
     ///
     /// assert_eq!(LogFormat::format_arg(&json!("text")), "'text'");
@@ -64,7 +64,7 @@ impl LogFormat {
     ///
     /// # Examples
     /// ```
-    /// use state_engine::log_format::LogFormat;
+    /// use state_engine::common::LogFormat;
     ///
     /// assert_eq!(LogFormat::format_str_arg("key"), "'key'");
     /// ```
@@ -93,10 +93,10 @@ macro_rules! fn_log {
         {
             let args: Vec<String> = vec![
                 $(
-                    $crate::log_format::LogFormat::format_str_arg($arg),
+                    $crate::common::LogFormat::format_str_arg($arg),
                 )*
             ];
-            log::debug!("{}", $crate::log_format::LogFormat::call($class, $fun, &args));
+            log::debug!("{}", $crate::common::LogFormat::call($class, $fun, &args));
         }
     }};
 }
