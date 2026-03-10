@@ -1,0 +1,6 @@
+tenants:
+  connection: "common"
+users:
+  connection: "tenant"
+maintainers:
+  connection: "common"

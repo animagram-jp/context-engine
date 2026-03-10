@@ -1,0 +1,9 @@
+user_key:
+  _state:
+    type: integer
+  _store:
+    client: InMemory
+    key: "request-attributes-user-key"
+  _load:
+    client: InMemory
+    key: "request-header-user-key"

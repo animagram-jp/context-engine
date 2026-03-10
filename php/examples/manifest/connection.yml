@@ -1,0 +1,76 @@
+common:
+  _store:
+    client: InMemory
+    key: "connection.common"
+  _load:
+    client: Env
+    map:
+      host: "DB_COMMON_HOST"
+      port: "DB_COMMON_PORT"
+      database: "DB_COMMON_DATABASE"
+      username: "DB_COMMON_USERNAME"
+      password: "DB_COMMON_PASSWORD"
+
+  tag: "common"
+  driver: "mysql"
+  host:
+    _state:
+      type: string
+  port:
+    _state:
+      type: integer
+  database:
+    _state:
+      type: string
+  username:
+    _state:
+      type: string
+  password:
+    _state:
+      type: string
+  charset: "utf8mb4"
+  collation: "utf8mb4_ja_0900_as_cs"
+  prefix: ""
+  strict: true
+  engine: null
+
+
+tenant:
+  _store:
+    client: InMemory
+    key: "connection.tenant${cache.user.tenant_id}"
+  _load:
+    client: DB
+    connection: ${connection.common}
+    table: "tenants"
+    where: "id=${cache.user.tenant_id}"
+    map:
+      id: "id"
+      host: "db_host"
+      username: "db_user"
+      password: "db_password"
+      database: "db_name"
+
+  tag: "tenant"
+  id:
+    _state:
+      type: integer
+  driver: "mysql"
+  host:
+    _state:
+      type: string
+  port: 3306
+  database:
+    _state:
+      type: string
+  username:
+    _state:
+      type: string
+  password:
+    _state:
+      type: string
+  charset: "utf8mb4"
+  collation: "utf8mb4_ja_0900_as_cs"
+  prefix: ""
+  strict: true
+  engine: null

@@ -1,0 +1,60 @@
+app:
+  _store:
+    client: KVS
+    key: "app"
+    ttl: null
+
+user:
+  _store:
+    client: KVS
+    key: "user:${request-attributes-user-key}"
+    ttl: 14400
+  _load:
+    client: DB
+    connection: ${connection.tenant}
+    table: "users"
+    where: "user_key=${request-attributes-user-key}"
+    map:
+      id: "id"
+      is_admin: "is_admin"
+
+  org_id:
+    _state:
+      type: integer
+  tenant_id:
+    _state:
+      type: integer
+    _load:
+      client: State
+      key: ${org_id}
+
+  id:
+    _state:
+      type: integer
+  is_admin:
+    _state:
+      type: boolean
+
+tenant:
+  _store:
+    client: KVS
+    key: "tenant:${cache.user.tenant_id}"
+    ttl: null
+  _load:
+    client: DB
+    connection: ${connection.common}
+    table: "tenants"
+    where: "id=${cache.user.tenant_id}"
+    map:
+      name: "tenant名"
+      email: "メールアドレス"
+
+  name:
+    _state:
+      type: string
+  email:
+    _state:
+      type: string
+  subscribed:
+    _state:
+      type: boolean
