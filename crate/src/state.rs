@@ -19,23 +19,22 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
-    /// Creates a new State with the given manifest directory and load handler.
+    /// Creates a new State with the given manifest directory.
     ///
     /// # Examples
     ///
     /// ```
     /// use state_engine::State;
-    /// use state_engine::load::Load;
     ///
-    /// let state = State::new("./examples/manifest", Load::new());
+    /// let state = State::new("./examples/manifest");
     /// ```
-    pub fn new(manifest_dir: &str, load: Load<'a>) -> Self {
+    pub fn new(manifest_dir: &str) -> Self {
         Self {
             manifest: Manifest::new(manifest_dir),
             state_keys: vec![0],
             state_vals: vec![Value::Null],
             store: Store::new(),
-            load,
+            load: Load::new(),
             max_recursion: 20,
             called_keys: HashSet::new(),
         }
@@ -43,11 +42,23 @@ impl<'a> State<'a> {
 
     pub fn with_in_memory(mut self, client: &'a dyn crate::ports::required::InMemoryClient) -> Self {
         self.store = self.store.with_in_memory(client);
+        self.load = self.load.with_in_memory(client);
         self
     }
 
-    pub fn with_kvs_client(mut self, client: &'a dyn crate::ports::required::KVSClient) -> Self {
-        self.store = self.store.with_kvs_client(client);
+    pub fn with_kvs(mut self, client: &'a dyn crate::ports::required::KVSClient) -> Self {
+        self.store = self.store.with_kvs(client);
+        self.load = self.load.with_kvs(client);
+        self
+    }
+
+    pub fn with_db(mut self, client: &'a dyn crate::ports::required::DbClient) -> Self {
+        self.load = self.load.with_db(client);
+        self
+    }
+
+    pub fn with_env(mut self, client: &'a dyn crate::ports::required::EnvClient) -> Self {
+        self.load = self.load.with_env(client);
         self
     }
 
@@ -275,7 +286,6 @@ impl<'a> State<'a> {
     ///
     /// ```
     /// use state_engine::State;
-    /// use state_engine::load::Load;
     /// use state_engine::InMemoryClient;
     /// use serde_json::{json, Value};
     ///
@@ -288,7 +298,7 @@ impl<'a> State<'a> {
     /// }
     ///
     /// let client = MockInMemory::new();
-    /// let mut state = State::new("./examples/manifest", Load::new())
+    /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(&client);
     ///
     /// // set then get
@@ -419,7 +429,6 @@ impl<'a> State<'a> {
     ///
     /// ```
     /// # use state_engine::State;
-    /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
@@ -430,7 +439,7 @@ impl<'a> State<'a> {
     /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
     /// let client = MockInMemory::new();
-    /// let mut state = State::new("./examples/manifest", Load::new())
+    /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(&client);
     ///
     /// assert!(state.set("connection.common", json!({"host": "localhost"}), None).unwrap());
@@ -482,7 +491,6 @@ impl<'a> State<'a> {
     ///
     /// ```
     /// # use state_engine::State;
-    /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
@@ -493,7 +501,7 @@ impl<'a> State<'a> {
     /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
     /// let client = MockInMemory::new();
-    /// let mut state = State::new("./examples/manifest", Load::new())
+    /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(&client);
     ///
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
@@ -547,7 +555,6 @@ impl<'a> State<'a> {
     ///
     /// ```
     /// # use state_engine::State;
-    /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
@@ -558,7 +565,7 @@ impl<'a> State<'a> {
     /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
     /// let client = MockInMemory::new();
-    /// let mut state = State::new("./examples/manifest", Load::new())
+    /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(&client);
     ///
     /// assert!(!state.exists("connection.common").unwrap());

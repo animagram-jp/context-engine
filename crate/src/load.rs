@@ -7,29 +7,29 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub struct Load<'a> {
-    db_client: Option<&'a dyn DbClient>,
-    kvs_client: Option<&'a dyn KVSClient>,
+    db: Option<&'a dyn DbClient>,
+    kvs: Option<&'a dyn KVSClient>,
     in_memory: Option<&'a dyn InMemoryClient>,
-    env_client: Option<&'a dyn EnvClient>,
+    env: Option<&'a dyn EnvClient>,
 }
 
 impl<'a> Load<'a> {
     pub fn new() -> Self {
         Self {
-            db_client: None,
-            kvs_client: None,
+            db: None,
+            kvs: None,
             in_memory: None,
-            env_client: None,
+            env: None,
         }
     }
 
-    pub fn with_db_client(mut self, client: &'a dyn DbClient) -> Self {
-        self.db_client = Some(client);
+    pub fn with_db(mut self, client: &'a dyn DbClient) -> Self {
+        self.db = Some(client);
         self
     }
 
-    pub fn with_kvs_client(mut self, client: &'a dyn KVSClient) -> Self {
-        self.kvs_client = Some(client);
+    pub fn with_kvs(mut self, client: &'a dyn KVSClient) -> Self {
+        self.kvs = Some(client);
         self
     }
 
@@ -38,8 +38,8 @@ impl<'a> Load<'a> {
         self
     }
 
-    pub fn with_env_client(mut self, client: &'a dyn EnvClient) -> Self {
-        self.env_client = Some(client);
+    pub fn with_env(mut self, client: &'a dyn EnvClient) -> Self {
+        self.env = Some(client);
         self
     }
 
@@ -62,8 +62,8 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let env_client = self
-            .env_client
+        let env = self
+            .env
             .ok_or("Load::load_from_env: EnvClient not configured")?;
 
         let map = config
@@ -75,7 +75,7 @@ impl<'a> Load<'a> {
 
         for (config_key, env_key_value) in map {
             if let Some(env_key) = env_key_value.as_str() {
-                if let Some(value) = env_client.get(env_key) {
+                if let Some(value) = env.get(env_key) {
                     result.insert(config_key.clone(), Value::String(value));
                 }
             }
@@ -106,8 +106,8 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let kvs_client = self
-            .kvs_client
+        let kvs = self
+            .kvs
             .ok_or("Load::load_from_kvs: KVSClient not configured")?;
 
         let key = config
@@ -115,7 +115,7 @@ impl<'a> Load<'a> {
             .and_then(|v| v.as_str())
             .ok_or("Load::load_from_kvs: 'key' not found")?;
 
-        let value_str = kvs_client
+        let value_str = kvs
             .get(key)
             .ok_or_else(|| format!("Load::load_from_kvs: key '{}' not found", key))?;
 
@@ -127,8 +127,8 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let db_client = self
-            .db_client
+        let db = self
+            .db
             .ok_or("Load::load_from_db: DbClient not configured")?;
 
         let table = config
@@ -156,7 +156,7 @@ impl<'a> Load<'a> {
             return Err("Load::load_from_db: no columns specified in map".to_string());
         }
 
-        let rows = db_client
+        let rows = db
             .get(connection, table, &columns, where_clause)
             .ok_or_else(|| format!("Load::load_from_db: fetch failed for table '{}'", table))?;
 
@@ -177,32 +177,12 @@ impl<'a> Load<'a> {
 
         Ok(Value::Object(result))
     }
+}
 
-    // feature function: load with HTTP Client
-    // fn load_from_api(
-    //     &self,
-    //     config: &HashMap<String, Value>,
-    // ) -> Result<Value, String> {
-    //     let api_client = self
-    //         .api_client
-    //         .ok_or("Load::load_from_api: HTTPClient not configured")?;
-
-    //     let url = config
-    //         .get("url")
-    //         .and_then(|v| v.as_str())
-    //         .ok_or("Load::load_from_api: 'url' not found")?;
-
-    //     // placeholder はすでに resolved_config で解決済み
-
-    //     // headers処理（optional）
-    //     let headers = config.get("headers").and_then(|v| v.as_object()).map(|h| {
-    //         h.iter()
-    //             .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-    //             .collect::<HashMap<String, String>>()
-    //     });
-
-    //     api_client.get(url, headers.as_ref())
-    // }
+impl<'a> Default for Load<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -224,8 +204,8 @@ mod tests {
 
     #[test]
     fn test_load_from_env() {
-        let env_client = MockEnvClient;
-        let load = Load::new().with_env_client(&env_client);
+        let env = MockEnvClient;
+        let load = Load::new().with_env(&env);
 
         let mut config = HashMap::new();
         config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_ENV.into()));
@@ -240,5 +220,4 @@ mod tests {
         assert_eq!(result.get("host"), Some(&Value::String("localhost".to_string())));
         assert_eq!(result.get("port"), Some(&Value::String("5432".to_string())));
     }
-
 }

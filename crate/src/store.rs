@@ -5,14 +5,14 @@ use std::collections::HashMap;
 
 pub struct Store<'a> {
     in_memory: Option<&'a dyn InMemoryClient>,
-    kvs_client: Option<&'a dyn KVSClient>,
+    kvs: Option<&'a dyn KVSClient>,
 }
 
 impl<'a> Store<'a> {
     pub fn new() -> Self {
         Self {
             in_memory: None,
-            kvs_client: None,
+            kvs: None,
         }
     }
 
@@ -21,8 +21,8 @@ impl<'a> Store<'a> {
         self
     }
 
-    pub fn with_kvs_client(mut self, client: &'a dyn KVSClient) -> Self {
-        self.kvs_client = Some(client);
+    pub fn with_kvs(mut self, client: &'a dyn KVSClient) -> Self {
+        self.kvs = Some(client);
         self
     }
 
@@ -36,11 +36,9 @@ impl<'a> Store<'a> {
                 in_memory.get(key)
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs_client = self.kvs_client.as_ref()?;
+                let kvs = self.kvs.as_ref()?;
                 let key = store_config.get("key")?.as_str()?;
-                let value_str = kvs_client.get(key)?;
-
-                // deserialize
+                let value_str = kvs.get(key)?;
                 serde_json::from_str(&value_str).ok()
             }
             _ => None,
@@ -67,14 +65,14 @@ impl<'a> Store<'a> {
                 Ok(in_memory.set(key, value))
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs_client = self.kvs_client.as_ref()
+                let kvs = self.kvs.as_ref()
                     .ok_or_else(|| "Store::set: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
                 let serialized = serde_json::to_string(&value)
                     .map_err(|e| format!("Store::set: JSON serialize error: {}", e))?;
                 let final_ttl = ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
-                Ok(kvs_client.set(key, serialized, final_ttl))
+                Ok(kvs.set(key, serialized, final_ttl))
             }
             _ => Err(format!("Store::set: unsupported client '{}'", client)),
         }
@@ -95,11 +93,11 @@ impl<'a> Store<'a> {
                 Ok(in_memory.delete(key))
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs_client = self.kvs_client.as_ref()
+                let kvs = self.kvs.as_ref()
                     .ok_or_else(|| "Store::delete: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
-                Ok(kvs_client.delete(key))
+                Ok(kvs.delete(key))
             }
             _ => Err(format!("Store::delete: unsupported client '{}'", client)),
         }
