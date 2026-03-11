@@ -602,3 +602,52 @@ impl<'a> State<'a> {
         Ok(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::required::{KVSClient, DbClient, EnvClient, FileClient};
+    use serde_json::Value;
+    use std::collections::HashMap;
+
+    struct StubKVS;
+    impl KVSClient for StubKVS {
+        fn get(&self, _: &str) -> Option<String> { None }
+        fn set(&self, _: &str, _: String, _: Option<u64>) -> bool { false }
+        fn delete(&self, _: &str) -> bool { false }
+    }
+
+    struct StubDb;
+    impl DbClient for StubDb {
+        fn get(&self, _: &Value, _: &str, _: &[&str], _: Option<&str>) -> Option<Vec<HashMap<String, Value>>> { None }
+        fn set(&self, _: &Value, _: &str, _: &HashMap<String, Value>, _: Option<&str>) -> bool { false }
+        fn delete(&self, _: &Value, _: &str, _: Option<&str>) -> bool { false }
+    }
+
+    struct StubEnv;
+    impl EnvClient for StubEnv {
+        fn get(&self, _: &str) -> Option<String> { None }
+        fn set(&self, _: &str, _: String) -> bool { false }
+        fn delete(&self, _: &str) -> bool { false }
+    }
+
+    struct StubFile;
+    impl FileClient for StubFile {
+        fn get(&self, _: &str) -> Option<String> { None }
+        fn set(&self, _: &str, _: String) -> bool { false }
+        fn delete(&self, _: &str) -> bool { false }
+    }
+
+    #[test]
+    fn test_with_clients_build() {
+        let kvs = StubKVS;
+        let db  = StubDb;
+        let env = StubEnv;
+
+        // each builder returns Self without panic — wiring is correct
+        let _ = State::new("./examples/manifest").with_kvs(&kvs);
+        let _ = State::new("./examples/manifest").with_db(&db);
+        let _ = State::new("./examples/manifest").with_env(&env);
+        let _ = State::new("./examples/manifest").with_file(StubFile);
+    }
+}

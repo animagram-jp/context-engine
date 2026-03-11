@@ -129,6 +129,14 @@ mod tests {
     }
 
     #[test]
+    fn test_client_props() {
+        for &(client, props) in CLIENT_PROPS {
+            assert_eq!(client_props(client), props);
+        }
+        assert!(client_props(fixed_bits::CLIENT_NULL).is_empty());
+    }
+
+    #[test]
     fn test_root_codec() {
         for &(name, val) in ROOT_NAMES {
             assert_eq!(root_encode(name), val);

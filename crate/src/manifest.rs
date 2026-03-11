@@ -52,6 +52,28 @@ impl Manifest {
         }
     }
 
+    /// Replaces the default FileClient. Useful for WASI/JS environments without std::fs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use state_engine::{Manifest, FileClient};
+    ///
+    /// struct MockFile;
+    /// impl FileClient for MockFile {
+    ///     fn get(&self, path: &str) -> Option<String> {
+    ///         if path.ends_with("cache.yml") { Some("user:\n  id:\n    _state:\n      type: string\n".into()) }
+    ///         else { None }
+    ///     }
+    ///     fn set(&self, _: &str, _: String) -> bool { false }
+    ///     fn delete(&self, _: &str) -> bool { false }
+    /// }
+    ///
+    /// let mut m = Manifest::new("/any/path").with_file(MockFile);
+    /// assert!(m.load("cache").is_ok());
+    /// assert!(m.file_key_idx("cache").is_some());
+    /// assert!(m.file_key_idx("missing").is_none());
+    /// ```
     pub fn with_file(mut self, client: impl FileClient + 'static) -> Self {
         self.file = Box::new(client);
         self
