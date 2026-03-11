@@ -62,6 +62,12 @@ impl<'a> State<'a> {
         self
     }
 
+    pub fn with_file(mut self, client: impl crate::ports::required::FileClient + 'static) -> Self {
+        self.manifest = self.manifest.with_file(client);
+        self
+    }
+
+
     /// Splits "file.path" into ("file", "path").
     fn split_key<'k>(key: &'k str) -> (&'k str, &'k str) {
         match key.find('.') {

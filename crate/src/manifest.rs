@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use core::parser::{ParsedManifest, parse};
 use core::pool::DynamicPool;
 use core::fixed_bits;
 use crate::ports::provided::ManifestError;
+use crate::ports::required::FileClient;
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).
 #[derive(Debug, Default)]
@@ -28,6 +28,7 @@ pub struct MetaIndices {
 /// ```
 pub struct Manifest {
     manifest_dir: PathBuf,
+    file: Box<dyn FileClient>,
     files: HashMap<String, ParsedManifest>,
     pub dynamic: DynamicPool,
     pub keys: Vec<u64>,
@@ -40,6 +41,7 @@ impl Manifest {
     pub fn new(manifest_dir: &str) -> Self {
         Self {
             manifest_dir: PathBuf::from(manifest_dir),
+            file: Box::new(crate::common::DefaultFileClient),
             files: HashMap::new(),
             dynamic: DynamicPool::new(),
             keys: vec![0],
@@ -47,6 +49,11 @@ impl Manifest {
             path_map: vec![vec![]],
             children_map: vec![vec![]],
         }
+    }
+
+    pub fn with_file(mut self, client: impl FileClient + 'static) -> Self {
+        self.file = Box::new(client);
+        self
     }
 
     /// Loads and parses a manifest file by name (without extension) if not cached.
@@ -82,28 +89,22 @@ impl Manifest {
 
         let yml_path  = self.manifest_dir.join(format!("{}.yml", file));
         let yaml_path = self.manifest_dir.join(format!("{}.yaml", file));
-        let yml_exists  = yml_path.exists();
-        let yaml_exists = yaml_path.exists();
 
-        if yml_exists && yaml_exists {
-            return Err(ManifestError::AmbiguousFile(format!(
-                "both '{}.yml' and '{}.yaml' exist.",
-                file, file
-            )));
-        }
+        let yml_key  = yml_path.to_string_lossy();
+        let yaml_key = yaml_path.to_string_lossy();
+        let yml_content  = self.file.get(&yml_key);
+        let yaml_content = self.file.get(&yaml_key);
 
-        let path = if yml_exists {
-            yml_path
-        } else if yaml_exists {
-            yaml_path
-        } else {
-            return Err(ManifestError::FileNotFound(format!(
+        let content = match (yml_content, yaml_content) {
+            (Some(_), Some(_)) => return Err(ManifestError::AmbiguousFile(format!(
+                "both '{}.yml' and '{}.yaml' exist.", file, file
+            ))),
+            (Some(c), None) => c,
+            (None, Some(c)) => c,
+            (None, None) => return Err(ManifestError::FileNotFound(format!(
                 "'{}.yml' or '{}.yaml'", file, file
-            )));
+            ))),
         };
-
-        let content = fs::read_to_string(&path)
-            .map_err(|e| ManifestError::ReadError(e.to_string()))?;
 
         let pm = parse(
             file,
