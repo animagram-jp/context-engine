@@ -50,6 +50,8 @@ pub const PROP_NAMES: &[(&str, u64)] = &[
     ("ttl",        fixed_bits::PROP_TTL),
     ("table",      fixed_bits::PROP_TABLE),
     ("where",      fixed_bits::PROP_WHERE),
+    ("url",        fixed_bits::PROP_URL),
+    ("headers",    fixed_bits::PROP_HEADERS),
 ];
 
 pub fn prop_encode(s: &str) -> u64 {
@@ -63,6 +65,34 @@ pub fn prop_decode(v: u64) -> Option<&'static str> {
     PROP_NAMES.iter()
         .find(|(_, val)| *val == v)
         .map(|(name, _)| *name)
+}
+
+/// Per-client required/optional prop indices.
+/// State layer uses this to mechanically build call arguments from manifest records.
+///
+/// Layout per entry: (client, &[props])
+/// - InMemory : key
+/// - KVS      : key, ttl
+/// - Env      : map
+/// - Db       : connection, table, map, where
+/// - HTTP     : url, headers, map
+/// - File     : key, map
+/// - State    : key
+pub const CLIENT_PROPS: &[(u64, &[u64])] = &[
+    (fixed_bits::CLIENT_STATE,     &[fixed_bits::PROP_KEY]),
+    (fixed_bits::CLIENT_IN_MEMORY, &[fixed_bits::PROP_KEY]),
+    (fixed_bits::CLIENT_ENV,       &[fixed_bits::PROP_MAP]),
+    (fixed_bits::CLIENT_KVS,       &[fixed_bits::PROP_KEY, fixed_bits::PROP_TTL]),
+    (fixed_bits::CLIENT_DB,        &[fixed_bits::PROP_CONNECTION, fixed_bits::PROP_TABLE, fixed_bits::PROP_MAP, fixed_bits::PROP_WHERE]),
+    (fixed_bits::CLIENT_HTTP,      &[fixed_bits::PROP_URL, fixed_bits::PROP_HEADERS, fixed_bits::PROP_MAP]),
+    (fixed_bits::CLIENT_FILE,      &[fixed_bits::PROP_KEY, fixed_bits::PROP_MAP]),
+];
+
+pub fn client_props(client: u64) -> &'static [u64] {
+    CLIENT_PROPS.iter()
+        .find(|(c, _)| *c == client)
+        .map(|(_, props)| *props)
+        .unwrap_or(&[])
 }
 
 pub const TYPE_NAMES: &[(&str, u64)] = &[

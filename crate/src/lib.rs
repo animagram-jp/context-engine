@@ -15,6 +15,7 @@ pub use store::Store;
 pub use ports::required::{
     DbClient, EnvClient,
     KVSClient, InMemoryClient,
+    HttpClient, FileClient,
 };
 
 pub use ports::provided::{ManifestError, StateError};

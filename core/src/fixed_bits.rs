@@ -108,6 +108,8 @@ pub const PROP_MAP:        u64 = 0b0100;
 pub const PROP_TTL:        u64 = 0b0101;
 pub const PROP_TABLE:      u64 = 0b0110;
 pub const PROP_WHERE:      u64 = 0b0111;
+pub const PROP_URL:        u64 = 0b1000;
+pub const PROP_HEADERS:    u64 = 0b1001;
 
 pub const TYPE_NULL:     u64 = 0b00000;
 pub const TYPE_I32:      u64 = 0b00100;

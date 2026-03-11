@@ -157,14 +157,14 @@ impl<'a> Load<'a> {
         }
 
         let rows = db_client
-            .fetch(connection, table, &columns, where_clause)
+            .get(connection, table, &columns, where_clause)
             .ok_or_else(|| format!("Load::load_from_db: fetch failed for table '{}'", table))?;
 
         if rows.is_empty() {
             return Err(format!("Load::load_from_db: no data found in table '{}'", table));
         }
 
-        let row = &rows[0];
+        let row: &HashMap<String, Value> = &rows[0];
 
         let mut result = serde_json::Map::new();
         for (config_key, db_column_value) in map {
@@ -218,6 +218,8 @@ mod tests {
                 _ => None,
             }
         }
+        fn set(&self, _key: &str, _value: String) -> bool { false }
+        fn delete(&self, _key: &str) -> bool { false }
     }
 
     #[test]

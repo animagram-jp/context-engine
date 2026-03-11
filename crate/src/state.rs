@@ -41,12 +41,12 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn with_in_memory(mut self, client: &'a mut dyn crate::ports::required::InMemoryClient) -> Self {
+    pub fn with_in_memory(mut self, client: &'a dyn crate::ports::required::InMemoryClient) -> Self {
         self.store = self.store.with_in_memory(client);
         self
     }
 
-    pub fn with_kvs_client(mut self, client: &'a mut dyn crate::ports::required::KVSClient) -> Self {
+    pub fn with_kvs_client(mut self, client: &'a dyn crate::ports::required::KVSClient) -> Self {
         self.store = self.store.with_kvs_client(client);
         self
     }
@@ -279,17 +279,17 @@ impl<'a> State<'a> {
     /// use state_engine::InMemoryClient;
     /// use serde_json::{json, Value};
     ///
-    /// struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// impl InMemoryClient for MockInMemory {
-    ///     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
-    ///     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
-    ///     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    ///     fn get(&self, key: &str) -> Option<Value> { self.data.lock().unwrap().get(key).cloned() }
+    ///     fn set(&self, key: &str, value: Value) -> bool { self.data.lock().unwrap().insert(key.to_string(), value); true }
+    ///     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// }
     ///
-    /// let mut client = MockInMemory::new();
+    /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest", Load::new())
-    ///     .with_in_memory(&mut client);
+    ///     .with_in_memory(&client);
     ///
     /// // set then get
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
@@ -422,16 +422,16 @@ impl<'a> State<'a> {
     /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
-    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
-    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
-    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
-    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.lock().unwrap().get(key).cloned() }
+    /// #     fn set(&self, key: &str, value: Value) -> bool { self.data.lock().unwrap().insert(key.to_string(), value); true }
+    /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
-    /// let mut client = MockInMemory::new();
+    /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest", Load::new())
-    ///     .with_in_memory(&mut client);
+    ///     .with_in_memory(&client);
     ///
     /// assert!(state.set("connection.common", json!({"host": "localhost"}), None).unwrap());
     /// ```
@@ -485,16 +485,16 @@ impl<'a> State<'a> {
     /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
-    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
-    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
-    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
-    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.lock().unwrap().get(key).cloned() }
+    /// #     fn set(&self, key: &str, value: Value) -> bool { self.data.lock().unwrap().insert(key.to_string(), value); true }
+    /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
-    /// let mut client = MockInMemory::new();
+    /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest", Load::new())
-    ///     .with_in_memory(&mut client);
+    ///     .with_in_memory(&client);
     ///
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
     /// assert!(state.delete("connection.common").unwrap());
@@ -550,16 +550,16 @@ impl<'a> State<'a> {
     /// # use state_engine::load::Load;
     /// # use state_engine::InMemoryClient;
     /// # use serde_json::{json, Value};
-    /// # struct MockInMemory { data: std::collections::HashMap<String, Value> }
+    /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
-    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.get(key).cloned() }
-    /// #     fn set(&mut self, key: &str, value: Value) { self.data.insert(key.to_string(), value); }
-    /// #     fn delete(&mut self, key: &str) -> bool { self.data.remove(key).is_some() }
+    /// #     fn get(&self, key: &str) -> Option<Value> { self.data.lock().unwrap().get(key).cloned() }
+    /// #     fn set(&self, key: &str, value: Value) -> bool { self.data.lock().unwrap().insert(key.to_string(), value); true }
+    /// #     fn delete(&self, key: &str) -> bool { self.data.lock().unwrap().remove(key).is_some() }
     /// # }
-    /// let mut client = MockInMemory::new();
+    /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest", Load::new())
-    ///     .with_in_memory(&mut client);
+    ///     .with_in_memory(&client);
     ///
     /// assert!(!state.exists("connection.common").unwrap());
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
