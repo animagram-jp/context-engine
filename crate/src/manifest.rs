@@ -41,7 +41,7 @@ impl Manifest {
     pub fn new(manifest_dir: &str) -> Self {
         Self {
             manifest_dir: PathBuf::from(manifest_dir),
-            file: Box::new(crate::common::DefaultFileClient),
+            file: Box::new(crate::ports::default::DefaultFileClient),
             files: HashMap::new(),
             dynamic: DynamicPool::new(),
             keys: vec![0],

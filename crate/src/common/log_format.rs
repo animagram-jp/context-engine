@@ -10,7 +10,6 @@ use serde_json::Value;
 pub struct LogFormat;
 
 impl LogFormat {
-
     pub fn call(class: &str, fn_name: &str, args: &[String]) -> String {
         let args_str = args.join(", ");
         format!("{}::{}({})", class, fn_name, args_str)
@@ -34,26 +33,12 @@ impl LogFormat {
     /// ```
     pub fn format_arg(value: &Value) -> String {
         match value {
-            Value::String(s) if s.len() > 50 => {
-                format!("'{}'...", &s[..47])
-            }
-            Value::String(s) => {
-                format!("'{}'", s)
-            }
-            Value::Array(arr) => {
-                if arr.is_empty() {
-                    "[]".to_string()
-                } else {
-                    format!("[{} items]", arr.len())
-                }
-            }
-            Value::Object(obj) => {
-                if obj.is_empty() {
-                    "{}".to_string()
-                } else {
-                    format!("{{{} fields}}", obj.len())
-                }
-            }
+            Value::String(s) if s.len() > 50 => format!("'{}'...", &s[..47]),
+            Value::String(s) => format!("'{}'", s),
+            Value::Array(arr) if arr.is_empty() => "[]".to_string(),
+            Value::Array(arr) => format!("[{} items]", arr.len()),
+            Value::Object(obj) if obj.is_empty() => "{}".to_string(),
+            Value::Object(obj) => format!("{{{} fields}}", obj.len()),
             Value::Null => "null".to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => n.to_string(),
@@ -101,7 +86,6 @@ macro_rules! fn_log {
     }};
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,7 +106,7 @@ mod tests {
         let result = LogFormat::format_arg(&json!(long_str));
         assert!(result.starts_with("'aaa"));
         assert!(result.ends_with("'..."));
-        assert_eq!(result.len(), 52); // ' + 47 chars + '...
+        assert_eq!(result.len(), 52);
     }
 
     #[test]
