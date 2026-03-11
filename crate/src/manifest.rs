@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use core::parser::{ParsedManifest, parse};
 use core::pool::DynamicPool;
+use core::value::DslValue;
 use core::fixed_bits;
 use crate::ports::provided::ManifestError;
 use crate::ports::required::FileClient;
@@ -106,9 +107,12 @@ impl Manifest {
             ))),
         };
 
+        let yaml_root: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)
+            .map_err(|e| ManifestError::ParseError(format!("YAML parse error: {}", e)))?;
+
         let pm = parse(
             file,
-            &content,
+            yaml_to_dsl(yaml_root),
             &mut self.dynamic,
             &mut self.keys,
             &mut self.values,
@@ -345,5 +349,26 @@ impl Manifest {
         }
 
         result
+    }
+}
+
+fn yaml_to_dsl(v: serde_yaml_ng::Value) -> DslValue {
+    match v {
+        serde_yaml_ng::Value::Mapping(m) => DslValue::Mapping(
+            m.into_iter()
+                .filter_map(|(k, v)| {
+                    let key = match k {
+                        serde_yaml_ng::Value::String(s) => s,
+                        _ => return None,
+                    };
+                    Some((key, yaml_to_dsl(v)))
+                })
+                .collect(),
+        ),
+        serde_yaml_ng::Value::String(s) => DslValue::Scalar(s),
+        serde_yaml_ng::Value::Number(n) => DslValue::Scalar(n.to_string()),
+        serde_yaml_ng::Value::Bool(b)   => DslValue::Scalar(b.to_string()),
+        serde_yaml_ng::Value::Null      => DslValue::Null,
+        _                               => DslValue::Null,
     }
 }

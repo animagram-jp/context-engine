@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use crate::manifest::Manifest;
 use core::fixed_bits;
+use core::codec;
 use crate::store::Store;
 use crate::load::Load;
 use crate::ports::provided::StateError;
@@ -211,14 +212,9 @@ impl<'a> State<'a> {
                 continue;
             }
 
-            let prop_name = match prop as u64 {
-                fixed_bits::PROP_KEY        => "key",
-                fixed_bits::PROP_CONNECTION => "connection",
-                fixed_bits::PROP_MAP        => "map",
-                fixed_bits::PROP_TTL        => "ttl",
-                fixed_bits::PROP_TABLE      => "table",
-                fixed_bits::PROP_WHERE      => "where",
-                _ => continue,
+            let prop_name = match codec::prop_decode(prop as u64) {
+                Some(name) => name,
+                None => continue,
             };
 
             if prop_name == "map" {
