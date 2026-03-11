@@ -1,6 +1,6 @@
 use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
-    InMemoryClient,
+    InMemoryClient, HttpClient,
 };
 use core::fixed_bits;
 use serde_json::Value;
@@ -11,6 +11,7 @@ pub struct Load<'a> {
     kvs: Option<&'a dyn KVSClient>,
     in_memory: Option<&'a dyn InMemoryClient>,
     env: Option<&'a dyn EnvClient>,
+    http: Option<&'a dyn HttpClient>,
 }
 
 impl<'a> Load<'a> {
@@ -20,6 +21,7 @@ impl<'a> Load<'a> {
             kvs: None,
             in_memory: None,
             env: None,
+            http: None,
         }
     }
 
@@ -43,6 +45,11 @@ impl<'a> Load<'a> {
         self
     }
 
+    pub fn with_http(mut self, client: &'a dyn HttpClient) -> Self {
+        self.http = Some(client);
+        self
+    }
+
     pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, String> {
         let client = config
             .get("client")
@@ -54,6 +61,7 @@ impl<'a> Load<'a> {
             fixed_bits::CLIENT_IN_MEMORY => self.load_from_in_memory(config),
             fixed_bits::CLIENT_KVS       => self.load_from_kvs(config),
             fixed_bits::CLIENT_DB        => self.load_from_db(config),
+            fixed_bits::CLIENT_HTTP      => self.load_from_http(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -176,6 +184,30 @@ impl<'a> Load<'a> {
         }
 
         Ok(Value::Object(result))
+    }
+
+    fn load_from_http(
+        &self,
+        config: &HashMap<String, Value>,
+    ) -> Result<Value, String> {
+        let http = self
+            .http
+            .ok_or("Load::load_from_http: HttpClient not configured")?;
+
+        let url = config
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or("Load::load_from_http: 'url' not found")?;
+
+        let headers = config
+            .get("headers")
+            .and_then(|v| v.as_object())
+            .map(|obj| obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect::<HashMap<String, String>>());
+
+        http.get(url, headers.as_ref())
+            .ok_or_else(|| format!("Load::load_from_http: GET '{}' failed", url))
     }
 }
 

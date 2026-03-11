@@ -63,6 +63,12 @@ impl<'a> State<'a> {
         self
     }
 
+    pub fn with_http(mut self, client: &'a dyn crate::ports::required::HttpClient) -> Self {
+        self.store = self.store.with_http(client);
+        self.load = self.load.with_http(client);
+        self
+    }
+
     pub fn with_file(mut self, client: impl crate::ports::required::FileClient + 'static) -> Self {
         self.manifest = self.manifest.with_file(client);
         self
@@ -638,16 +644,25 @@ mod tests {
         fn delete(&self, _: &str) -> bool { false }
     }
 
+    struct StubHttp;
+    impl crate::ports::required::HttpClient for StubHttp {
+        fn get(&self, _: &str, _: Option<&HashMap<String, String>>) -> Option<Value> { None }
+        fn set(&self, _: &str, _: Value, _: Option<&HashMap<String, String>>) -> bool { false }
+        fn delete(&self, _: &str, _: Option<&HashMap<String, String>>) -> bool { false }
+    }
+
     #[test]
     fn test_with_clients_build() {
-        let kvs = StubKVS;
-        let db  = StubDb;
-        let env = StubEnv;
+        let kvs  = StubKVS;
+        let db   = StubDb;
+        let env  = StubEnv;
+        let http = StubHttp;
 
         // each builder returns Self without panic — wiring is correct
         let _ = State::new("./examples/manifest").with_kvs(&kvs);
         let _ = State::new("./examples/manifest").with_db(&db);
         let _ = State::new("./examples/manifest").with_env(&env);
+        let _ = State::new("./examples/manifest").with_http(&http);
         let _ = State::new("./examples/manifest").with_file(StubFile);
     }
 }
