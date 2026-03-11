@@ -17,4 +17,7 @@ impl EnvClient for EnvAdapter {
     fn get(&self, key: &str) -> Option<String> {
         std::env::var(key).ok()
     }
+
+    fn set(&self, _key: &str, _value: String) -> bool { false }
+    fn delete(&self, _key: &str) -> bool { false }
 }

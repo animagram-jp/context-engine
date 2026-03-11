@@ -5,30 +5,32 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use state_engine::ports::required::InMemoryClient;
 
 pub struct InMemoryAdapter {
-    data: HashMap<String, Value>,
+    data: Mutex<HashMap<String, Value>>,
 }
 
 impl InMemoryAdapter {
     pub fn new() -> Self {
         Self {
-            data: HashMap::new(),
+            data: Mutex::new(HashMap::new()),
         }
     }
 }
 
 impl InMemoryClient for InMemoryAdapter {
     fn get(&self, key: &str) -> Option<Value> {
-        self.data.get(key).cloned()
+        self.data.lock().unwrap().get(key).cloned()
     }
 
-    fn set(&mut self, key: &str, value: Value) {
-        self.data.insert(key.to_string(), value);
+    fn set(&self, key: &str, value: Value) -> bool {
+        self.data.lock().unwrap().insert(key.to_string(), value);
+        true
     }
 
-    fn delete(&mut self, key: &str) -> bool {
-        self.data.remove(key).is_some()
+    fn delete(&self, key: &str) -> bool {
+        self.data.lock().unwrap().remove(key).is_some()
     }
 }

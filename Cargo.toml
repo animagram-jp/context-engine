@@ -4,7 +4,8 @@ members = [
     "crate",
     "wasi",
     "js",
-    "php"
+    "php",
+    "crate/examples/app"
 ]
 resolver = "2"
 

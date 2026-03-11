@@ -3,9 +3,10 @@
 /// Implements the KVSClient Required Port.
 
 use state_engine::ports::required::KVSClient;
+use std::sync::Mutex;
 
 pub struct KVSAdapter {
-    client: redis::Client,
+    client: Mutex<redis::Client>,
 }
 
 impl KVSAdapter {
@@ -17,13 +18,14 @@ impl KVSAdapter {
         let client = redis::Client::open(url)
             .map_err(|e| format!("Failed to create Redis client: {}", e))?;
 
-        Ok(Self { client })
+        Ok(Self { client: Mutex::new(client) })
     }
 }
 
 impl KVSClient for KVSAdapter {
     fn get(&self, key: &str) -> Option<String> {
-        let mut conn = self.client.get_connection().ok()?;
+        let client = self.client.lock().unwrap();
+        let mut conn = client.get_connection().ok()?;
         redis::cmd("GET")
             .arg(key)
             .query::<Option<String>>(&mut conn)
@@ -31,8 +33,9 @@ impl KVSClient for KVSAdapter {
             .flatten()
     }
 
-    fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool {
-        let mut conn = match self.client.get_connection() {
+    fn set(&self, key: &str, value: String, ttl: Option<u64>) -> bool {
+        let client = self.client.lock().unwrap();
+        let mut conn = match client.get_connection() {
             Ok(c) => c,
             Err(_) => return false,
         };
@@ -53,8 +56,9 @@ impl KVSClient for KVSAdapter {
         result.is_ok()
     }
 
-    fn delete(&mut self, key: &str) -> bool {
-        let mut conn = match self.client.get_connection() {
+    fn delete(&self, key: &str) -> bool {
+        let client = self.client.lock().unwrap();
+        let mut conn = match client.get_connection() {
             Ok(c) => c,
             Err(_) => return false,
         };
