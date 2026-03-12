@@ -1,6 +1,6 @@
 mod adapters;
 
-use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DbAdapter};
+use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DbAdapter, HttpAdapter};
 use state_engine::{State, InMemoryClient};
 
 fn make_state<'a>(
@@ -8,12 +8,14 @@ fn make_state<'a>(
     kvs: &'a KVSAdapter,
     db: &'a DbAdapter,
     in_memory: &'a InMemoryAdapter,
+    http: &'a HttpAdapter,
 ) -> State<'a> {
     State::new("./manifest")
         .with_env(env)
         .with_kvs(kvs)
         .with_db(db)
         .with_in_memory(in_memory)
+        .with_http(http)
 }
 
 fn run_tests() -> (usize, usize) {
@@ -41,7 +43,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         let result = state.get("connection.common").unwrap();
         assert!(result.is_some(), "connection.common should be loaded from Env");
@@ -55,7 +58,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         state.get("connection.common").unwrap();
         assert!(state.exists("connection.common").unwrap());
@@ -71,7 +75,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         assert!(state.set("session.sso_user_id", serde_json::json!(42), None).unwrap());
         let got = state.get("session.sso_user_id").unwrap();
@@ -88,8 +93,9 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         let user = serde_json::json!({"id": 1, "org_id": 100, "tenant_id": 10});
         assert!(state.set("cache.user", user.clone(), Some(3600)).unwrap());
@@ -102,8 +108,9 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         assert!(state.set("cache.user.org_id", serde_json::json!(100), None).unwrap());
         let got = state.get("cache.user.org_id").unwrap();
@@ -115,8 +122,9 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         assert!(state.set("cache.user.id", serde_json::json!(1), None).unwrap());
         let got = state.get("cache.user.id").unwrap();
@@ -128,8 +136,9 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         assert!(state.set("cache.user.org_id", serde_json::json!(100), Some(14400)).unwrap());
         let got = state.get("cache.user.tenant_id").unwrap();
@@ -141,8 +150,9 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         state.set("cache.user", serde_json::json!({"id": 1}), None).unwrap();
         assert!(state.delete("cache.user").unwrap());
@@ -159,6 +169,7 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
 
         let db_host     = std::env::var("DB_HOST").unwrap_or("localhost".into());
         let db_port     = std::env::var("DB_PORT").unwrap_or("5432".into()).parse::<u64>().unwrap_or(5432);
@@ -167,7 +178,7 @@ fn run_tests() -> (usize, usize) {
         let db_password = std::env::var("DB_PASSWORD").unwrap_or("state_pass".into());
 
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         state.set("cache.user.org_id", serde_json::json!(100), Some(14400)).unwrap();
         state.set("cache.user.tenant_id", serde_json::json!(1), Some(14400)).unwrap();
@@ -188,6 +199,32 @@ fn run_tests() -> (usize, usize) {
     });
 
     // =========================================================================
+    // cache.tenant.health: HTTP load (mock)
+    // Prerequisite: cache.user.tenant_id must be set before cache.tenant can resolve
+    // =========================================================================
+    println!("\n[cache.tenant.health HTTP load]");
+
+    test!("get cache.tenant.health loads from HTTP after cache.user is set", {
+        let env = EnvAdapter::new();
+        let kvs = KVSAdapter::new().unwrap();
+        let db = DbAdapter::new();
+        let im = InMemoryAdapter::new();
+        let http = HttpAdapter;
+        im.set("request-attributes-user-key", serde_json::json!(1));
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
+
+        // cache.tenant._store key = "tenant:${cache.user.tenant_id}" — must be resolvable
+        // cache.tenant._load (Db) would be tried first, but Db returns None (stub)
+        // cache.tenant.health._load (HTTP) overrides at leaf level → mock returns {"status":"ok"}
+        state.set("cache.user.tenant_id", serde_json::json!(42), Some(3600)).unwrap();
+
+        let result = state.get("cache.tenant.health").unwrap();
+        assert!(result.is_some(), "cache.tenant.health should be loaded from HTTP");
+        let obj = result.unwrap();
+        assert_eq!(obj.get("status"), Some(&serde_json::json!("ok")));
+    });
+
+    // =========================================================================
     // placeholder resolution error cases
     // =========================================================================
     println!("\n[placeholder]");
@@ -197,7 +234,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         let result = state.set("cache.user", serde_json::json!({"id": 1}), None);
         assert!(result.is_err(), "should fail when placeholder cannot be resolved");
@@ -208,7 +246,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         let result = state.get("cache.user");
         assert!(result.is_err(), "should fail when placeholder cannot be resolved");
@@ -219,7 +258,8 @@ fn run_tests() -> (usize, usize) {
         let kvs = KVSAdapter::new().unwrap();
         let db = DbAdapter::new();
         let im = InMemoryAdapter::new();
-        let mut state = make_state(&env, &kvs, &db, &im);
+        let http = HttpAdapter;
+        let mut state = make_state(&env, &kvs, &db, &im, &http);
 
         let result = state.get("session.nonexistent");
         assert!(matches!(result, Err(state_engine::StateError::KeyNotFound(_))));

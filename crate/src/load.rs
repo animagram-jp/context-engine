@@ -206,8 +206,29 @@ impl<'a> Load<'a> {
                 .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                 .collect::<HashMap<String, String>>());
 
-        http.get(url, headers.as_ref())
-            .ok_or_else(|| format!("Load::load_from_http: GET '{}' failed", url))
+        let response = http.get(url, headers.as_ref())
+            .ok_or_else(|| format!("Load::load_from_http: GET '{}' failed", url))?;
+
+        let map = config.get("map").and_then(|v| v.as_object());
+        match map {
+            None => Ok(response),
+            Some(map) => {
+                let row = match &response {
+                    Value::Array(arr) => arr.first()
+                        .ok_or_else(|| "Load::load_from_http: empty array response".to_string())?,
+                    other => other,
+                };
+                let mut result = serde_json::Map::new();
+                for (config_key, src_key_value) in map {
+                    if let Some(src_key) = src_key_value.as_str() {
+                        if let Some(value) = row.get(src_key) {
+                            result.insert(config_key.clone(), value.clone());
+                        }
+                    }
+                }
+                Ok(Value::Object(result))
+            }
+        }
     }
 }
 

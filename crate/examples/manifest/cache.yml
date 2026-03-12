@@ -43,3 +43,12 @@ tenant:
   name:
     _state:
       type: string
+  health:
+    _store: null
+    _load:
+      client: HTTP
+      url: "http://127.0.0.1:8080/health/${cache.user.tenant_id}"
+      map:
+        status: "status"
+    _state:
+      type: string

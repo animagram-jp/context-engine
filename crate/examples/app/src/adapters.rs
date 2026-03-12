@@ -6,4 +6,5 @@ pub use adapters_impl::{
     EnvAdapter,
     KVSAdapter,
     DbAdapter,
+    HttpAdapter,
 };

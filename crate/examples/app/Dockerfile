@@ -21,6 +21,7 @@ RUN mkdir -p core/src crate/src wasi/src js/src php/src \
     touch crate/examples/adapters/env_client.rs && \
     touch crate/examples/adapters/kvs_client.rs && \
     touch crate/examples/adapters/db_client.rs && \
+    touch crate/examples/adapters/http_client.rs && \
     echo "fn main() {}" > crate/examples/app/src/main.rs && \
     touch crate/examples/app/src/adapters.rs && \
     cargo build --release --features state-engine/logging \
@@ -36,6 +37,9 @@ RUN mkdir -p core/src crate/src wasi/src js/src php/src \
 
 COPY core/ ./core/
 COPY crate/src/ ./crate/src/
+COPY wasi/src/ ./wasi/src/
+COPY js/src/ ./js/src/
+COPY php/src/ ./php/src/
 COPY crate/examples/adapters/ ./crate/examples/adapters/
 COPY crate/examples/app/src/ ./crate/examples/app/src/
 RUN cargo build --release --features state-engine/logging \
