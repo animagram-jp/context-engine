@@ -131,26 +131,28 @@ pub fn get(ko: u64, offset: u32, mask: u64) -> u64 {
     (ko >> offset) & mask
 }
 
-/// # Examples
-///
-/// ```
-/// use core::fixed_bits;
-///
-/// let ko = fixed_bits::new();
-///
-/// // set root index to 0b01 (load)
-/// let ko = fixed_bits::set(ko, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, 0b01);
-/// assert_eq!(fixed_bits::get(ko, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), 0b01);
-///
-/// // set client index to 0b0101 (Db), root must be unchanged
-/// let ko = fixed_bits::set(ko, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT, 0b0101);
-/// assert_eq!(fixed_bits::get(ko, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT), 0b0101);
-/// assert_eq!(fixed_bits::get(ko, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), 0b01);
-///
-/// // overwrite clamps to field width
-/// let ko = fixed_bits::set(ko, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, 0xFF);
-/// assert_eq!(fixed_bits::get(ko, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), 0b11);
-/// ```
 pub fn set(ko: u64, offset: u32, mask: u64, value: u64) -> u64 {
     (ko & !(mask << offset)) | ((value & mask) << offset)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_get_independent_fields() {
+        let ko = new();
+        let ko = set(ko, K_OFFSET_ROOT, K_MASK_ROOT, 0b01);
+        assert_eq!(get(ko, K_OFFSET_ROOT, K_MASK_ROOT), 0b01);
+
+        let ko = set(ko, K_OFFSET_CLIENT, K_MASK_CLIENT, 0b0101);
+        assert_eq!(get(ko, K_OFFSET_CLIENT, K_MASK_CLIENT), 0b0101);
+        assert_eq!(get(ko, K_OFFSET_ROOT, K_MASK_ROOT), 0b01);
+    }
+
+    #[test]
+    fn test_set_clamps_to_field_width() {
+        let ko = set(new(), K_OFFSET_ROOT, K_MASK_ROOT, 0xFF);
+        assert_eq!(get(ko, K_OFFSET_ROOT, K_MASK_ROOT), K_MASK_ROOT);
+    }
 }

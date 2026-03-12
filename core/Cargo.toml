@@ -9,4 +9,7 @@ publish = false
 
 [dependencies]
 
+[lib]
+doctest = false
+
 [dev-dependencies]

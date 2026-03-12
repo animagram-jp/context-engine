@@ -1,7 +1,22 @@
-use crate::value::Value;
+extern crate alloc;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::format;
+
 use crate::pool::DynamicPool;
 use crate::fixed_bits;
 use crate::codec;
+
+/// Generic value type for manifest parsing.
+/// Binding-agnostic — no serde, no std, no alloc beyond Vec/String.
+///
+/// Callers (crate/, wasi/, js/, php/) are responsible for converting
+/// their native format (YAML, JSON, etc.) into Value before calling parse().
+pub enum Value {
+    Mapping(Vec<(String, Value)>),
+    Scalar(String),
+    Null,
+}
 
 /// Thin record for a single loaded manifest file.
 /// Stores only the key_idx of the file root record in the shared keys vec.
@@ -9,7 +24,7 @@ pub struct ParsedManifest {
     pub file_key_idx: u16,
 }
 
-/// Parses a YAML manifest string, appending into caller-owned vecs.
+/// Parses a manifest value tree, appending into caller-owned vecs.
 /// Returns a `ParsedManifest` referencing the file root record's index.
 ///
 /// - `keys`: Vec<u64> — fixed-bits key records
@@ -18,43 +33,6 @@ pub struct ParsedManifest {
 /// - `children_map`: Vec<Vec<u16>> — multi-child index lists
 ///
 /// Index 0 of each vec is reserved as null by the caller.
-///
-/// # Examples
-///
-/// ```
-/// use core::parser::parse;
-/// use core::pool::DynamicPool;
-/// use core::value::Value;
-/// use core::fixed_bits;
-///
-/// let root = Value::Mapping(vec![
-///     ("user".to_string(), Value::Mapping(vec![
-///         ("_store".to_string(), Value::Mapping(vec![
-///             ("client".to_string(), Value::Scalar("KVS".to_string())),
-///             ("key".to_string(), Value::Scalar("user:${session.sso_user_id}".to_string())),
-///             ("ttl".to_string(), Value::Scalar("14400".to_string())),
-///         ])),
-///         ("id".to_string(), Value::Mapping(vec![
-///             ("_state".to_string(), Value::Mapping(vec![
-///                 ("type".to_string(), Value::Scalar("integer".to_string())),
-///             ])),
-///         ])),
-///     ])),
-/// ]);
-///
-/// let mut dynamic = DynamicPool::new();
-/// let mut keys: Vec<u64> = vec![0];
-/// let mut values: Vec<[u64; 2]> = vec![[0, 0]];
-/// let mut path_map: Vec<Vec<u16>> = vec![vec![]];
-/// let mut children_map: Vec<Vec<u16>> = vec![vec![]];
-///
-/// let pm = parse("cache", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-///
-/// // file root record is at pm.file_key_idx
-/// let root_rec = keys[pm.file_key_idx as usize];
-/// let dyn_idx = fixed_bits::get(root_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-/// assert_eq!(dynamic.get(dyn_idx), Some("cache"));
-/// ```
 pub fn parse(
     filename: &str,
     root: Value,
@@ -433,6 +411,9 @@ fn build_qualified_path(filename: &str, ancestors: &[&str], key_str: &str) -> St
 mod tests {
     use super::*;
     use crate::fixed_bits;
+    use alloc::vec::Vec;
+    #[allow(unused_imports)]
+    use alloc::vec;
 
     fn make_vecs() -> (DynamicPool, Vec<u64>, Vec<[u64; 2]>, Vec<Vec<u16>>, Vec<Vec<u16>>) {
         (DynamicPool::new(), vec![0], vec![[0, 0]], vec![vec![]], vec![vec![]])
