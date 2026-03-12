@@ -1,4 +1,4 @@
-use crate::value::DslValue;
+use crate::value::Value;
 use crate::pool::DynamicPool;
 use crate::fixed_bits;
 use crate::codec;
@@ -24,19 +24,19 @@ pub struct ParsedManifest {
 /// ```
 /// use core::parser::parse;
 /// use core::pool::DynamicPool;
-/// use core::value::DslValue;
+/// use core::value::Value;
 /// use core::fixed_bits;
 ///
-/// let root = DslValue::Mapping(vec![
-///     ("user".to_string(), DslValue::Mapping(vec![
-///         ("_store".to_string(), DslValue::Mapping(vec![
-///             ("client".to_string(), DslValue::Scalar("KVS".to_string())),
-///             ("key".to_string(), DslValue::Scalar("user:${session.sso_user_id}".to_string())),
-///             ("ttl".to_string(), DslValue::Scalar("14400".to_string())),
+/// let root = Value::Mapping(vec![
+///     ("user".to_string(), Value::Mapping(vec![
+///         ("_store".to_string(), Value::Mapping(vec![
+///             ("client".to_string(), Value::Scalar("KVS".to_string())),
+///             ("key".to_string(), Value::Scalar("user:${session.sso_user_id}".to_string())),
+///             ("ttl".to_string(), Value::Scalar("14400".to_string())),
 ///         ])),
-///         ("id".to_string(), DslValue::Mapping(vec![
-///             ("_state".to_string(), DslValue::Mapping(vec![
-///                 ("type".to_string(), DslValue::Scalar("integer".to_string())),
+///         ("id".to_string(), Value::Mapping(vec![
+///             ("_state".to_string(), Value::Mapping(vec![
+///                 ("type".to_string(), Value::Scalar("integer".to_string())),
 ///             ])),
 ///         ])),
 ///     ])),
@@ -57,14 +57,14 @@ pub struct ParsedManifest {
 /// ```
 pub fn parse(
     filename: &str,
-    root: DslValue,
+    root: Value,
     dynamic: &mut DynamicPool,
     keys: &mut Vec<u64>,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
     children_map: &mut Vec<Vec<u16>>,
 ) -> Result<ParsedManifest, String> {
-    let DslValue::Mapping(mapping) = root else {
+    let Value::Mapping(mapping) = root else {
         return Err("DSL root must be a mapping".to_string());
     };
 
@@ -103,7 +103,7 @@ pub fn parse(
 /// `ancestors` excludes filename — only field key path segments (for qualify).
 fn traverse_field_key(
     key_str: &str,
-    value: &DslValue,
+    value: &Value,
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
@@ -123,7 +123,7 @@ fn traverse_field_key(
     let mut current: Vec<&str> = ancestors.to_vec();
     current.push(key_str);
 
-    if let DslValue::Mapping(mapping) = value {
+    if let Value::Mapping(mapping) = value {
         let mut child_indices: Vec<u16> = Vec::new();
         let mut meta_indices: Vec<u16> = Vec::new();
 
@@ -169,7 +169,7 @@ fn traverse_field_key(
 /// Traverses a meta key node (_load, _store, _state).
 fn traverse_meta_key(
     key_str: &str,
-    value: &DslValue,
+    value: &Value,
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
@@ -186,7 +186,7 @@ fn traverse_meta_key(
     let key_idx = keys.len() as u16;
     keys.push(record);
 
-    if let DslValue::Mapping(mapping) = value {
+    if let Value::Mapping(mapping) = value {
         let mut child_indices: Vec<u16> = Vec::new();
 
         for (k_str, v) in mapping {
@@ -214,7 +214,7 @@ fn traverse_meta_key(
 /// Traverses a prop key node (client, key, ttl, table, connection, where, map, type).
 fn traverse_prop_key(
     key_str: &str,
-    value: &DslValue,
+    value: &Value,
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
@@ -225,7 +225,7 @@ fn traverse_prop_key(
 ) -> Result<u16, String> {
     let (prop_val, client_val) = if key_str == "client" {
         (fixed_bits::PROP_NULL, codec::client_encode(
-            match value { DslValue::Scalar(s) => s.as_str(), _ => "" }
+            match value { Value::Scalar(s) => s.as_str(), _ => "" }
         ))
     } else {
         (codec::prop_encode(key_str), fixed_bits::CLIENT_NULL)
@@ -237,7 +237,7 @@ fn traverse_prop_key(
 
     if key_str == "type" {
         let type_val = codec::type_encode(
-            match value { DslValue::Scalar(s) => s.as_str(), _ => "" }
+            match value { Value::Scalar(s) => s.as_str(), _ => "" }
         );
         record = fixed_bits::set(record, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE, type_val);
     }
@@ -246,7 +246,7 @@ fn traverse_prop_key(
     keys.push(record);
 
     if key_str == "map" {
-        if let DslValue::Mapping(mapping) = value {
+        if let Value::Mapping(mapping) = value {
             let mut child_indices: Vec<u16> = Vec::new();
             for (k_str, v) in mapping {
                 let child_idx = traverse_map_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map)?;
@@ -279,7 +279,7 @@ fn traverse_prop_key(
 /// Traverses a map child key (is_path=true).
 fn traverse_map_key(
     key_str: &str,
-    value: &DslValue,
+    value: &Value,
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
@@ -309,7 +309,7 @@ fn traverse_map_key(
 
 /// Builds a YAML value record ([u64; 2]) from a scalar or template string.
 fn build_yaml_value(
-    value: &DslValue,
+    value: &Value,
     filename: &str,
     ancestors: &[&str],
     dynamic: &mut DynamicPool,
@@ -317,9 +317,9 @@ fn build_yaml_value(
     path_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let s = match value {
-        DslValue::Scalar(s) => s.clone(),
-        DslValue::Null      => return Ok(0),
-        DslValue::Mapping(_) => return Err("unexpected mapping as scalar value".to_string()),
+        Value::Scalar(s) => s.clone(),
+        Value::Null      => return Ok(0),
+        Value::Mapping(_) => return Err("unexpected mapping as scalar value".to_string()),
     };
 
     let tokens = split_template(&s);
@@ -438,169 +438,19 @@ mod tests {
         (DynamicPool::new(), vec![0], vec![[0, 0]], vec![vec![]], vec![vec![]])
     }
 
-    /// Converts serde_yaml_ng::Value to DslValue for test fixtures.
-    fn from_yaml_value(v: serde_yaml_ng::Value) -> DslValue {
-        match v {
-            serde_yaml_ng::Value::Mapping(m) => DslValue::Mapping(
-                m.into_iter()
-                    .filter_map(|(k, v)| {
-                        let key = match k {
-                            serde_yaml_ng::Value::String(s) => s,
-                            _ => return None,
-                        };
-                        Some((key, from_yaml_value(v)))
-                    })
-                    .collect(),
-            ),
-            serde_yaml_ng::Value::String(s)  => DslValue::Scalar(s),
-            serde_yaml_ng::Value::Number(n)  => DslValue::Scalar(n.to_string()),
-            serde_yaml_ng::Value::Bool(b)    => DslValue::Scalar(b.to_string()),
-            serde_yaml_ng::Value::Null       => DslValue::Null,
-            _                                => DslValue::Null,
-        }
+    fn s(v: &str) -> Value { Value::Scalar(v.to_string()) }
+    fn m(pairs: Vec<(&str, Value)>) -> Value {
+        Value::Mapping(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
     }
 
-    fn parse_yaml(filename: &str, yaml: &str,
-        dynamic: &mut DynamicPool, keys: &mut Vec<u64>, values: &mut Vec<[u64; 2]>,
-        path_map: &mut Vec<Vec<u16>>, children_map: &mut Vec<Vec<u16>>,
-    ) -> Result<ParsedManifest, String> {
-        let root: serde_yaml_ng::Value = serde_yaml_ng::from_str(yaml)
-            .map_err(|e| format!("YAML parse error: {}", e))?;
-        parse(filename, from_yaml_value(root), dynamic, keys, values, path_map, children_map)
-    }
-
-    const YAML_SESSION: &str = "
-sso_user_id:
-  _state:
-    type: integer
-  _store:
-    client: InMemory
-    key: 'request-attributes-user-key'
-  _load:
-    client: InMemory
-    key: 'request-header-user-key'
-";
-
-    const YAML_CACHE: &str = "
-user:
-  _store:
-    client: KVS
-    key: 'user:${session.sso_user_id}'
-    ttl: 14400
-  _load:
-    client: Db
-    connection: ${connection.tenant}
-    table: 'users'
-    where: 'sso_user_id=${session.sso_user_id}'
-    map:
-      id: 'id'
-      org_id: 'sso_org_id'
-  id:
-    _state:
-      type: integer
-  org_id:
-    _state:
-      type: integer
-";
-
-    #[test]
-    fn test_parse_session_yaml() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm = parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        let idx = dynamic.intern("sso_user_id");
-        assert_ne!(idx, 0);
-        assert!(keys.get(pm.file_key_idx as usize).is_some());
-    }
-
-    #[test]
-    fn test_field_key_record_root_is_null() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm = parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        // first child of file record should be a field key (ROOT_NULL)
-        let file_record = keys[pm.file_key_idx as usize];
-        let child_idx = fixed_bits::get(file_record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
-        let record = keys[child_idx];
-        assert_eq!(fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), fixed_bits::ROOT_NULL);
-    }
-
-    #[test]
-    fn test_meta_key_record_root_index() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm = parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        let mut found = false;
-        let start = pm.file_key_idx;
-        for i in start..start + 20 {
-            if let Some(&r) = keys.get(i as usize) {
-                if fixed_bits::get(r, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) == fixed_bits::ROOT_STATE {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "_state record with ROOT_STATE not found");
-    }
-
-    #[test]
-    fn test_type_index_integer() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm = parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        let mut found = false;
-        let start = pm.file_key_idx;
-        for i in start..start + 20 {
-            if let Some(&r) = keys.get(i as usize) {
-                if fixed_bits::get(r, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE) == fixed_bits::TYPE_I64 {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "type=integer record not found");
-    }
-
-    #[test]
-    fn test_static_value_interned() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        let idx = dynamic.intern("request-attributes-user-key");
-        assert_ne!(idx, 0);
-    }
-
-    #[test]
-    fn test_template_value_is_template_flag() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        parse_yaml("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        let mut found = false;
-        for i in 1..=30 {
-            if let Some(&vo) = values.get(i as usize) {
-                if fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1 {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "no is_template=1 value record found");
-    }
-
-    #[test]
-    fn test_path_token_stored_in_path_map() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        parse_yaml("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-
-        assert!(path_map.get(1).is_some(), "path map is empty");
-    }
+    // --- split_template ---
 
     #[test]
     fn test_split_template_static() {
-        let tokens = split_template("request-attributes-user-key");
+        let tokens = split_template("literal");
         assert_eq!(tokens.len(), 1);
         assert!(!tokens[0].is_path);
-        assert_eq!(tokens[0].text, "request-attributes-user-key");
+        assert_eq!(tokens[0].text, "literal");
     }
 
     #[test]
@@ -613,13 +463,15 @@ user:
 
     #[test]
     fn test_split_template_mixed() {
-        let tokens = split_template("user:${session.sso_user_id}");
+        let tokens = split_template("user:${session.id}");
         assert_eq!(tokens.len(), 2);
         assert!(!tokens[0].is_path);
         assert_eq!(tokens[0].text, "user:");
         assert!(tokens[1].is_path);
-        assert_eq!(tokens[1].text, "session.sso_user_id");
+        assert_eq!(tokens[1].text, "session.id");
     }
+
+    // --- qualify_path ---
 
     #[test]
     fn test_qualify_path_absolute() {
@@ -636,41 +488,121 @@ user:
         assert_eq!(qualify_path("org_id", "cache", &[]), "cache.org_id");
     }
 
-    #[test]
-    fn test_client_kvs_record() {
-        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm = parse_yaml("cache", YAML_CACHE, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+    // --- parse: field key → ROOT_NULL ---
 
-        let mut found = false;
-        let start = pm.file_key_idx;
-        for i in start..start + 30 {
-            if let Some(&r) = keys.get(i as usize) {
-                if fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) == fixed_bits::CLIENT_KVS {
-                    found = true;
-                    break;
-                }
-            }
-        }
-        assert!(found, "CLIENT_KVS record not found");
+    #[test]
+    fn test_field_key_root_is_null() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let root = m(vec![("foo", m(vec![]))]);
+        let pm = parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        let file_rec = keys[pm.file_key_idx as usize];
+        let child_idx = fixed_bits::get(file_rec, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
+        assert_eq!(fixed_bits::get(keys[child_idx], fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT), fixed_bits::ROOT_NULL);
     }
 
+    // --- parse: meta key → ROOT bits ---
+
     #[test]
-    fn test_two_files_globally_unique_key_idx() {
-        // Both session and cache parsed into the same pools — key_idx must be globally unique
+    fn test_meta_key_root_bits() {
         let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
-        let pm_session = parse_yaml("session", YAML_SESSION, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
-        let pm_cache   = parse_yaml("cache",   YAML_CACHE,   &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+        let root = m(vec![("foo", m(vec![
+            ("_state", m(vec![("type", s("integer"))])),
+            ("_load",  m(vec![("client", s("InMemory")), ("key", s("k"))])),
+            ("_store", m(vec![("client", s("InMemory")), ("key", s("k"))])),
+        ]))]);
+        parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
 
-        // file root indices must differ
-        assert_ne!(pm_session.file_key_idx, pm_cache.file_key_idx);
+        let roots: Vec<u64> = keys.iter().map(|&r| fixed_bits::get(r, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT)).collect();
+        assert!(roots.contains(&fixed_bits::ROOT_STATE));
+        assert!(roots.contains(&fixed_bits::ROOT_LOAD));
+        assert!(roots.contains(&fixed_bits::ROOT_STORE));
+    }
 
-        // each file root record holds correct dynamic string
-        let sess_rec = keys[pm_session.file_key_idx as usize];
-        let sess_dyn = fixed_bits::get(sess_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-        assert_eq!(dynamic.get(sess_dyn), Some("session"));
+    // --- parse: type encoding ---
 
-        let cache_rec = keys[pm_cache.file_key_idx as usize];
-        let cache_dyn = fixed_bits::get(cache_rec, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-        assert_eq!(dynamic.get(cache_dyn), Some("cache"));
+    #[test]
+    fn test_type_encoding() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let root = m(vec![("foo", m(vec![
+            ("_state", m(vec![("type", s("integer"))])),
+        ]))]);
+        parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        let types: Vec<u64> = keys.iter().map(|&r| fixed_bits::get(r, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE)).collect();
+        assert!(types.contains(&fixed_bits::TYPE_I64));
+    }
+
+    // --- parse: client encoding ---
+
+    #[test]
+    fn test_client_encoding() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let root = m(vec![("foo", m(vec![
+            ("_store", m(vec![("client", s("KVS")), ("key", s("k")), ("ttl", s("3600"))])),
+        ]))]);
+        parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        let clients: Vec<u64> = keys.iter().map(|&r| fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT)).collect();
+        assert!(clients.contains(&fixed_bits::CLIENT_KVS));
+    }
+
+    // --- parse: template value → is_template flag + path_map ---
+
+    #[test]
+    fn test_template_value() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let root = m(vec![("foo", m(vec![
+            ("_store", m(vec![("client", s("KVS")), ("key", s("foo:${session.id}"))])),
+        ]))]);
+        parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        let has_template = values.iter().any(|&vo| fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1);
+        assert!(has_template);
+        assert!(path_map.len() > 1);
+    }
+
+    // --- parse: map key → path_map expansion ---
+
+    #[test]
+    fn test_map_key_path_expansion() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let root = m(vec![("foo", m(vec![
+            ("_load", m(vec![
+                ("client", s("Env")),
+                ("map", m(vec![("host", s("DB_HOST")), ("port", s("DB_PORT"))])),
+            ])),
+        ]))]);
+        parse("f", root, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        // map keys produce is_path=1 records
+        let has_path = keys.iter().any(|&r| fixed_bits::get(r, fixed_bits::K_OFFSET_IS_PATH, fixed_bits::K_MASK_IS_PATH) == 1);
+        assert!(has_path);
+    }
+
+    // --- parse: two files → globally unique key indices ---
+
+    #[test]
+    fn test_two_files_unique_indices() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        let a = m(vec![("x", m(vec![]))]);
+        let b = m(vec![("y", m(vec![]))]);
+        let pm_a = parse("a", a, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+        let pm_b = parse("b", b, &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).unwrap();
+
+        assert_ne!(pm_a.file_key_idx, pm_b.file_key_idx);
+
+        let dyn_a = fixed_bits::get(keys[pm_a.file_key_idx as usize], fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
+        let dyn_b = fixed_bits::get(keys[pm_b.file_key_idx as usize], fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
+        assert_eq!(dynamic.get(dyn_a), Some("a"));
+        assert_eq!(dynamic.get(dyn_b), Some("b"));
+    }
+
+    // --- parse: root must be Mapping ---
+
+    #[test]
+    fn test_root_must_be_mapping() {
+        let (mut dynamic, mut keys, mut values, mut path_map, mut children_map) = make_vecs();
+        assert!(parse("f", s("bad"), &mut dynamic, &mut keys, &mut values, &mut path_map, &mut children_map).is_err());
     }
 }
