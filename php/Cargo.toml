@@ -11,3 +11,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 core = { workspace = true }
+serde_yaml_ng = "0.10"
