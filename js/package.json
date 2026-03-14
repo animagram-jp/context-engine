@@ -1,6 +1,6 @@
 {
-  "name": "state-engine",
-  "version": "0.2.0",
+  "name": "@animagram/state-engine",
+  "version": "0.1.4",
   "description": "Declarative state data management system for process",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,7 +8,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "wasm-pack build --target web --out-dir dist"
+    "build": "wasm-pack build --target web --out-dir dist && node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('./dist/package.json'));p.name='@animagram/state-engine';p.version='0.1.0';fs.writeFileSync('./dist/package.json',JSON.stringify(p,null,2));fs.writeFileSync('./dist/README.md','# @animagram/state-engine\\n\\n> ⚠️ This package is currently under development. API may change.\\n\\nWASM binding for [state-engine](https://github.com/animagram-jp/state-engine).\\n')\""
   },
   "devDependencies": {
     "wasm-pack": "^0.14.0"

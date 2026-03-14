@@ -1,0 +1,15 @@
+# event.yml — calendar event state (synced from server)
+
+selected_id:
+  _store:
+    client: InMemory
+    key: "event.selected_id"
+  _state:
+    type: string
+
+list:
+  _store:
+    client: InMemory
+    key: "event.list"
+  _state:
+    type: string   # JSON array of vCalendar events
