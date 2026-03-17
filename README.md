@@ -99,11 +99,13 @@ user:
 | Interface | expected store | fn | sample |
 |-----------|----------------|-----|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
-| `KVSClient` | Key-Vlue Store | `get()` / `set()` / `delete()` | [KVSAdapter](./examples/adapters/kvs_client.rs) |
-| `DbClient` | SQL Database | `fetch()` | [DbAdapter](./examples/adapters/db_client.rs) |
-| `EnvClient` | Environment Variables |  `get()` | [EnvAdapter](./examples/adapters/env_client.rs) |
+| `EnvClient` | Environment Variables |  as above | [EnvAdapter](./examples/adapters/env_client.rs) |
+| `KVSClient` | Key-Vlue Store | as above | [KVSAdapter](./examples/adapters/kvs_client.rs) |
+| `DbClient` | SQL Database | as above | [DbAdapter](./examples/adapters/db_client.rs) |
+| `HttpClient` | Http Request | as above | [HttpAdapter](./examples/adapters/http_client.rs) |
+| `FileClient` | File I/O | as above | [DefaultFileClient](./src/ports/default.rs) |
 
-- "Db" and "Env" will be used only in Loading(Read).
+- FileClient.get is always used by Manifest to read YAMLs.
 - It's not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.
@@ -153,7 +155,7 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│    InMemory, Env, KVS, Db clients   │
+│    InMemory, KVS, Http,... clients  │
 └─────────────────────────────────────┘
 ```
 

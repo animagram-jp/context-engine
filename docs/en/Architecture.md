@@ -11,6 +11,7 @@
   2. KVSClient
   3. DbClient
   4. EnvClient
+  5. HttpClient
 
 - common modules (internal common modules)
   1. u64(fix_bits.rs)
@@ -164,8 +165,8 @@ Application must implement the following traits to handle data stores:
   - expected operations: `get()`/`set()`/`delete()`
   - trait signature:
     - `fn get(&self, key: &str) -> Option<String>`
-    - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
-    - `fn delete(&mut self, key: &str) -> bool`
+    - `fn set(&self, key: &str, value: String, ttl: Option<u64>) -> bool`
+    - `fn delete(&self, key: &str) -> bool`
   - arguments: `"key":...` from `_{store,load}.key:...`, `ttl:...` from `_{store,load}.ttl:...`(optional) in Manifest
   - expected target: Key-Value Store (Redis, etc.)
   - **Important**: KVSClient handles String only (primitive type). State layer performs serialize/deserialize:
@@ -173,15 +174,29 @@ Application must implement the following traits to handle data stores:
     - **deserialize**: JSON string → Value (accurately restores type)
 
 3. **DbClient**
-  - expected operations: `fetch()`
+  - expected operations: `get()`/`set()`/`delete()`
+  - trait signature:
+    - `fn get(&self, connection: &Value, table: &str, columns: &[&str], where_clause: Option<&str>) -> Option<Vec<HashMap<String, Value>>>`
+    - `fn set(&self, connection: &Value, table: &str, values: &HashMap<String, Value>, where_clause: Option<&str>) -> bool`
+    - `fn delete(&self, connection: &Value, table: &str, where_clause: Option<&str>) -> bool`
   - arguments: `"connection":...`, `"table":...`, `"columns":...` from `_{load}.map.*:...`, `"where_clause":...`(optional)
   - only for `_load.client`
 
 4. **EnvClient**
-  - expected operations: `get()`
+  - expected operations: `get()`/`set()`/`delete()`
   - arguments: `"key":...` from `_{load}.map.*:...` in Manifest
   - expected target: environment variables
   - only for `_load.client`
+
+5. **HttpClient**
+  - expected operations: `get()`/`set()`/`delete()`
+  - trait signature:
+    - `fn get(&self, url: &str, headers: Option<&HashMap<String, String>>) -> Option<Value>`
+    - `fn set(&self, url: &str, body: Value, headers: Option<&HashMap<String, String>>) -> bool`
+    - `fn delete(&self, url: &str, headers: Option<&HashMap<String, String>>) -> bool`
+  - arguments: `"url":...` from `_{store,load}.url:...`, `"headers":...` from `_{store,load}.headers:...`
+  - expected target: HTTP endpoints
+  - for both `_store.client` and `_load.client`
 
 ---
 

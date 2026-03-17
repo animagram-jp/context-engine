@@ -86,6 +86,7 @@ key: "${cache.user.id}" # → State::get("cache.user.id")
 _store:
   client: InMemory  # Process memory
   client: KVS       # Redis, Memcached
+  client: HTTP      # HTTP endpoint
 ```
 
 **For _load** (where to load from):
@@ -96,6 +97,7 @@ _load:
   client: Env       # Environment variables
   client: KVS       # Redis, Memcached
   client: Db        # Database
+  client: HTTP      # HTTP endpoint
 ```
 
 You must implement an adapter for each client you use (see Required Ports).
@@ -141,6 +143,23 @@ _load:
   where: "id=${user.id}"            # (string, optional) WHERE clause
   map:                               # (object, required) Column mapping
     yaml_key: "db_column"
+```
+
+**_store.client: HTTP / _load.client: HTTP**
+```yaml
+_store:
+  client: HTTP
+  url: "https://api.example.com/state/${id}"  # (string) Endpoint URL (placeholders allowed)
+  headers:                                     # (object, optional) Request headers
+    Authorization: "Bearer ${token}"
+
+_load:
+  client: HTTP
+  url: "https://api.example.com/data/${id}"   # (string) Endpoint URL (placeholders allowed)
+  headers:                                     # (object, optional) Request headers
+    Authorization: "Bearer ${token}"
+  map:                                         # (object, optional) Field extraction from response
+    yaml_key: "response_field"
 ```
 
 ## State Methods

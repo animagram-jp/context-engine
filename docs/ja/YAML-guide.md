@@ -88,6 +88,7 @@ key: "${cache.user.id}" # → State::get("cache.user.id")
 _store:
   client: InMemory  # プロセスメモリ
   client: KVS       # Redis, Memcached等
+  client: HTTP      # HTTPエンドポイント
 ```
 
 **_load用（読込元）:**
@@ -98,6 +99,7 @@ _load:
   client: Env       # 環境変数
   client: KVS       # Redis, Memcached等
   client: Db        # データベース
+  client: HTTP      # HTTPエンドポイント
 ```
 
 使用する各クライアントのアダプターを実装する必要があります（Required Ports参照）。
@@ -143,4 +145,21 @@ _load:
   where: "id=${user.id}"            # (string, optional) WHERE句
   map:                               # (object, required) カラムマッピング
     yaml_key: "db_column"
+```
+
+**_store.client: HTTP / _load.client: HTTP**
+```yaml
+_store:
+  client: HTTP
+  url: "https://api.example.com/state/${id}"  # (string) エンドポイントURL
+  headers:                                     # (object, optional) リクエストヘッダー
+    Authorization: "Bearer ${token}"
+
+_load:
+  client: HTTP
+  url: "https://api.example.com/data/${id}"   # (string) エンドポイントURL
+  headers:                                     # (object, optional) リクエストヘッダー
+    Authorization: "Bearer ${token}"
+  map:                                         # (object, optional) レスポンスからのフィールド抽出
+    yaml_key: "response_field"
 ```

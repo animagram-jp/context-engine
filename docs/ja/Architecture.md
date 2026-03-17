@@ -11,6 +11,7 @@
   2. KVSClient
   3. DbClient
   4. EnvClient
+  5. HttpClient
 
 - common modules (内部コモンモジュール)
   1. u64(fix_bits.rs)
@@ -51,8 +52,8 @@
     - 必要なメソッド: `get()`/`set()`/`delete()`
     - traitシグネチャ:
       - `fn get(&self, key: &str) -> Option<String>`
-      - `fn set(&mut self, key: &str, value: String, ttl: Option<u64>) -> bool`
-      - `fn delete(&mut self, key: &str) -> bool`
+      - `fn set(&self, key: &str, value: String, ttl: Option<u64>) -> bool`
+      - `fn delete(&self, key: &str) -> bool`
     - 渡される引数: `"key": Manifestの_{store,load}.key:の値`, `ttl: Manifestの_{store,load}.ttl:の値(オプション)`
     - 想定対象ストア: Key-Valueストア（Redis等）
     - **重要**: KVSClientはString型のみを扱う（プリミティブ型）。State層がserialize/deserializeを実行:
@@ -62,15 +63,28 @@
       - KVSにはJSON文字列としてデータを保存。個別フィールドは取得後に抽出。
       - 設計意図: YAML構造に忠実でありながら、KVSはプリミティブに保つ。JSON形式でKVSネイティブ型に依存せず型情報を保持。
   3. **DbClient**
-    - 必要なメソッド: `fetch()`
-    - 渡される引数: `"connection": YAML記載の_{store,load}.connection:の値`, `"table": YAML記載の_{store,load}.table:の値}`, `"columns": YAML記載の_{store,load}.map.*:の値`, `"where_clause": YAML記載の_{store,load}.where:の値`
+    - 必要なメソッド: `get()`/`set()`/`delete()`
+    - traitシグネチャ:
+      - `fn get(&self, connection: &Value, table: &str, columns: &[&str], where_clause: Option<&str>) -> Option<Vec<HashMap<String, Value>>>`
+      - `fn set(&self, connection: &Value, table: &str, values: &HashMap<String, Value>, where_clause: Option<&str>) -> bool`
+      - `fn delete(&self, connection: &Value, table: &str, where_clause: Option<&str>) -> bool`
+    - 渡される引数: `"connection": YAML記載の_{load}.connection:の値`, `"table": YAML記載の_{load}.table:の値`, `"columns": YAML記載の_{load}.map.*:の値`, `"where_clause": YAML記載の_{load}.where:の値`
     - 想定対象ストア: SQLデータベース
     - _load.client: のみに使用対応
   4. **EnvClient**
-    - 必要なメソッド: `get()`
-    - 渡される引数: `"key": Manifestの_{store,load}.map.*:の値`
+    - 必要なメソッド: `get()`/`set()`/`delete()`
+    - 渡される引数: `"key": Manifestの_{load}.map.*:の値`
     - 想定対象ストア: 環境変数
     - _load.client: のみに使用対応
+  5. **HttpClient**
+    - 必要なメソッド: `get()`/`set()`/`delete()`
+    - traitシグネチャ:
+      - `fn get(&self, url: &str, headers: Option<&HashMap<String, String>>) -> Option<Value>`
+      - `fn set(&self, url: &str, body: Value, headers: Option<&HashMap<String, String>>) -> bool`
+      - `fn delete(&self, url: &str, headers: Option<&HashMap<String, String>>) -> bool`
+    - 渡される引数: `"url": YAML記載の_{store,load}.url:の値`, `"headers": YAML記載の_{store,load}.headers:の値`
+    - 想定対象ストア: HTTPエンドポイント
+    - _store/_load両方に使用対応
 
 ## Manifest
 

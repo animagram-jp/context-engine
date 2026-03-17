@@ -1,7 +1,5 @@
 use crate::ports::required::FileClient;
 
-/// Default FileClient using std::fs. For use in native (crate) environments.
-/// WASI/JS bindings should provide their own FileClient implementation.
 pub struct DefaultFileClient;
 
 impl FileClient for DefaultFileClient {
