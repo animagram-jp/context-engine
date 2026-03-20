@@ -1,6 +1,6 @@
 use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
-    InMemoryClient, HttpClient,
+    InMemoryClient, HttpClient, FileClient,
 };
 use core::fixed_bits;
 use serde_json::Value;
@@ -12,6 +12,7 @@ pub struct Load<'a> {
     in_memory: Option<&'a dyn InMemoryClient>,
     env: Option<&'a dyn EnvClient>,
     http: Option<&'a dyn HttpClient>,
+    file: Option<&'a dyn FileClient>,
 }
 
 impl<'a> Load<'a> {
@@ -22,6 +23,7 @@ impl<'a> Load<'a> {
             in_memory: None,
             env: None,
             http: None,
+            file: None,
         }
     }
 
@@ -50,6 +52,11 @@ impl<'a> Load<'a> {
         self
     }
 
+    pub fn with_file(mut self, client: &'a dyn FileClient) -> Self {
+        self.file = Some(client);
+        self
+    }
+
     pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, String> {
         let client = config
             .get("client")
@@ -62,6 +69,7 @@ impl<'a> Load<'a> {
             fixed_bits::CLIENT_KVS       => self.load_from_kvs(config),
             fixed_bits::CLIENT_DB        => self.load_from_db(config),
             fixed_bits::CLIENT_HTTP      => self.load_from_http(config),
+            fixed_bits::CLIENT_FILE      => self.load_from_file(config),
             _ => Err(format!("Load::handle: unsupported client '{}'", client)),
         }
     }
@@ -184,6 +192,27 @@ impl<'a> Load<'a> {
         }
 
         Ok(Value::Object(result))
+    }
+
+    fn load_from_file(
+        &self,
+        config: &HashMap<String, Value>,
+    ) -> Result<Value, String> {
+        let file = self
+            .file
+            .ok_or("Load::load_from_file: FileClient not configured")?;
+
+        let key = config
+            .get("key")
+            .and_then(|v| v.as_str())
+            .ok_or("Load::load_from_file: 'key' not found")?;
+
+        let content = file
+            .get(key)
+            .ok_or_else(|| format!("Load::load_from_file: key '{}' not found", key))?;
+
+        serde_json::from_str(&content)
+            .map_err(|e| format!("Load::load_from_file: JSON parse error: {}", e))
     }
 
     fn load_from_http(

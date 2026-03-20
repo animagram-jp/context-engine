@@ -74,6 +74,12 @@ impl<'a> State<'a> {
         self
     }
 
+    pub fn with_file_client(mut self, client: &'a dyn crate::ports::required::FileClient) -> Self {
+        self.store = self.store.with_file(client);
+        self.load = self.load.with_file(client);
+        self
+    }
+
 
     /// Splits "file.path" into ("file", "path").
     fn split_key<'k>(key: &'k str) -> (&'k str, &'k str) {

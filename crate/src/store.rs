@@ -1,4 +1,4 @@
-use crate::ports::required::{InMemoryClient, KVSClient, HttpClient};
+use crate::ports::required::{InMemoryClient, KVSClient, HttpClient, FileClient};
 use core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -7,6 +7,7 @@ pub struct Store<'a> {
     in_memory: Option<&'a dyn InMemoryClient>,
     kvs: Option<&'a dyn KVSClient>,
     http: Option<&'a dyn HttpClient>,
+    file: Option<&'a dyn FileClient>,
 }
 
 impl<'a> Store<'a> {
@@ -15,6 +16,7 @@ impl<'a> Store<'a> {
             in_memory: None,
             kvs: None,
             http: None,
+            file: None,
         }
     }
 
@@ -30,6 +32,11 @@ impl<'a> Store<'a> {
 
     pub fn with_http(mut self, client: &'a dyn HttpClient) -> Self {
         self.http = Some(client);
+        self
+    }
+
+    pub fn with_file(mut self, client: &'a dyn FileClient) -> Self {
+        self.file = Some(client);
         self
     }
 
@@ -58,6 +65,12 @@ impl<'a> Store<'a> {
                         .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                         .collect::<HashMap<String, String>>());
                 http.get(url, headers.as_ref())
+            }
+            fixed_bits::CLIENT_FILE => {
+                let file = self.file.as_ref()?;
+                let key = store_config.get("key")?.as_str()?;
+                let content = file.get(key)?;
+                serde_json::from_str(&content).ok()
             }
             _ => None,
         }
@@ -105,6 +118,15 @@ impl<'a> Store<'a> {
                         .collect::<HashMap<String, String>>());
                 Ok(http.set(url, value, headers.as_ref()))
             }
+            fixed_bits::CLIENT_FILE => {
+                let file = self.file.as_ref()
+                    .ok_or_else(|| "Store::set: FileClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                let serialized = serde_json::to_string(&value)
+                    .map_err(|e| format!("Store::set: JSON serialize error: {}", e))?;
+                Ok(file.set(key, serialized))
+            }
             _ => Err(format!("Store::set: unsupported client '{}'", client)),
         }
     }
@@ -142,6 +164,13 @@ impl<'a> Store<'a> {
                         .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                         .collect::<HashMap<String, String>>());
                 Ok(http.delete(url, headers.as_ref()))
+            }
+            fixed_bits::CLIENT_FILE => {
+                let file = self.file.as_ref()
+                    .ok_or_else(|| "Store::delete: FileClient not configured".to_string())?;
+                let key = store_config.get("key").and_then(|v| v.as_str())
+                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                Ok(file.delete(key))
             }
             _ => Err(format!("Store::delete: unsupported client '{}'", client)),
         }
