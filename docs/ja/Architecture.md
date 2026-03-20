@@ -3,8 +3,7 @@
 ## index
 
 - provided modules (ライブラリ提供モジュール)
-  1. Manifest
-  2. State
+  1. State
 
 -  required modules (ライブラリ要求モジュール*)
   1. InMemoryClient
@@ -14,15 +13,14 @@
   5. HttpClient
   6. FileClient
 
-- common modules (内部コモンモジュール)
-  1. u64(fix_bits.rs)
-  2. Pools & Maps(pool.rs)
-  3. ParsedManifest(parser.rs)
-  4. LogFormat
-
 - internal modules (内部モジュール)
-  1. Store
-  2. Load
+  1. Manifest
+  2. Store
+  3. Load
+  4. u64(fixed_bits.rs)
+  5. Pools & Maps(pool.rs)
+  6. ParsedManifest(parser.rs)
+  7. LogFormat
 
 *: いずれもoptional(必須ではない)
 
@@ -34,10 +32,11 @@
 
 1. Provided Port
 
-ライブラリ提供moduleのtraits
+**State** がライブラリ唯一の公開APIです。
 
-  1. **Manifest** - YAMLファイルの読み込みと集計をするmodule。"_"始まりのmeta keysを認識し、get()メソッドでは無視したcollectionを返却、getMeta()では親から子に継承と上書きをしながら集計し返却する。収集時、メタブロック内の_load.map.*のキー値は、YAMLファイルのfilename.key1.key2.,....(絶対パス)に変換する。
-  2. **State** - Manifest::getMeta()から取得する_storeブロックの記述に基づいて格納されるステートデータ(state obj)を対象に、`get()` / `set()` / `delete()`操作を行うmodule。`get()`では、key miss hitをトリガーとして、同じく取得した`_load`ブロックの記述に基づいてロード試行を自動的に行う。`set()`は指定のkeyに値をsetする。自動ロードは引き起こさない。`delete()`は指定のkeyと、そのvalue全てを削除する。Stateは、インスタンスメモリの`State.cache`にYAMLファイル記述に従ったcollection型でstate objをキャッシュし、動作中、同期処理を行う。ロードを引き起こさないmiss/hit key判定の`exists()`も提供している。
+manifest YAMLの`_store`/`_load`定義に従い、`get()` / `set()` / `delete()` / `exists()`操作を提供するmoduleです。`get()`はkey missをトリガーに`_load`定義に基づいて自動ロードを試みます。`set()`は自動ロードを引き起こしません。`delete()`はストアとインスタンスキャッシュ両方から削除します。`exists()`は自動ロードを引き起こさずにkey存在確認を行います。
+
+ManifestはStateが内部的に使用するモジュールです。YAMLファイルの読み込みと固定長プール構造の構築を担い、`_`始まりのmeta keysを認識します。`_store`/`_load`/`_state`メタデータは親から子へ継承され、子が上書きできます。
 
 2. Required Ports
 

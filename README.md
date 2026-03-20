@@ -22,8 +22,7 @@ It behaves as described in YAML DSL.
 
 | mod | description | fn |
 |-------|------|---------|
-| **Manifest** | reads static YAMLs and returns processed obj | `get_value()`, `get_meta()` |
-| **State** | operates state data following Manifest | `get()`, `set()`, `delete()`, `exists()` |
+| **State** | operates state data following manifest YAMLs | `get()`, `set()`, `delete()`, `exists()` |
 
 ## Why state-engine?
 
@@ -134,25 +133,22 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ## Architecture
 
 ```
-┌─────────────┐  ┌───────────────────┐
-│ Application │  │ manifestDir/*.yml │
-└──────┬──────┘  └───────────────────┘
-       │ uses             ▲ read
-       ▼                  │
-┌─────────────────────────┴───────────┐
-│     Provided Ports (Public API)     │
-├─────────────────────────────────────┤
-│                                     │
-│      State    -->    Manifest       │
-│                                     │
+  manifestDir/*.yml
+         │ read via FileClient
+         ▼
+┌─────────────────────────────────────┐
+│           State (Public API)        │
 └───────┬─────────────────────────────┘
         │ depends on
         ▼
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│    InMemory, KVS, Http,... clients  │
+│  InMemory / KVS / DB / HTTP / File  │
 └─────────────────────────────────────┘
+        ▲
+        │ implement
+  Application
 ```
 
 see for details [Architecture.md](./docs/en/Architecture.md)

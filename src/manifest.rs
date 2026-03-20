@@ -16,16 +16,6 @@ pub struct MetaIndices {
 
 /// Manages parsed manifest files with all vecs shared globally across files.
 /// Each file is parsed on first access and appended to the shared vecs.
-///
-/// # Examples
-///
-/// ```
-/// use state_engine::Manifest;
-///
-/// let mut store = Manifest::new("./examples/manifest");
-/// assert!(store.load("cache").is_ok());
-/// assert!(store.load("nonexistent").is_err());
-/// ```
 pub struct Manifest {
     manifest_dir: PathBuf,
     file: Box<dyn FileClient>,
@@ -52,27 +42,6 @@ impl Manifest {
     }
 
     /// Replaces the default FileClient. Useful for WASI/JS environments without std::fs.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::{Manifest, FileClient};
-    ///
-    /// struct MockFile;
-    /// impl FileClient for MockFile {
-    ///     fn get(&self, path: &str) -> Option<String> {
-    ///         if path.ends_with("cache.yml") { Some("user:\n  id:\n    _state:\n      type: string\n".into()) }
-    ///         else { None }
-    ///     }
-    ///     fn set(&self, _: &str, _: String) -> bool { false }
-    ///     fn delete(&self, _: &str) -> bool { false }
-    /// }
-    ///
-    /// let mut m = Manifest::new("/any/path").with_file(MockFile);
-    /// assert!(m.load("cache").is_ok());
-    /// assert!(m.file_key_idx("cache").is_some());
-    /// assert!(m.file_key_idx("missing").is_none());
-    /// ```
     pub fn with_file(mut self, client: impl FileClient + 'static) -> Self {
         self.file = Box::new(client);
         self
@@ -80,29 +49,6 @@ impl Manifest {
 
     /// Loads and parses a manifest file by name (without extension) if not cached.
     /// Second call for the same file is a no-op (cached).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::Manifest;
-    ///
-    /// let mut store = Manifest::new("./examples/manifest");
-    ///
-    /// // first load parses and caches
-    /// assert!(store.load("cache").is_ok());
-    ///
-    /// // second load is a no-op
-    /// assert!(store.load("cache").is_ok());
-    ///
-    /// // nonexistent file returns Err
-    /// assert!(store.load("nonexistent").is_err());
-    ///
-    /// // after load, keys are globally unique across files
-    /// assert!(store.load("session").is_ok());
-    /// let cache_idx  = store.find("cache",   "user").unwrap();
-    /// let session_idx = store.find("session", "sso_user_id").unwrap();
-    /// assert_ne!(cache_idx, session_idx);
-    /// ```
     pub fn load(&mut self, file: &str) -> Result<(), ManifestError> {
         crate::fn_log!("Manifest", "load", file);
         if self.files.contains_key(file) {
@@ -152,24 +98,6 @@ impl Manifest {
 
     /// Looks up a key record index by dot-separated path within a file.
     /// Returns `None` if file is not loaded or path not found.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::Manifest;
-    ///
-    /// let mut store = Manifest::new("./examples/manifest");
-    /// store.load("cache").unwrap();
-    ///
-    /// // "user" exists
-    /// assert!(store.find("cache", "user").is_some());
-    ///
-    /// // "user.id" exists
-    /// assert!(store.find("cache", "user.id").is_some());
-    ///
-    /// // unknown path returns None
-    /// assert!(store.find("cache", "never").is_none());
-    /// ```
     pub fn find(&self, file: &str, path: &str) -> Option<u16> {
         let file_idx = self.files.get(file)?.file_key_idx;
         let file_record = self.keys.get(file_idx as usize).copied()?;
@@ -233,23 +161,6 @@ impl Manifest {
 
     /// Returns meta record indices (_load/_store/_state) for a dot-path node.
     /// Collects from root to node; child overrides parent.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::Manifest;
-    ///
-    /// let mut store = Manifest::new("./examples/manifest");
-    /// store.load("cache").unwrap();
-    ///
-    /// let meta = store.get_meta("cache", "user");
-    /// assert!(meta.load.is_some());
-    /// assert!(meta.store.is_some());
-    ///
-    /// // leaf node has _state
-    /// let meta = store.get_meta("cache", "user.id");
-    /// assert!(meta.state.is_some());
-    /// ```
     pub fn get_meta(&self, file: &str, path: &str) -> MetaIndices {
         crate::fn_log!("Manifest", "get_meta", &format!("{}.{}", file, path));
         let file_idx = match self.files.get(file) {
@@ -324,19 +235,6 @@ impl Manifest {
 
     /// Returns indices of field-key leaf values for a node (meta keys and nulls excluded).
     /// Returns a vec of (dynamic_index, yaml_value_index) for each leaf child.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use state_engine::Manifest;
-    ///
-    /// let mut store = Manifest::new("./examples/manifest");
-    /// store.load("connection").unwrap();
-    ///
-    /// // "tag", "driver", "charset" are static leaf values
-    /// let values = store.get_value("connection", "common");
-    /// assert!(!values.is_empty());
-    /// ```
     pub fn get_value(&self, file: &str, path: &str) -> Vec<(u16, u16)> {
         let node_idx = match self.find(file, path) {
             Some(idx) => idx,
@@ -370,6 +268,158 @@ impl Manifest {
         }
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn m() -> Manifest {
+        Manifest::new("./examples/manifest")
+    }
+
+    // --- load ---
+
+    #[test]
+    fn test_load_ok() {
+        let mut m = m();
+        assert!(m.load("cache").is_ok());
+    }
+
+    #[test]
+    fn test_load_noop_on_second_call() {
+        let mut m = m();
+        assert!(m.load("cache").is_ok());
+        assert!(m.load("cache").is_ok());
+    }
+
+    #[test]
+    fn test_load_file_not_found() {
+        let mut m = m();
+        assert!(matches!(m.load("nonexistent"), Err(ManifestError::FileNotFound(_))));
+    }
+
+    // --- find ---
+
+    #[test]
+    fn test_find_top_level() {
+        let mut m = m();
+        m.load("cache").unwrap();
+        assert!(m.find("cache", "user").is_some());
+    }
+
+    #[test]
+    fn test_find_nested() {
+        let mut m = m();
+        m.load("cache").unwrap();
+        assert!(m.find("cache", "user.id").is_some());
+    }
+
+    #[test]
+    fn test_find_unknown() {
+        let mut m = m();
+        m.load("cache").unwrap();
+        assert!(m.find("cache", "nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_find_not_loaded_returns_none() {
+        let m = m();
+        assert!(m.find("cache", "user").is_none());
+    }
+
+    #[test]
+    fn test_find_unique_indices_across_files() {
+        // parser guarantees uniqueness, but Manifest must load both correctly
+        let mut m = m();
+        m.load("cache").unwrap();
+        m.load("connection").unwrap();
+        let cache_idx = m.find("cache", "user").unwrap();
+        let conn_idx  = m.find("connection", "common").unwrap();
+        assert_ne!(cache_idx, conn_idx);
+    }
+
+    // --- get_meta ---
+
+    #[test]
+    fn test_get_meta_has_load_and_store() {
+        // cache.user has both _load (Db) and _store (KVS)
+        let mut m = m();
+        m.load("cache").unwrap();
+        let meta = m.get_meta("cache", "user");
+        assert!(meta.load.is_some());
+        assert!(meta.store.is_some());
+    }
+
+    #[test]
+    fn test_get_meta_leaf_has_state() {
+        // cache.user.id has _state
+        let mut m = m();
+        m.load("cache").unwrap();
+        let meta = m.get_meta("cache", "user.id");
+        assert!(meta.state.is_some());
+    }
+
+    #[test]
+    fn test_get_meta_inheritance() {
+        // cache.user.id has no _store of its own; inherits from cache.user (_store: KVS)
+        let mut m = m();
+        m.load("cache").unwrap();
+        let parent_meta = m.get_meta("cache", "user");
+        let child_meta  = m.get_meta("cache", "user.id");
+        // both point to a _store record — child inherits parent's
+        assert!(child_meta.store.is_some());
+        assert_eq!(child_meta.store, parent_meta.store);
+    }
+
+    #[test]
+    fn test_get_meta_child_overrides_parent_load() {
+        // cache.user.tenant_id has its own _load (State), overriding user's _load (Db)
+        let mut m = m();
+        m.load("cache").unwrap();
+        let parent_meta = m.get_meta("cache", "user");
+        let child_meta  = m.get_meta("cache", "user.tenant_id");
+        assert_ne!(child_meta.load, parent_meta.load);
+    }
+
+    #[test]
+    fn test_get_meta_unknown_path_returns_default() {
+        let mut m = m();
+        m.load("cache").unwrap();
+        let meta = m.get_meta("cache", "nonexistent");
+        assert!(meta.load.is_none());
+        assert!(meta.store.is_none());
+        assert!(meta.state.is_none());
+    }
+
+    // --- get_value ---
+
+    #[test]
+    fn test_get_value_returns_static_leaves() {
+        // connection.common has static leaf values: tag, driver, charset
+        let mut m = m();
+        m.load("connection").unwrap();
+        let values = m.get_value("connection", "common");
+        assert!(!values.is_empty());
+    }
+
+    #[test]
+    fn test_get_value_excludes_meta_keys() {
+        // cache.user has _store/_load but those must not appear in get_value
+        let mut m = m();
+        m.load("cache").unwrap();
+        let values = m.get_value("cache", "user");
+        // user has no static leaf children (id/org_id/tenant_id are non-leaf nodes)
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn test_get_value_unknown_path_returns_empty() {
+        let mut m = m();
+        m.load("cache").unwrap();
+        let values = m.get_value("cache", "nonexistent");
+        assert!(values.is_empty());
     }
 }
 

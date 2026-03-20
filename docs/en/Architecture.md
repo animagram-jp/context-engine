@@ -3,8 +3,7 @@
 ## index
 
 - provided modules (library provided)
-  1. Manifest
-  2. State
+  1. State
 
 -  required modules (library required*)
   1. InMemoryClient
@@ -14,15 +13,14 @@
   5. HttpClient
   6. FileClient
 
-- common modules (internal common modules)
-  1. u64(fix_bits.rs)
-  2. Pools & Maps(pool.rs)
-  3. ParsedManifest(parser.rs)
-  4. LogFormat
-
 - internal modules
-  1. Store
-  2. Load
+  1. Manifest
+  2. Store
+  3. Load
+  4. u64(fixed_bits.rs)
+  5. Pools & Maps(pool.rs)
+  6. ParsedManifest(parser.rs)
+  7. LogFormat
 
 *: *_client impl are not essential, optional modules.
 
@@ -30,46 +28,11 @@
 
 ## provided modules
 
-Library provides the following modules to handle YAMLs and state data:
+**State** is the sole public API of the library.
 
-1. **Manifest**
+A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data following the `_store`/`_load` blocks defined in manifest YAMLs. `get()` automatically attempts loading on key miss. `set()` does not trigger loading. `delete()` removes the specified key from both store and cache. `exists()` checks key existence without triggering auto-load. It maintains an instance-level cache (`state_values`) separate from persistent stores.
 
-A module reading YAML files and building fixed-length pool structures. It detects `_` prefix keys (meta keys) and separates them from field keys. Relative placeholders in values are qualified to absolute paths at parse time.
-
-  1. `load(file: &str)` -> `Result<(), ManifestError>`
-
-  Load and parse a manifest file by name. Second call for the same file is a no-op.
-
-  2. `find(file: &str, path: &str)` -> `Option<u16>`
-
-  Look up a key record index by dot-separated path within a file.
-
-  3. `get_meta(file: &str, path: &str)` -> `MetaIndices`
-
-  Return meta record indices (`_load`/`_store`/`_state`) for a node. Collects from root to node; child overrides parent.
-
-  4. `get_value(file: &str, path: &str)` -> `Vec<(u16, u16)>`
-
-  Return leaf value indices for field-key children of a node (meta keys and nulls excluded).
-
-  **Metadata inheritance rules:**
-  ```yaml
-  # cache.yml
-  _store:
-    client: KVS
-    ttl: 3600
-
-  user:
-    _store:
-      key: "user:${sso_user_id}"  # Inherits client: KVS, overwrites key
-
-    tenant_id:
-      # Inherits _store from parent: client: KVS, key: "user:${sso_user_id}", ttl: 3600
-  ```
-
-2. **State**
-
-A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data following the `_store`/`_load` blocks from Manifest. `get()` automatically attempts loading on key miss. `set()` does not trigger loading. `delete()` removes the specified key from both store and cache. `exists()` checks key existence without triggering auto-load. It maintains an instance-level cache (`state_values`) separate from persistent stores.
+Manifest is an internal module used by State. It reads YAML files and builds fixed-length pool structures. It detects `_` prefix keys (meta keys) and separates them from field keys. Relative placeholders in values are qualified to absolute paths at parse time. Metadata (`_store`/`_load`/`_state`) is inherited from parent nodes; child overrides parent.
 
 ## State
 

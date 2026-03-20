@@ -1,5 +1,4 @@
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 pub enum ManifestError {
@@ -39,12 +38,6 @@ impl std::fmt::Display for StateError {
             StateError::LoadFailed(msg)           => write!(f, "LoadFailed: {}", msg),
         }
     }
-}
-
-pub trait Manifest {
-    fn get_value(&mut self, key: &str, default: Option<Value>) -> Value;
-    fn get_meta(&mut self, key: &str) -> HashMap<String, Value>;
-    fn load(&mut self, file: &str) -> Result<(), ManifestError>;
 }
 
 /// The primary interface for state-engine. Manages state per manifest definition.
