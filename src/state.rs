@@ -88,6 +88,7 @@ impl State {
     }
 
     fn load_manifest(&mut self, file: &str) -> Result<(), ManifestError> {
+        crate::fn_log!("State", "load_manifest", file);
         if self.manifest.is_loaded(file) {
             return Ok(());
         }
@@ -171,7 +172,6 @@ impl State {
         match cv {
             ConfigValue::Client(c) => Ok(Some(Value::Number(c.into()))),
             ConfigValue::Placeholder(path) => self.get(&path),
-            ConfigValue::Object(path) => self.get(&path),
             ConfigValue::Str(s) if s.contains("${") => {
                 Ok(self.resolve_template(&s)?.map(Value::String))
             }
@@ -338,7 +338,7 @@ impl State {
                                         self.state_keys.push(key_idx);
                                         self.state_vals.push(loaded.clone());
                                     }
-                                    Err(_) => {}
+                                    Err(_) => {} // write-through cache failure is non-fatal; loaded value is still returned
                                 }
                             } else {
                                 self.state_keys.push(key_idx);

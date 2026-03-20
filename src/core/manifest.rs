@@ -15,9 +15,8 @@ pub enum ConfigValue {
     /// Static string value (no placeholder resolution needed).
     Str(String),
     /// A placeholder path that must be resolved via State::get().
+    /// Used for both scalar placeholders and object-valued placeholders (e.g. connection).
     Placeholder(String),
-    /// An object value (e.g. connection) that may itself contain a Placeholder.
-    Object(String),
     /// A map of (yaml_key → db_column) pairs.
     Map(Vec<(String, String)>),
     /// Numeric client id.
