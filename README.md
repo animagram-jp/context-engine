@@ -111,23 +111,18 @@ user:
 3. Initialize State with your adapters and use it.
 
 ```rust
-use state_engine::{State, Load};
+use state_engine::State;
 
 // Create adapter instances
-let mut in_memory = InMemoryAdapter::new();
-let mut kvs = KVSAdapter::new()?;
+let in_memory = InMemoryAdapter::new();
+let kvs = KVSAdapter::new()?;
 let db = DbAdapter::new()?;
 
-// Build Load with adapters
-let load = Load::new()
-    .with_in_memory(&mut in_memory)
-    .with_kvs_client(&mut kvs)
-    .with_db_client(&db);
-
 // Build State with adapters
-let mut state = State::new("./manifest", load)
-    .with_in_memory(&mut in_memory)
-    .with_kvs_client(&mut kvs);
+let mut state = State::new("./manifest")
+    .with_in_memory(&in_memory)
+    .with_kvs(&kvs)
+    .with_db(&db);
 
 // Use state-engine
 let user = state.get("example.user.name")?;
@@ -165,8 +160,8 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
 ```
 ./
-  README.md           # this file
-  Cargo.toml          # workspace
+  README.md
+  Cargo.toml
 
   docs/               # guides
     en/
@@ -177,37 +172,31 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       Architecture.md
       YAML-guide.md
 
-  core/                 # pure logic module
-    Cargo.toml
-    src/
-
-  crate/                # for native application
-    Cargo.toml
-    src/
-    examples/
-      manifest/         # manifest YAML examples
-        connection.yml  # sample 1
-        cache.yml       # sample 2
-        session.yml     # sample 3
-      adapters/
-      app/
-        docker-compose.yml
-        Cargo.toml
-        Dockerfile
-        db/
-        src/
-          main.rs
-          adapters.rs
+  src/
+  examples/
+    manifest/         # manifest YAML examples
+      connection.yml  # sample 1
+      cache.yml       # sample 2
+      session.yml     # sample 3
+    adapters/
+    app/
+      docker-compose.yml
+      Cargo.toml
+      Dockerfile
+      db/
+      src/
+        main.rs
+        adapters.rs
 ```
 
 ## tests
 
 unit tests, intergeration tests on example app (docker compose) passed
 
-```bash
+```bashcargo test --features=logging -- --nocapture
 cargo test --features=logging -- --nocapture
 
-cd crate/examples/app && ./run.sh
+cd examples/app && ./run.sh
 ```
 
 ## Background

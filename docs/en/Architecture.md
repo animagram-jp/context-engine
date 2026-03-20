@@ -12,6 +12,7 @@
   3. DbClient
   4. EnvClient
   5. HttpClient
+  6. FileClient
 
 - common modules (internal common modules)
   1. u64(fix_bits.rs)
@@ -209,6 +210,8 @@ When `State::get()` misses a value, retrieve data according to `_load` settings.
 - `Db` - Load from database
 - `KVS` - Load from KVS
 - `InMemory` - Load from process memory
+- `Http` - Load from HTTP endpoint
+- `File` - Load from file
 - `State` - Reference another State key directly (does not call Load::handle())
 
 **Special behavior for State client:**
@@ -254,10 +257,12 @@ When `_load.client: State`, `Load::handle()` is not called; the value of `_load.
 7. On miss, auto-load
    ├─→ build_config() resolves placeholders
    ├─→ Load::handle(config)
-   │    ├─→ client: Db → DbClient::fetch()
+   │    ├─→ client: Db → DbClient::get()
    │    ├─→ client: KVS → KVSClient::get()
    │    ├─→ client: Env → EnvClient::get()
-   │    └─→ client: InMemory → InMemoryClient::get()
+   │    ├─→ client: InMemory → InMemoryClient::get()
+   │    ├─→ client: Http → HttpClient::get()
+   │    └─→ client: File → FileClient::get()
    ├─→ Save to persistent store
    └─→ Save to state_values
    ↓
