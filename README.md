@@ -15,8 +15,8 @@ It behaves as described in YAML DSL.
 | Version | Status  | Date | description |
 |---------|---------|------|-------------|
 | 0.1   | Released  | 2026-2-12 | initial | 
-| 0.1.3 | Current   | 2026-2-26 | improve #32 | 
-| 0.1.4 | Scheduled | 2026-3-15  | improve #37 | 
+| 0.1.4 | Current   | 2026-3-18 | improve #45 | 
+| 0.1.5 | Scheduled | 2026-3-22  | improve #46 | 
 
 ## Provided Functions
 
@@ -204,37 +204,23 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
 unit tests, intergeration tests on example app (docker compose) passed
 
-1. cargo test:
 ```bash
 cargo test --features=logging -- --nocapture
-```
 
-2. example application test:
-```bash
-cd crate/examples/app
-docker compose up --build
+cd crate/examples/app && ./run.sh
 ```
 
 ## Background
 
 **reimagined web architecture**
 
-- computer: A network-capable node in the system.
-- server: A computer that serves human users.
-- orchestrator: A computer responsible for internal system coordination and maintenance. (optional)
-- database: A server that persists data without an inherent expiration and accepts CRUD operations.
-- terminal: A server that provides a direct human-facing interface.
-- conductor: A server that communicates independently with both a database and terminals,
-  and maintains a synchronized state between them. (optional)
-
 ```yaml
-# terms relationship
-computer:
-  orchestrator:
-  server:
-    database:
-    terminal:
-    conductor:
+computer: "A network-capable node in the system."
+  orchestrator: "A computer responsible for internal system coordination and maintenance. (optional)"
+  server: "A computer that serves human users."
+    database: "A server that persists data without an inherent expiration and accepts CRUD operations."
+    terminal: "A server that provides a direct human-facing interface."
+    conductor: "A server that communicates independently with both a database and terminals, and keeps state data syncable between them. (optional)"
 ```
 
 ## License

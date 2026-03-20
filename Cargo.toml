@@ -2,13 +2,12 @@
 members = [
     "core",
     "crate",
-    "crate/examples/app"
 ]
 resolver = "2"
 
 [workspace.package]
 name = "state-engine"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Andyou <andyou@animagram.jp>"]
 description = "Declarative state data management system for process"
 edition = "2024"
