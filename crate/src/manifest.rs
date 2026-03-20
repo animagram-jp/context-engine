@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use core::parser::{ParsedManifest, Value, parse};
-use core::pool::DynamicPool;
-use core::fixed_bits;
+use crate::core::parser::{ParsedManifest, Value, parse};
+use crate::core::pool::DynamicPool;
+use crate::core::fixed_bits;
 use crate::ports::provided::ManifestError;
 use crate::ports::required::FileClient;
 

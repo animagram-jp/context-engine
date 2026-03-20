@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use crate::manifest::Manifest;
-use core::fixed_bits;
-use core::codec;
+use crate::core::fixed_bits;
+use crate::core::codec;
 use crate::store::Store;
 use crate::load::Load;
 use crate::ports::provided::StateError;

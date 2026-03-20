@@ -1,4 +1,4 @@
-use crate::fixed_bits;
+use super::fixed_bits;
 
 pub const ROOT_NAMES: &[(&str, u64)] = &[
     ("_load",  fixed_bits::ROOT_LOAD),

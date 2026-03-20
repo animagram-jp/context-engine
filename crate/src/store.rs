@@ -1,5 +1,5 @@
 use crate::ports::required::{InMemoryClient, KVSClient, HttpClient, FileClient};
-use core::fixed_bits;
+use crate::core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -180,7 +180,7 @@ impl<'a> Store<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::fixed_bits;
+    use crate::core::fixed_bits;
 
     struct MockFileClient {
         store: std::sync::Mutex<std::collections::HashMap<String, String>>,

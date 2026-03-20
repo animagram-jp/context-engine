@@ -3,9 +3,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
 
-use crate::pool::DynamicPool;
-use crate::fixed_bits;
-use crate::codec;
+use super::pool::DynamicPool;
+use super::fixed_bits;
+use super::codec;
 
 /// Generic value type for manifest parsing.
 /// Binding-agnostic — no serde, no std, no alloc beyond Vec/String.
@@ -410,7 +410,7 @@ fn build_qualified_path(filename: &str, ancestors: &[&str], key_str: &str) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixed_bits;
+    use crate::core::fixed_bits;
     use alloc::vec::Vec;
     #[allow(unused_imports)]
     use alloc::vec;

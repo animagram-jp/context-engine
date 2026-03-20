@@ -1,3 +1,4 @@
+mod core;
 pub mod common;
 pub mod manifest;
 pub mod ports;

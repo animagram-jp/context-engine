@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "core",
     "crate",
 ]
 resolver = "2"
@@ -12,6 +11,3 @@ authors = ["Andyou <andyou@animagram.jp>"]
 description = "Declarative state data management system for process"
 edition = "2024"
 license = "MIT"
-
-[workspace.dependencies]
-core={ path = "./core" }

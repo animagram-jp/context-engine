@@ -11,9 +11,9 @@ homepage = "https://github.com/animagram-jp/"
 readme = "../README.md"
 keywords = ["web", "yaml", "state-management", "declarative", "dsl"]
 categories = ["caching", "data-structures", "web-programming"]
+exclude = ["examples/*"]
 
 [dependencies]
-core = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml_ng = "0.10"
