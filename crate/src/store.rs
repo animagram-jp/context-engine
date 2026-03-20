@@ -177,6 +177,71 @@ impl<'a> Store<'a> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::fixed_bits;
+
+    struct MockFileClient {
+        store: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    }
+    impl MockFileClient {
+        fn new() -> Self {
+            Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) }
+        }
+    }
+    impl FileClient for MockFileClient {
+        fn get(&self, key: &str) -> Option<String> {
+            self.store.lock().unwrap().get(key).cloned()
+        }
+        fn set(&self, key: &str, value: String) -> bool {
+            self.store.lock().unwrap().insert(key.to_string(), value);
+            true
+        }
+        fn delete(&self, key: &str) -> bool {
+            self.store.lock().unwrap().remove(key).is_some()
+        }
+    }
+
+    fn file_config(key: &str) -> HashMap<String, Value> {
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
+        config.insert("key".to_string(), Value::String(key.to_string()));
+        config
+    }
+
+    #[test]
+    fn test_store_file_set_and_get() {
+        let file = MockFileClient::new();
+        let store = Store::new().with_file(&file);
+        let config = file_config("my_key");
+
+        assert_eq!(store.set(&config, serde_json::json!({"x": 1}), None).unwrap(), true);
+        let result = store.get(&config).unwrap();
+        assert_eq!(result, serde_json::json!({"x": 1}));
+    }
+
+    #[test]
+    fn test_store_file_delete() {
+        let file = MockFileClient::new();
+        let store = Store::new().with_file(&file);
+        let config = file_config("my_key");
+
+        store.set(&config, serde_json::json!(1), None).unwrap();
+        assert_eq!(store.delete(&config).unwrap(), true);
+        assert!(store.get(&config).is_none());
+    }
+
+    #[test]
+    fn test_store_file_client_not_configured() {
+        let store = Store::new();
+        let config = file_config("my_key");
+
+        assert!(store.set(&config, serde_json::json!(1), None).is_err());
+        assert!(store.delete(&config).is_err());
+    }
+}
+
 impl<'a> Default for Store<'a> {
     fn default() -> Self {
         Self::new()

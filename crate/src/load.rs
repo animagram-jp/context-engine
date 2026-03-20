@@ -284,6 +284,67 @@ mod tests {
         fn delete(&self, _key: &str) -> bool { false }
     }
 
+    struct MockFileClient {
+        store: std::sync::Mutex<HashMap<String, String>>,
+    }
+    impl MockFileClient {
+        fn new(entries: &[(&str, &str)]) -> Self {
+            Self {
+                store: std::sync::Mutex::new(
+                    entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+                ),
+            }
+        }
+    }
+    impl FileClient for MockFileClient {
+        fn get(&self, key: &str) -> Option<String> {
+            self.store.lock().unwrap().get(key).cloned()
+        }
+        fn set(&self, key: &str, value: String) -> bool {
+            self.store.lock().unwrap().insert(key.to_string(), value);
+            true
+        }
+        fn delete(&self, key: &str) -> bool {
+            self.store.lock().unwrap().remove(key).is_some()
+        }
+    }
+
+    #[test]
+    fn test_load_from_file() {
+        let file = MockFileClient::new(&[("session_data", r#"{"user_id":42}"#)]);
+        let load = Load::new().with_file(&file);
+
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
+        config.insert("key".to_string(), Value::String("session_data".to_string()));
+
+        let result = load.handle(&config).unwrap();
+        assert_eq!(result.get("user_id"), Some(&Value::Number(42.into())));
+    }
+
+    #[test]
+    fn test_load_from_file_key_not_found() {
+        let file = MockFileClient::new(&[]);
+        let load = Load::new().with_file(&file);
+
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
+        config.insert("key".to_string(), Value::String("missing".to_string()));
+
+        assert!(load.handle(&config).is_err());
+    }
+
+    #[test]
+    fn test_load_from_file_client_not_configured() {
+        let load = Load::new();
+
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
+        config.insert("key".to_string(), Value::String("any".to_string()));
+
+        assert!(load.handle(&config).is_err());
+    }
+
     #[test]
     fn test_load_from_env() {
         let env = MockEnvClient;
