@@ -7,19 +7,21 @@ use crate::store::Store;
 use crate::load::Load;
 use crate::ports::provided::StateError;
 
+use std::sync::Arc;
+
 // state_values layout: Vec<(key_idx: u16, value: Value)>
 // index 0 is reserved as null slot
-pub struct State<'a> {
+pub struct State {
     manifest: Manifest,
     state_keys: Vec<u16>,
     state_vals: Vec<Value>,
-    store: Store<'a>,
-    load: Load<'a>,
+    store: Store,
+    load: Load,
     max_recursion: usize,
     called_keys: HashSet<String>,
 }
 
-impl<'a> State<'a> {
+impl State {
     /// Creates a new State with the given manifest directory.
     ///
     /// # Examples
@@ -41,42 +43,42 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn with_in_memory(mut self, client: &'a dyn crate::ports::required::InMemoryClient) -> Self {
-        self.store = self.store.with_in_memory(client);
+    pub fn with_in_memory(mut self, client: Arc<dyn crate::ports::required::InMemoryClient>) -> Self {
+        self.store = self.store.with_in_memory(Arc::clone(&client));
         self.load = self.load.with_in_memory(client);
         self
     }
 
-    pub fn with_kvs(mut self, client: &'a dyn crate::ports::required::KVSClient) -> Self {
-        self.store = self.store.with_kvs(client);
+    pub fn with_kvs(mut self, client: Arc<dyn crate::ports::required::KVSClient>) -> Self {
+        self.store = self.store.with_kvs(Arc::clone(&client));
         self.load = self.load.with_kvs(client);
         self
     }
 
-    pub fn with_db(mut self, client: &'a dyn crate::ports::required::DbClient) -> Self {
+    pub fn with_db(mut self, client: Arc<dyn crate::ports::required::DbClient>) -> Self {
         self.load = self.load.with_db(client);
         self
     }
 
-    pub fn with_env(mut self, client: &'a dyn crate::ports::required::EnvClient) -> Self {
+    pub fn with_env(mut self, client: Arc<dyn crate::ports::required::EnvClient>) -> Self {
         self.load = self.load.with_env(client);
         self
     }
 
-    pub fn with_http(mut self, client: &'a dyn crate::ports::required::HttpClient) -> Self {
-        self.store = self.store.with_http(client);
+    pub fn with_http(mut self, client: Arc<dyn crate::ports::required::HttpClient>) -> Self {
+        self.store = self.store.with_http(Arc::clone(&client));
         self.load = self.load.with_http(client);
         self
     }
 
-    pub fn with_file(mut self, client: impl crate::ports::required::FileClient + 'static) -> Self {
-        self.manifest = self.manifest.with_file(client);
+    pub fn with_file(mut self, client: Arc<dyn crate::ports::required::FileClient>) -> Self {
+        self.store = self.store.with_file(Arc::clone(&client));
+        self.load = self.load.with_file(client);
         self
     }
 
-    pub fn with_file_client(mut self, client: &'a dyn crate::ports::required::FileClient) -> Self {
-        self.store = self.store.with_file(client);
-        self.load = self.load.with_file(client);
+    pub fn with_manifest_file(mut self, client: impl crate::ports::required::FileClient + 'static) -> Self {
+        self.manifest = self.manifest.with_file(client);
         self
     }
 
@@ -313,7 +315,7 @@ impl<'a> State<'a> {
     ///
     /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest")
-    ///     .with_in_memory(&client);
+    ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// // set then get
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
@@ -454,7 +456,7 @@ impl<'a> State<'a> {
     /// # }
     /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest")
-    ///     .with_in_memory(&client);
+    ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// assert!(state.set("connection.common", json!({"host": "localhost"}), None).unwrap());
     /// ```
@@ -516,7 +518,7 @@ impl<'a> State<'a> {
     /// # }
     /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest")
-    ///     .with_in_memory(&client);
+    ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
     /// assert!(state.delete("connection.common").unwrap());
@@ -580,7 +582,7 @@ impl<'a> State<'a> {
     /// # }
     /// let client = MockInMemory::new();
     /// let mut state = State::new("./examples/manifest")
-    ///     .with_in_memory(&client);
+    ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// assert!(!state.exists("connection.common").unwrap());
     /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
@@ -621,6 +623,7 @@ mod tests {
     use crate::ports::required::{KVSClient, DbClient, EnvClient, FileClient};
     use serde_json::Value;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     struct StubKVS;
     impl KVSClient for StubKVS {
@@ -659,16 +662,11 @@ mod tests {
 
     #[test]
     fn test_with_clients_build() {
-        let kvs  = StubKVS;
-        let db   = StubDb;
-        let env  = StubEnv;
-        let http = StubHttp;
-
         // each builder returns Self without panic — wiring is correct
-        let _ = State::new("./examples/manifest").with_kvs(&kvs);
-        let _ = State::new("./examples/manifest").with_db(&db);
-        let _ = State::new("./examples/manifest").with_env(&env);
-        let _ = State::new("./examples/manifest").with_http(&http);
-        let _ = State::new("./examples/manifest").with_file(StubFile);
+        let _ = State::new("./examples/manifest").with_kvs(Arc::new(StubKVS));
+        let _ = State::new("./examples/manifest").with_db(Arc::new(StubDb));
+        let _ = State::new("./examples/manifest").with_env(Arc::new(StubEnv));
+        let _ = State::new("./examples/manifest").with_http(Arc::new(StubHttp));
+        let _ = State::new("./examples/manifest").with_file(Arc::new(StubFile));
     }
 }

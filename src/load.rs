@@ -5,17 +5,18 @@ use crate::ports::required::{
 use crate::core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub struct Load<'a> {
-    db: Option<&'a dyn DbClient>,
-    kvs: Option<&'a dyn KVSClient>,
-    in_memory: Option<&'a dyn InMemoryClient>,
-    env: Option<&'a dyn EnvClient>,
-    http: Option<&'a dyn HttpClient>,
-    file: Option<&'a dyn FileClient>,
+pub struct Load {
+    db: Option<Arc<dyn DbClient>>,
+    kvs: Option<Arc<dyn KVSClient>>,
+    in_memory: Option<Arc<dyn InMemoryClient>>,
+    env: Option<Arc<dyn EnvClient>>,
+    http: Option<Arc<dyn HttpClient>>,
+    file: Option<Arc<dyn FileClient>>,
 }
 
-impl<'a> Load<'a> {
+impl Load {
     pub fn new() -> Self {
         Self {
             db: None,
@@ -27,32 +28,32 @@ impl<'a> Load<'a> {
         }
     }
 
-    pub fn with_db(mut self, client: &'a dyn DbClient) -> Self {
+    pub fn with_db(mut self, client: Arc<dyn DbClient>) -> Self {
         self.db = Some(client);
         self
     }
 
-    pub fn with_kvs(mut self, client: &'a dyn KVSClient) -> Self {
+    pub fn with_kvs(mut self, client: Arc<dyn KVSClient>) -> Self {
         self.kvs = Some(client);
         self
     }
 
-    pub fn with_in_memory(mut self, client: &'a dyn InMemoryClient) -> Self {
+    pub fn with_in_memory(mut self, client: Arc<dyn InMemoryClient>) -> Self {
         self.in_memory = Some(client);
         self
     }
 
-    pub fn with_env(mut self, client: &'a dyn EnvClient) -> Self {
+    pub fn with_env(mut self, client: Arc<dyn EnvClient>) -> Self {
         self.env = Some(client);
         self
     }
 
-    pub fn with_http(mut self, client: &'a dyn HttpClient) -> Self {
+    pub fn with_http(mut self, client: Arc<dyn HttpClient>) -> Self {
         self.http = Some(client);
         self
     }
 
-    pub fn with_file(mut self, client: &'a dyn FileClient) -> Self {
+    pub fn with_file(mut self, client: Arc<dyn FileClient>) -> Self {
         self.file = Some(client);
         self
     }
@@ -78,8 +79,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let env = self
-            .env
+        let env = self.env.as_deref()
             .ok_or("Load::load_from_env: EnvClient not configured")?;
 
         let map = config
@@ -88,7 +88,6 @@ impl<'a> Load<'a> {
             .ok_or("Load::load_from_env: 'map' not found")?;
 
         let mut result = serde_json::Map::new();
-
         for (config_key, env_key_value) in map {
             if let Some(env_key) = env_key_value.as_str() {
                 if let Some(value) = env.get(env_key) {
@@ -104,8 +103,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let in_memory = self
-            .in_memory
+        let in_memory = self.in_memory.as_deref()
             .ok_or("Load::load_from_in_memory: InMemoryClient not configured")?;
 
         let key = config
@@ -122,8 +120,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let kvs = self
-            .kvs
+        let kvs = self.kvs.as_deref()
             .ok_or("Load::load_from_kvs: KVSClient not configured")?;
 
         let key = config
@@ -143,8 +140,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let db = self
-            .db
+        let db = self.db.as_deref()
             .ok_or("Load::load_from_db: DbClient not configured")?;
 
         let table = config
@@ -163,10 +159,7 @@ impl<'a> Load<'a> {
             .get("connection")
             .ok_or("Load::load_from_db: 'connection' not specified")?;
 
-        let columns: Vec<&str> = map
-            .values()
-            .filter_map(|v| v.as_str())
-            .collect();
+        let columns: Vec<&str> = map.values().filter_map(|v| v.as_str()).collect();
 
         if columns.is_empty() {
             return Err("Load::load_from_db: no columns specified in map".to_string());
@@ -180,8 +173,7 @@ impl<'a> Load<'a> {
             return Err(format!("Load::load_from_db: no data found in table '{}'", table));
         }
 
-        let row: &HashMap<String, Value> = &rows[0];
-
+        let row = &rows[0];
         let mut result = serde_json::Map::new();
         for (config_key, db_column_value) in map {
             if let Some(db_column) = db_column_value.as_str() {
@@ -198,8 +190,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let file = self
-            .file
+        let file = self.file.as_deref()
             .ok_or("Load::load_from_file: FileClient not configured")?;
 
         let key = config
@@ -219,8 +210,7 @@ impl<'a> Load<'a> {
         &self,
         config: &HashMap<String, Value>,
     ) -> Result<Value, String> {
-        let http = self
-            .http
+        let http = self.http.as_deref()
             .ok_or("Load::load_from_http: HttpClient not configured")?;
 
         let url = config
@@ -261,7 +251,7 @@ impl<'a> Load<'a> {
     }
 }
 
-impl<'a> Default for Load<'a> {
+impl Default for Load {
     fn default() -> Self {
         Self::new()
     }
@@ -312,7 +302,7 @@ mod tests {
     #[test]
     fn test_load_from_file() {
         let file = MockFileClient::new(&[("session_data", r#"{"user_id":42}"#)]);
-        let load = Load::new().with_file(&file);
+        let load = Load::new().with_file(Arc::new(file));
 
         let mut config = HashMap::new();
         config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
@@ -325,7 +315,7 @@ mod tests {
     #[test]
     fn test_load_from_file_key_not_found() {
         let file = MockFileClient::new(&[]);
-        let load = Load::new().with_file(&file);
+        let load = Load::new().with_file(Arc::new(file));
 
         let mut config = HashMap::new();
         config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
@@ -348,7 +338,7 @@ mod tests {
     #[test]
     fn test_load_from_env() {
         let env = MockEnvClient;
-        let load = Load::new().with_env(&env);
+        let load = Load::new().with_env(Arc::new(env));
 
         let mut config = HashMap::new();
         config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_ENV.into()));

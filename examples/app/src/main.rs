@@ -1,15 +1,16 @@
 mod adapters;
 
 use adapters::{InMemoryAdapter, EnvAdapter, KVSAdapter, DbAdapter, HttpAdapter};
-use state_engine::{State, InMemoryClient};
+use state_engine::{State, ports::required::InMemoryClient};
+use std::sync::Arc;
 
-fn make_state<'a>(
-    env: &'a EnvAdapter,
-    kvs: &'a KVSAdapter,
-    db: &'a DbAdapter,
-    in_memory: &'a InMemoryAdapter,
-    http: &'a HttpAdapter,
-) -> State<'a> {
+fn make_state(
+    env: Arc<EnvAdapter>,
+    kvs: Arc<KVSAdapter>,
+    db: Arc<DbAdapter>,
+    in_memory: Arc<InMemoryAdapter>,
+    http: Arc<HttpAdapter>,
+) -> State {
     State::new("./manifest")
         .with_env(env)
         .with_kvs(kvs)
@@ -39,12 +40,14 @@ fn run_tests() -> (usize, usize) {
     println!("\n[connection]");
 
     test!("get connection.common loads from Env", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         let result = state.get("connection.common").unwrap();
         assert!(result.is_some(), "connection.common should be loaded from Env");
@@ -54,12 +57,14 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("exists connection.common after get", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         state.get("connection.common").unwrap();
         assert!(state.exists("connection.common").unwrap());
@@ -71,12 +76,14 @@ fn run_tests() -> (usize, usize) {
     println!("\n[session]");
 
     test!("set and get session.sso_user_id via InMemory store", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         assert!(state.set("session.sso_user_id", serde_json::json!(42), None).unwrap());
         let got = state.get("session.sso_user_id").unwrap();
@@ -89,13 +96,15 @@ fn run_tests() -> (usize, usize) {
     println!("\n[cache.user]");
 
     test!("set and get cache.user via KVS", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         let user = serde_json::json!({"id": 1, "org_id": 100, "tenant_id": 10});
         assert!(state.set("cache.user", user.clone(), Some(3600)).unwrap());
@@ -104,13 +113,15 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("set and get leaf key cache.user.org_id", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         assert!(state.set("cache.user.org_id", serde_json::json!(100), None).unwrap());
         let got = state.get("cache.user.org_id").unwrap();
@@ -118,13 +129,15 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("set and get leaf key cache.user.id", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         assert!(state.set("cache.user.id", serde_json::json!(1), None).unwrap());
         let got = state.get("cache.user.id").unwrap();
@@ -132,13 +145,15 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("cache.user.tenant_id resolved via State client from org_id", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         assert!(state.set("cache.user.org_id", serde_json::json!(100), Some(14400)).unwrap());
         let got = state.get("cache.user.tenant_id").unwrap();
@@ -146,13 +161,15 @@ fn run_tests() -> (usize, usize) {
     });
 
     test!("delete cache.user from KVS", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         state.set("cache.user", serde_json::json!({"id": 1}), None).unwrap();
         assert!(state.delete("cache.user").unwrap());
@@ -165,20 +182,21 @@ fn run_tests() -> (usize, usize) {
     println!("\n[cache.user DB load]");
 
     test!("get cache.user loads from DB via _load", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-
         let db_host     = std::env::var("DB_HOST").unwrap_or("localhost".into());
         let db_port     = std::env::var("DB_PORT").unwrap_or("5432".into()).parse::<u64>().unwrap_or(5432);
         let db_database = std::env::var("DB_DATABASE").unwrap_or("state_engine_dev".into());
         let db_username = std::env::var("DB_USERNAME").unwrap_or("state_user".into());
         let db_password = std::env::var("DB_PASSWORD").unwrap_or("state_pass".into());
 
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         state.set("cache.user.org_id", serde_json::json!(100), Some(14400)).unwrap();
         state.set("cache.user.tenant_id", serde_json::json!(1), Some(14400)).unwrap();
@@ -205,13 +223,15 @@ fn run_tests() -> (usize, usize) {
     println!("\n[cache.tenant.health HTTP load]");
 
     test!("get cache.tenant.health loads from HTTP after cache.user is set", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
+        let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", serde_json::json!(1));
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         // cache.tenant._store key = "tenant:${cache.user.tenant_id}" — must be resolvable
         // cache.tenant._load (Db) would be tried first, but Db returns None (stub)
@@ -230,36 +250,42 @@ fn run_tests() -> (usize, usize) {
     println!("\n[placeholder]");
 
     test!("set cache.user without session.sso_user_id returns Err", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         let result = state.set("cache.user", serde_json::json!({"id": 1}), None);
         assert!(result.is_err(), "should fail when placeholder cannot be resolved");
     });
 
     test!("get cache.user without session.sso_user_id returns Err", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         let result = state.get("cache.user");
         assert!(result.is_err(), "should fail when placeholder cannot be resolved");
     });
 
     test!("get nonexistent key returns KeyNotFound", {
-        let env = EnvAdapter::new();
-        let kvs = KVSAdapter::new().unwrap();
-        let db = DbAdapter::new();
-        let im = InMemoryAdapter::new();
-        let http = HttpAdapter;
-        let mut state = make_state(&env, &kvs, &db, &im, &http);
+        let im = Arc::new(InMemoryAdapter::new());
+        let mut state = make_state(
+            Arc::new(EnvAdapter::new()),
+            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::new(DbAdapter::new()),
+            im,
+            Arc::new(HttpAdapter),
+        );
 
         let result = state.get("session.nonexistent");
         assert!(matches!(result, Err(state_engine::StateError::KeyNotFound(_))));

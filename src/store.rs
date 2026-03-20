@@ -2,15 +2,16 @@ use crate::ports::required::{InMemoryClient, KVSClient, HttpClient, FileClient};
 use crate::core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub struct Store<'a> {
-    in_memory: Option<&'a dyn InMemoryClient>,
-    kvs: Option<&'a dyn KVSClient>,
-    http: Option<&'a dyn HttpClient>,
-    file: Option<&'a dyn FileClient>,
+pub struct Store {
+    in_memory: Option<Arc<dyn InMemoryClient>>,
+    kvs: Option<Arc<dyn KVSClient>>,
+    http: Option<Arc<dyn HttpClient>>,
+    file: Option<Arc<dyn FileClient>>,
 }
 
-impl<'a> Store<'a> {
+impl Store {
     pub fn new() -> Self {
         Self {
             in_memory: None,
@@ -20,22 +21,22 @@ impl<'a> Store<'a> {
         }
     }
 
-    pub fn with_in_memory(mut self, client: &'a dyn InMemoryClient) -> Self {
+    pub fn with_in_memory(mut self, client: Arc<dyn InMemoryClient>) -> Self {
         self.in_memory = Some(client);
         self
     }
 
-    pub fn with_kvs(mut self, client: &'a dyn KVSClient) -> Self {
+    pub fn with_kvs(mut self, client: Arc<dyn KVSClient>) -> Self {
         self.kvs = Some(client);
         self
     }
 
-    pub fn with_http(mut self, client: &'a dyn HttpClient) -> Self {
+    pub fn with_http(mut self, client: Arc<dyn HttpClient>) -> Self {
         self.http = Some(client);
         self
     }
 
-    pub fn with_file(mut self, client: &'a dyn FileClient) -> Self {
+    pub fn with_file(mut self, client: Arc<dyn FileClient>) -> Self {
         self.file = Some(client);
         self
     }
@@ -45,18 +46,18 @@ impl<'a> Store<'a> {
 
         match client {
             fixed_bits::CLIENT_IN_MEMORY => {
-                let in_memory = self.in_memory.as_ref()?;
+                let in_memory = self.in_memory.as_deref()?;
                 let key = store_config.get("key")?.as_str()?;
                 in_memory.get(key)
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs = self.kvs.as_ref()?;
+                let kvs = self.kvs.as_deref()?;
                 let key = store_config.get("key")?.as_str()?;
                 let value_str = kvs.get(key)?;
                 serde_json::from_str(&value_str).ok()
             }
             fixed_bits::CLIENT_HTTP => {
-                let http = self.http.as_ref()?;
+                let http = self.http.as_deref()?;
                 let url = store_config.get("url")?.as_str()?;
                 let headers = store_config
                     .get("headers")
@@ -67,7 +68,7 @@ impl<'a> Store<'a> {
                 http.get(url, headers.as_ref())
             }
             fixed_bits::CLIENT_FILE => {
-                let file = self.file.as_ref()?;
+                let file = self.file.as_deref()?;
                 let key = store_config.get("key")?.as_str()?;
                 let content = file.get(key)?;
                 serde_json::from_str(&content).ok()
@@ -89,14 +90,14 @@ impl<'a> Store<'a> {
 
         match client {
             fixed_bits::CLIENT_IN_MEMORY => {
-                let in_memory = self.in_memory.as_ref()
+                let in_memory = self.in_memory.as_deref()
                     .ok_or_else(|| "Store::set: InMemoryClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
                 Ok(in_memory.set(key, value))
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs = self.kvs.as_ref()
+                let kvs = self.kvs.as_deref()
                     .ok_or_else(|| "Store::set: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
@@ -106,7 +107,7 @@ impl<'a> Store<'a> {
                 Ok(kvs.set(key, serialized, final_ttl))
             }
             fixed_bits::CLIENT_HTTP => {
-                let http = self.http.as_ref()
+                let http = self.http.as_deref()
                     .ok_or_else(|| "Store::set: HttpClient not configured".to_string())?;
                 let url = store_config.get("url").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::set: 'url' not found in store config".to_string())?;
@@ -119,7 +120,7 @@ impl<'a> Store<'a> {
                 Ok(http.set(url, value, headers.as_ref()))
             }
             fixed_bits::CLIENT_FILE => {
-                let file = self.file.as_ref()
+                let file = self.file.as_deref()
                     .ok_or_else(|| "Store::set: FileClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
@@ -139,21 +140,21 @@ impl<'a> Store<'a> {
 
         match client {
             fixed_bits::CLIENT_IN_MEMORY => {
-                let in_memory = self.in_memory.as_ref()
+                let in_memory = self.in_memory.as_deref()
                     .ok_or_else(|| "Store::delete: InMemoryClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
                 Ok(in_memory.delete(key))
             }
             fixed_bits::CLIENT_KVS => {
-                let kvs = self.kvs.as_ref()
+                let kvs = self.kvs.as_deref()
                     .ok_or_else(|| "Store::delete: KVSClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
                 Ok(kvs.delete(key))
             }
             fixed_bits::CLIENT_HTTP => {
-                let http = self.http.as_ref()
+                let http = self.http.as_deref()
                     .ok_or_else(|| "Store::delete: HttpClient not configured".to_string())?;
                 let url = store_config.get("url").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'url' not found in store config".to_string())?;
@@ -166,7 +167,7 @@ impl<'a> Store<'a> {
                 Ok(http.delete(url, headers.as_ref()))
             }
             fixed_bits::CLIENT_FILE => {
-                let file = self.file.as_ref()
+                let file = self.file.as_deref()
                     .ok_or_else(|| "Store::delete: FileClient not configured".to_string())?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
                     .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
@@ -174,6 +175,12 @@ impl<'a> Store<'a> {
             }
             _ => Err(format!("Store::delete: unsupported client '{}'", client)),
         }
+    }
+}
+
+impl Default for Store {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -212,8 +219,8 @@ mod tests {
 
     #[test]
     fn test_store_file_set_and_get() {
-        let file = MockFileClient::new();
-        let store = Store::new().with_file(&file);
+        let file = Arc::new(MockFileClient::new());
+        let store = Store::new().with_file(file);
         let config = file_config("my_key");
 
         assert_eq!(store.set(&config, serde_json::json!({"x": 1}), None).unwrap(), true);
@@ -223,8 +230,8 @@ mod tests {
 
     #[test]
     fn test_store_file_delete() {
-        let file = MockFileClient::new();
-        let store = Store::new().with_file(&file);
+        let file = Arc::new(MockFileClient::new());
+        let store = Store::new().with_file(file);
         let config = file_config("my_key");
 
         store.set(&config, serde_json::json!(1), None).unwrap();
@@ -239,11 +246,5 @@ mod tests {
 
         assert!(store.set(&config, serde_json::json!(1), None).is_err());
         assert!(store.delete(&config).is_err());
-    }
-}
-
-impl<'a> Default for Store<'a> {
-    fn default() -> Self {
-        Self::new()
     }
 }
