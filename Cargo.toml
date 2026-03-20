@@ -2,7 +2,6 @@
 members = [
     "core",
     "crate",
-    "wasi",
     "crate/examples/app"
 ]
 resolver = "2"
