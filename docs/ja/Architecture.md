@@ -12,6 +12,7 @@
   3. DbClient
   4. EnvClient
   5. HttpClient
+  6. FileClient
 
 - common modules (内部コモンモジュール)
   1. u64(fix_bits.rs)
@@ -84,6 +85,16 @@
       - `fn delete(&self, url: &str, headers: Option<&HashMap<String, String>>) -> bool`
     - 渡される引数: `"url": YAML記載の_{store,load}.url:の値`, `"headers": YAML記載の_{store,load}.headers:の値`
     - 想定対象ストア: HTTPエンドポイント
+    - _store/_load両方に使用対応
+  6. **FileClient**
+    - 必要なメソッド: `get()`/`set()`/`delete()`
+    - traitシグネチャ:
+      - `fn get(&self, key: &str) -> Option<String>`
+      - `fn set(&self, key: &str, value: String) -> bool`
+      - `fn delete(&self, key: &str) -> bool`
+    - 渡される引数: `"key": Manifestの_{store,load}.key:の値`
+    - 想定対象ストア: ファイルI/O
+    - デフォルト実装 `DefaultFileClient` を内蔵（std::fsベース）
     - _store/_load両方に使用対応
 
 ## Manifest

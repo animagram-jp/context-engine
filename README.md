@@ -14,9 +14,9 @@ It behaves as described in YAML DSL.
 
 | Version | Status  | Date | description |
 |---------|---------|------|-------------|
-| 0.1   | Released  | 2026-2-12 | initial | 
-| 0.1.4 | Current   | 2026-3-18 | improve #45 | 
-| 0.1.5 | Scheduled | 2026-3-22  | improve #46 | 
+| 0.1   | Released  | 2026-2-12 | initial |
+| 0.1.4 | Released  | 2026-3-18 | improve #45 |
+| 0.1.5 | Current   | 2026-3-21  | improve #43 |
 
 ## Provided Functions
 
@@ -112,17 +112,18 @@ user:
 
 ```rust
 use state_engine::State;
+use std::sync::Arc;
 
 // Create adapter instances
-let in_memory = InMemoryAdapter::new();
-let kvs = KVSAdapter::new()?;
-let db = DbAdapter::new()?;
+let in_memory = Arc::new(InMemoryAdapter::new());
+let kvs = Arc::new(KVSAdapter::new()?);
+let db = Arc::new(DbAdapter::new()?);
 
 // Build State with adapters
 let mut state = State::new("./manifest")
-    .with_in_memory(&in_memory)
-    .with_kvs(&kvs)
-    .with_db(&db);
+    .with_in_memory(in_memory)
+    .with_kvs(kvs)
+    .with_db(db);
 
 // Use state-engine
 let user = state.get("example.user.name")?;
