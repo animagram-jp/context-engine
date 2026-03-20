@@ -193,7 +193,7 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 
 unit tests, intergeration tests on example app (docker compose) passed
 
-```bashcargo test --features=logging -- --nocapture
+```bash
 cargo test --features=logging -- --nocapture
 
 cd examples/app && ./run.sh
