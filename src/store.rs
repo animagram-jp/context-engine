@@ -247,4 +247,163 @@ mod tests {
         assert!(store.set(&config, serde_json::json!(1), None).is_err());
         assert!(store.delete(&config).is_err());
     }
+
+    // --- InMemory ---
+
+    struct MockInMemory {
+        store: std::sync::Mutex<std::collections::HashMap<String, Value>>,
+    }
+    impl MockInMemory {
+        fn new() -> Self { Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) } }
+    }
+    impl InMemoryClient for MockInMemory {
+        fn get(&self, key: &str) -> Option<Value> { self.store.lock().unwrap().get(key).cloned() }
+        fn set(&self, key: &str, value: Value) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
+        fn delete(&self, key: &str) -> bool { self.store.lock().unwrap().remove(key).is_some() }
+    }
+
+    fn in_memory_config(key: &str) -> HashMap<String, Value> {
+        let mut c = HashMap::new();
+        c.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
+        c.insert("key".to_string(), Value::String(key.to_string()));
+        c
+    }
+
+    #[test]
+    fn test_store_in_memory_set_and_get() {
+        let client = Arc::new(MockInMemory::new());
+        let store = Store::new().with_in_memory(client);
+        let config = in_memory_config("k");
+        assert!(store.set(&config, serde_json::json!(42), None).unwrap());
+        assert_eq!(store.get(&config).unwrap(), serde_json::json!(42));
+    }
+
+    #[test]
+    fn test_store_in_memory_delete() {
+        let client = Arc::new(MockInMemory::new());
+        let store = Store::new().with_in_memory(client);
+        let config = in_memory_config("k");
+        store.set(&config, serde_json::json!(1), None).unwrap();
+        assert!(store.delete(&config).unwrap());
+        assert!(store.get(&config).is_none());
+    }
+
+    #[test]
+    fn test_store_in_memory_client_not_configured() {
+        let store = Store::new();
+        let config = in_memory_config("k");
+        assert!(store.set(&config, serde_json::json!(1), None).is_err());
+        assert!(store.delete(&config).is_err());
+    }
+
+    // --- KVS ---
+
+    struct MockKVS {
+        store: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    }
+    impl MockKVS {
+        fn new() -> Self { Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) } }
+    }
+    impl KVSClient for MockKVS {
+        fn get(&self, key: &str) -> Option<String> { self.store.lock().unwrap().get(key).cloned() }
+        fn set(&self, key: &str, value: String, _ttl: Option<u64>) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
+        fn delete(&self, key: &str) -> bool { self.store.lock().unwrap().remove(key).is_some() }
+    }
+
+    fn kvs_config(key: &str) -> HashMap<String, Value> {
+        let mut c = HashMap::new();
+        c.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
+        c.insert("key".to_string(), Value::String(key.to_string()));
+        c
+    }
+
+    #[test]
+    fn test_store_kvs_set_and_get() {
+        let client = Arc::new(MockKVS::new());
+        let store = Store::new().with_kvs(client);
+        let config = kvs_config("k");
+        assert!(store.set(&config, serde_json::json!({"v": 1}), None).unwrap());
+        assert_eq!(store.get(&config).unwrap(), serde_json::json!({"v": 1}));
+    }
+
+    #[test]
+    fn test_store_kvs_set_uses_ttl_from_config() {
+        let client = Arc::new(MockKVS::new());
+        let store = Store::new().with_kvs(client);
+        let mut config = kvs_config("k");
+        config.insert("ttl".to_string(), Value::Number(3600.into()));
+        assert!(store.set(&config, serde_json::json!(1), None).unwrap());
+    }
+
+    #[test]
+    fn test_store_kvs_delete() {
+        let client = Arc::new(MockKVS::new());
+        let store = Store::new().with_kvs(client);
+        let config = kvs_config("k");
+        store.set(&config, serde_json::json!(1), None).unwrap();
+        assert!(store.delete(&config).unwrap());
+        assert!(store.get(&config).is_none());
+    }
+
+    #[test]
+    fn test_store_kvs_client_not_configured() {
+        let store = Store::new();
+        let config = kvs_config("k");
+        assert!(store.set(&config, serde_json::json!(1), None).is_err());
+        assert!(store.delete(&config).is_err());
+    }
+
+    // --- HTTP ---
+
+    struct MockHttp {
+        store: std::sync::Mutex<std::collections::HashMap<String, Value>>,
+    }
+    impl MockHttp {
+        fn new() -> Self { Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) } }
+    }
+    impl crate::ports::required::HttpClient for MockHttp {
+        fn get(&self, url: &str, _: Option<&HashMap<String, String>>) -> Option<Value> {
+            self.store.lock().unwrap().get(url).cloned()
+        }
+        fn set(&self, url: &str, value: Value, _: Option<&HashMap<String, String>>) -> bool {
+            self.store.lock().unwrap().insert(url.to_string(), value); true
+        }
+        fn delete(&self, url: &str, _: Option<&HashMap<String, String>>) -> bool {
+            self.store.lock().unwrap().remove(url).is_some()
+        }
+    }
+
+    fn http_config(url: &str) -> HashMap<String, Value> {
+        let mut c = HashMap::new();
+        c.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_HTTP.into()));
+        c.insert("url".to_string(), Value::String(url.to_string()));
+        c
+    }
+
+    #[test]
+    fn test_store_http_set_and_get() {
+        let client = Arc::new(MockHttp::new());
+        let store = Store::new().with_http(client);
+        let config = http_config("http://example.com/data");
+        assert!(store.set(&config, serde_json::json!({"x": 1}), None).unwrap());
+        assert_eq!(store.get(&config).unwrap(), serde_json::json!({"x": 1}));
+    }
+
+    #[test]
+    fn test_store_http_delete() {
+        let client = Arc::new(MockHttp::new());
+        let store = Store::new().with_http(client);
+        let config = http_config("http://example.com/data");
+        store.set(&config, serde_json::json!(1), None).unwrap();
+        assert!(store.delete(&config).unwrap());
+        assert!(store.get(&config).is_none());
+    }
+
+    #[test]
+    fn test_store_http_client_not_configured() {
+        let store = Store::new();
+        let config = http_config("http://example.com/data");
+        assert!(store.set(&config, serde_json::json!(1), None).is_err());
+        assert!(store.delete(&config).is_err());
+    }
 }

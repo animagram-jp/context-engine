@@ -335,6 +335,205 @@ mod tests {
         assert!(load.handle(&config).is_err());
     }
 
+    // --- InMemory ---
+
+    struct MockInMemory {
+        store: std::sync::Mutex<HashMap<String, Value>>,
+    }
+    impl MockInMemory {
+        fn new(entries: &[(&str, Value)]) -> Self {
+            Self { store: std::sync::Mutex::new(entries.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()) }
+        }
+    }
+    impl InMemoryClient for MockInMemory {
+        fn get(&self, key: &str) -> Option<Value> { self.store.lock().unwrap().get(key).cloned() }
+        fn set(&self, key: &str, value: Value) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
+        fn delete(&self, key: &str) -> bool { self.store.lock().unwrap().remove(key).is_some() }
+    }
+
+    #[test]
+    fn test_load_from_in_memory() {
+        let data = serde_json::json!({"host": "localhost"});
+        let client = Arc::new(MockInMemory::new(&[("conn", data.clone())]));
+        let load = Load::new().with_in_memory(client);
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
+        config.insert("key".to_string(), Value::String("conn".to_string()));
+        assert_eq!(load.handle(&config).unwrap(), data);
+    }
+
+    #[test]
+    fn test_load_from_in_memory_key_not_found() {
+        let client = Arc::new(MockInMemory::new(&[]));
+        let load = Load::new().with_in_memory(client);
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
+        config.insert("key".to_string(), Value::String("missing".to_string()));
+        assert!(load.handle(&config).is_err());
+    }
+
+    #[test]
+    fn test_load_from_in_memory_client_not_configured() {
+        let load = Load::new();
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
+        config.insert("key".to_string(), Value::String("k".to_string()));
+        assert!(load.handle(&config).is_err());
+    }
+
+    // --- KVS ---
+
+    struct MockKVS {
+        store: std::sync::Mutex<HashMap<String, String>>,
+    }
+    impl MockKVS {
+        fn new(entries: &[(&str, &str)]) -> Self {
+            Self { store: std::sync::Mutex::new(entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()) }
+        }
+    }
+    impl KVSClient for MockKVS {
+        fn get(&self, key: &str) -> Option<String> { self.store.lock().unwrap().get(key).cloned() }
+        fn set(&self, key: &str, value: String, _: Option<u64>) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
+        fn delete(&self, key: &str) -> bool { self.store.lock().unwrap().remove(key).is_some() }
+    }
+
+    #[test]
+    fn test_load_from_kvs() {
+        let client = Arc::new(MockKVS::new(&[("sess", r#"{"user_id":1}"#)]));
+        let load = Load::new().with_kvs(client);
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
+        config.insert("key".to_string(), Value::String("sess".to_string()));
+        assert_eq!(load.handle(&config).unwrap().get("user_id"), Some(&Value::Number(1.into())));
+    }
+
+    #[test]
+    fn test_load_from_kvs_key_not_found() {
+        let client = Arc::new(MockKVS::new(&[]));
+        let load = Load::new().with_kvs(client);
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
+        config.insert("key".to_string(), Value::String("missing".to_string()));
+        assert!(load.handle(&config).is_err());
+    }
+
+    #[test]
+    fn test_load_from_kvs_client_not_configured() {
+        let load = Load::new();
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
+        config.insert("key".to_string(), Value::String("k".to_string()));
+        assert!(load.handle(&config).is_err());
+    }
+
+    // --- DB ---
+
+    struct MockDb {
+        rows: Vec<HashMap<String, Value>>,
+    }
+    impl MockDb {
+        fn new(rows: Vec<HashMap<String, Value>>) -> Self { Self { rows } }
+    }
+    impl DbClient for MockDb {
+        fn get(&self, _conn: &Value, _table: &str, _cols: &[&str], _where: Option<&str>) -> Option<Vec<HashMap<String, Value>>> {
+            if self.rows.is_empty() { None } else { Some(self.rows.clone()) }
+        }
+        fn set(&self, _: &Value, _: &str, _: &HashMap<String, Value>, _: Option<&str>) -> bool { false }
+        fn delete(&self, _: &Value, _: &str, _: Option<&str>) -> bool { false }
+    }
+
+    fn db_config(table: &str, map: &[(&str, &str)]) -> HashMap<String, Value> {
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_DB.into()));
+        config.insert("table".to_string(), Value::String(table.to_string()));
+        config.insert("connection".to_string(), Value::Object(serde_json::Map::new()));
+        let mut map_obj = serde_json::Map::new();
+        for (k, v) in map { map_obj.insert(k.to_string(), Value::String(v.to_string())); }
+        config.insert("map".to_string(), Value::Object(map_obj));
+        config
+    }
+
+    #[test]
+    fn test_load_from_db() {
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), Value::Number(42.into()));
+        let client = Arc::new(MockDb::new(vec![row]));
+        let load = Load::new().with_db(client);
+        let config = db_config("users", &[("id", "id")]);
+        assert_eq!(load.handle(&config).unwrap().get("id"), Some(&Value::Number(42.into())));
+    }
+
+    #[test]
+    fn test_load_from_db_no_rows() {
+        let client = Arc::new(MockDb::new(vec![]));
+        let load = Load::new().with_db(client);
+        let config = db_config("users", &[("id", "id")]);
+        assert!(load.handle(&config).is_err());
+    }
+
+    #[test]
+    fn test_load_from_db_client_not_configured() {
+        let load = Load::new();
+        let config = db_config("users", &[("id", "id")]);
+        assert!(load.handle(&config).is_err());
+    }
+
+    // --- HTTP ---
+
+    struct MockHttp {
+        response: Option<Value>,
+    }
+    impl MockHttp {
+        fn new(response: Option<Value>) -> Self { Self { response } }
+    }
+    impl crate::ports::required::HttpClient for MockHttp {
+        fn get(&self, _: &str, _: Option<&HashMap<String, String>>) -> Option<Value> { self.response.clone() }
+        fn set(&self, _: &str, _: Value, _: Option<&HashMap<String, String>>) -> bool { false }
+        fn delete(&self, _: &str, _: Option<&HashMap<String, String>>) -> bool { false }
+    }
+
+    fn http_config(url: &str) -> HashMap<String, Value> {
+        let mut c = HashMap::new();
+        c.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_HTTP.into()));
+        c.insert("url".to_string(), Value::String(url.to_string()));
+        c
+    }
+
+    #[test]
+    fn test_load_from_http_no_map() {
+        let client = Arc::new(MockHttp::new(Some(serde_json::json!({"status": "ok"}))));
+        let load = Load::new().with_http(client);
+        let config = http_config("http://example.com/health");
+        assert_eq!(load.handle(&config).unwrap(), serde_json::json!({"status": "ok"}));
+    }
+
+    #[test]
+    fn test_load_from_http_with_map() {
+        let client = Arc::new(MockHttp::new(Some(serde_json::json!({"status": "ok"}))));
+        let load = Load::new().with_http(client);
+        let mut config = http_config("http://example.com/health");
+        let mut map = serde_json::Map::new();
+        map.insert("health".to_string(), Value::String("status".to_string()));
+        config.insert("map".to_string(), Value::Object(map));
+        let result = load.handle(&config).unwrap();
+        assert_eq!(result.get("health"), Some(&Value::String("ok".to_string())));
+    }
+
+    #[test]
+    fn test_load_from_http_not_found() {
+        let client = Arc::new(MockHttp::new(None));
+        let load = Load::new().with_http(client);
+        let config = http_config("http://example.com/health");
+        assert!(load.handle(&config).is_err());
+    }
+
+    #[test]
+    fn test_load_from_http_client_not_configured() {
+        let load = Load::new();
+        let config = http_config("http://example.com/health");
+        assert!(load.handle(&config).is_err());
+    }
+
     #[test]
     fn test_load_from_env() {
         let env = MockEnvClient;

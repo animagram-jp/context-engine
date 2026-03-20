@@ -287,6 +287,25 @@ impl State {
             }
         }
 
+        // CLIENT_STATE: extract key path directly from build_config without resolving
+        if has_state_client {
+            if let Some(load_idx) = meta.load {
+                let state_key = self.manifest.build_config(load_idx)
+                    .and_then(|entries| entries.into_iter().find(|(k, _)| k == "key"))
+                    .and_then(|(_, cv)| match cv {
+                        ConfigValue::Placeholder(p) => Some(p),
+                        ConfigValue::Str(s) => Some(s),
+                        _ => None,
+                    });
+                let result = match state_key {
+                    Some(k) => self.get(&k),
+                    None => Ok(None),
+                };
+                self.called_keys.remove(key);
+                return result;
+            }
+        }
+
         let result = if let Some(load_idx) = meta.load {
             match self.resolve_config(load_idx) {
                 Ok(Some(mut config)) => {

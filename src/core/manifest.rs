@@ -362,3 +362,250 @@ pub struct MetaIndices {
     pub store: Option<u16>,
     pub state: Option<u16>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::parser::{Value, parse};
+
+    /// Builds a Manifest from a inline DSL mapping.
+    /// `entries` is the top-level key→subtree mapping for a single file.
+    fn make(filename: &str, entries: Vec<(&str, Value)>) -> Manifest {
+        let mut m = Manifest::new();
+        let root = Value::Mapping(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        let pm = parse(filename, root, &mut m.dynamic, &mut m.keys, &mut m.values, &mut m.path_map, &mut m.children_map).unwrap();
+        m.insert(filename.to_string(), pm);
+        m
+    }
+
+    fn scalar(s: &str) -> Value { Value::Scalar(s.to_string()) }
+    fn mapping(entries: Vec<(&str, Value)>) -> Value {
+        Value::Mapping(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+    }
+
+    fn cache_manifest() -> Manifest {
+        make("cache", vec![
+            ("user", mapping(vec![
+                ("_store", mapping(vec![
+                    ("client", scalar("KVS")),
+                    ("key", scalar("user:${session.sso_user_id}")),
+                ])),
+                ("_load", mapping(vec![
+                    ("client", scalar("Db")),
+                    ("connection", scalar("${connection.tenant}")),
+                    ("table", scalar("users")),
+                    ("map", mapping(vec![
+                        ("id", scalar("id")),
+                        ("org_id", scalar("sso_org_id")),
+                    ])),
+                ])),
+                ("id", mapping(vec![
+                    ("_state", mapping(vec![("type", scalar("integer"))])),
+                ])),
+                ("tenant_id", mapping(vec![
+                    ("_state", mapping(vec![("type", scalar("integer"))])),
+                    ("_load", mapping(vec![
+                        ("client", scalar("State")),
+                        ("key", scalar("${org_id}")),
+                    ])),
+                ])),
+            ])),
+        ])
+    }
+
+    // --- find ---
+
+    #[test]
+    fn test_find_file_not_loaded_returns_none() {
+        let m = Manifest::new();
+        assert!(m.find("cache", "user").is_none());
+    }
+
+    #[test]
+    fn test_find_top_level() {
+        let m = cache_manifest();
+        assert!(m.find("cache", "user").is_some());
+    }
+
+    #[test]
+    fn test_find_nested() {
+        let m = cache_manifest();
+        assert!(m.find("cache", "user.id").is_some());
+    }
+
+    #[test]
+    fn test_find_unknown_returns_none() {
+        let m = cache_manifest();
+        assert!(m.find("cache", "nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_find_unknown_nested_returns_none() {
+        let m = cache_manifest();
+        assert!(m.find("cache", "user.nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_find_unique_indices_across_files() {
+        let mut m = cache_manifest();
+        let root2 = Value::Mapping(vec![
+            ("common".to_string(), Value::Mapping(vec![
+                ("_store".to_string(), Value::Mapping(vec![
+                    ("client".to_string(), Value::Scalar("InMemory".to_string())),
+                ])),
+            ])),
+        ]);
+        let pm2 = parse("connection", root2, &mut m.dynamic, &mut m.keys, &mut m.values, &mut m.path_map, &mut m.children_map).unwrap();
+        m.insert("connection".to_string(), pm2);
+
+        let cache_idx = m.find("cache", "user").unwrap();
+        let conn_idx  = m.find("connection", "common").unwrap();
+        assert_ne!(cache_idx, conn_idx);
+    }
+
+    // --- get_meta ---
+
+    #[test]
+    fn test_get_meta_has_load_and_store() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        assert!(meta.load.is_some());
+        assert!(meta.store.is_some());
+    }
+
+    #[test]
+    fn test_get_meta_leaf_has_state() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user.id");
+        assert!(meta.state.is_some());
+    }
+
+    #[test]
+    fn test_get_meta_child_inherits_parent_store() {
+        let m = cache_manifest();
+        let parent = m.get_meta("cache", "user");
+        let child  = m.get_meta("cache", "user.id");
+        assert!(child.store.is_some());
+        assert_eq!(child.store, parent.store);
+    }
+
+    #[test]
+    fn test_get_meta_child_overrides_parent_load() {
+        let m = cache_manifest();
+        let parent = m.get_meta("cache", "user");
+        let child  = m.get_meta("cache", "user.tenant_id");
+        assert!(child.load.is_some());
+        assert_ne!(child.load, parent.load);
+    }
+
+    #[test]
+    fn test_get_meta_unknown_path_returns_default() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "nonexistent");
+        assert!(meta.load.is_none());
+        assert!(meta.store.is_none());
+        assert!(meta.state.is_none());
+    }
+
+    #[test]
+    fn test_get_meta_file_not_loaded_returns_default() {
+        let m = Manifest::new();
+        let meta = m.get_meta("cache", "user");
+        assert!(meta.load.is_none());
+    }
+
+    // --- get_client ---
+
+    #[test]
+    fn test_get_client_kvs() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let client = m.get_client(meta.store.unwrap());
+        assert_eq!(client, super::super::fixed_bits::CLIENT_KVS);
+    }
+
+    #[test]
+    fn test_get_client_db() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let client = m.get_client(meta.load.unwrap());
+        assert_eq!(client, super::super::fixed_bits::CLIENT_DB);
+    }
+
+    #[test]
+    fn test_get_client_state() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user.tenant_id");
+        let client = m.get_client(meta.load.unwrap());
+        assert_eq!(client, super::super::fixed_bits::CLIENT_STATE);
+    }
+
+    // --- build_config ---
+
+    #[test]
+    fn test_build_config_contains_client() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.store.unwrap()).unwrap();
+        assert!(entries.iter().any(|(k, _)| k == "client"));
+    }
+
+    #[test]
+    fn test_build_config_connection_is_placeholder() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.load.unwrap()).unwrap();
+        let conn = entries.iter().find(|(k, _)| k == "connection");
+        assert!(matches!(conn, Some((_, ConfigValue::Placeholder(_)))));
+    }
+
+    #[test]
+    fn test_build_config_map_is_map_variant() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.load.unwrap()).unwrap();
+        let map = entries.iter().find(|(k, _)| k == "map");
+        assert!(matches!(map, Some((_, ConfigValue::Map(_)))));
+        if let Some((_, ConfigValue::Map(pairs))) = map {
+            assert!(!pairs.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_build_config_key_with_template_is_str() {
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.store.unwrap()).unwrap();
+        let key = entries.iter().find(|(k, _)| k == "key");
+        assert!(matches!(key, Some((_, ConfigValue::Str(_)))));
+        if let Some((_, ConfigValue::Str(s))) = key {
+            assert!(s.contains("${"));
+        }
+    }
+
+    // --- decode_value ---
+
+    #[test]
+    fn test_decode_value_single_placeholder() {
+        // connection: ${connection.tenant} → Placeholder
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.load.unwrap()).unwrap();
+        let conn = entries.iter().find(|(k, _)| k == "connection");
+        assert!(matches!(conn, Some((_, ConfigValue::Placeholder(p))) if p == "connection.tenant"));
+    }
+
+    #[test]
+    fn test_decode_value_template_embeds_placeholder() {
+        // key: "user:${session.sso_user_id}" → Str containing ${...}
+        let m = cache_manifest();
+        let meta = m.get_meta("cache", "user");
+        let entries = m.build_config(meta.store.unwrap()).unwrap();
+        let key = entries.iter().find(|(k, _)| k == "key");
+        if let Some((_, ConfigValue::Str(s))) = key {
+            assert!(s.contains("${session.sso_user_id}"));
+        } else {
+            panic!("expected Str");
+        }
+    }
+}

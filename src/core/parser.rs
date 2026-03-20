@@ -107,7 +107,7 @@ fn traverse_field_key(
 
         for (k_str, v) in mapping {
             if k_str.starts_with('_') {
-                let meta_idx = traverse_meta_key(k_str, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
+                let meta_idx = traverse_meta_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
                 meta_indices.push(meta_idx);
             } else {
                 let child_idx = traverse_field_key(k_str, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
