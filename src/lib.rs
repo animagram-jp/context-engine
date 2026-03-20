@@ -1,12 +1,11 @@
 mod core;
-pub mod common;
-pub mod manifest;
+pub mod log_format;
 pub mod ports;
 pub mod load;
 pub mod store;
 pub mod state;
 
-pub use common::LogFormat;
+pub use log_format::LogFormat;
 pub use ports::provided::State as StateTrait;
 pub use ports::default::DefaultFileClient;
 pub use state::State;

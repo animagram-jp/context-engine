@@ -1,17 +1,20 @@
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use crate::manifest::Manifest;
+use std::path::PathBuf;
 use crate::core::fixed_bits;
-use crate::core::codec;
+use crate::core::manifest::{Manifest, ConfigValue};
+use crate::core::parser::{Value as ParseValue, parse};
+use crate::ports::provided::ManifestError;
+use crate::ports::required::FileClient;
 use crate::store::Store;
 use crate::load::Load;
 use crate::ports::provided::StateError;
 
 use std::sync::Arc;
 
-// state_values layout: Vec<(key_idx: u16, value: Value)>
-// index 0 is reserved as null slot
 pub struct State {
+    manifest_dir: PathBuf,
+    manifest_file: Box<dyn FileClient>,
     manifest: Manifest,
     state_keys: Vec<u16>,
     state_vals: Vec<Value>,
@@ -33,7 +36,9 @@ impl State {
     /// ```
     pub fn new(manifest_dir: &str) -> Self {
         Self {
-            manifest: Manifest::new(manifest_dir),
+            manifest_dir: PathBuf::from(manifest_dir),
+            manifest_file: Box::new(crate::ports::default::DefaultFileClient),
+            manifest: Manifest::new(),
             state_keys: vec![0],
             state_vals: vec![Value::Null],
             store: Store::new(),
@@ -77,13 +82,51 @@ impl State {
         self
     }
 
-    pub fn with_manifest_file(mut self, client: impl crate::ports::required::FileClient + 'static) -> Self {
-        self.manifest = self.manifest.with_file(client);
+    pub fn with_manifest_file(mut self, client: impl FileClient + 'static) -> Self {
+        self.manifest_file = Box::new(client);
         self
     }
 
+    fn load_manifest(&mut self, file: &str) -> Result<(), ManifestError> {
+        if self.manifest.is_loaded(file) {
+            return Ok(());
+        }
 
-    /// Splits "file.path" into ("file", "path").
+        let yml_path  = self.manifest_dir.join(format!("{}.yml",  file));
+        let yaml_path = self.manifest_dir.join(format!("{}.yaml", file));
+        let yml_key   = yml_path.to_string_lossy();
+        let yaml_key  = yaml_path.to_string_lossy();
+        let yml_content  = self.manifest_file.get(&yml_key);
+        let yaml_content = self.manifest_file.get(&yaml_key);
+
+        let content = match (yml_content, yaml_content) {
+            (Some(_), Some(_)) => return Err(ManifestError::AmbiguousFile(
+                format!("both '{}.yml' and '{}.yaml' exist.", file, file)
+            )),
+            (Some(c), None) => c,
+            (None, Some(c)) => c,
+            (None, None) => return Err(ManifestError::FileNotFound(
+                format!("'{}.yml' or '{}.yaml'", file, file)
+            )),
+        };
+
+        let yaml_root: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)
+            .map_err(|e| ManifestError::ParseError(format!("YAML parse error: {}", e)))?;
+
+        let pm = parse(
+            file,
+            yaml_to_parse_value(yaml_root),
+            &mut self.manifest.dynamic,
+            &mut self.manifest.keys,
+            &mut self.manifest.values,
+            &mut self.manifest.path_map,
+            &mut self.manifest.children_map,
+        ).map_err(|e| ManifestError::ParseError(e))?;
+
+        self.manifest.insert(file.to_string(), pm);
+        Ok(())
+    }
+
     fn split_key<'k>(key: &'k str) -> (&'k str, &'k str) {
         match key.find('.') {
             Some(pos) => (&key[..pos], &key[pos + 1..]),
@@ -91,209 +134,72 @@ impl State {
         }
     }
 
-    /// Resolves a yaml value record to a Value (any type, for connection etc.).
-    /// For non-template single placeholder: returns the resolved Value as-is (including Object).
-    /// For string-compatible values: delegates to resolve_value_to_string.
-    fn resolve_value(&mut self, value_idx: u16) -> Result<Option<Value>, StateError> {
-        crate::fn_log!("State", "resolve_value", &value_idx.to_string());
-        let vo = match self.manifest.values.get(value_idx as usize).copied() {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
-        let is_path = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_MASK_IS_PATH) == 1;
-        let dyn_idx = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
-
-        if is_path && dyn_idx != 0 && !is_template {
-            let path_segments = match self.manifest.path_map.get(dyn_idx as usize) {
-                Some(s) => s.to_vec(),
-                None => return Ok(None),
-            };
-            let path_key: String = path_segments.iter()
-                .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-                .join(".");
-            return self.get(&path_key);
-        }
-
-        Ok(self.resolve_value_to_string(value_idx)?.map(Value::String))
+    fn find_state_value(&self, key_idx: u16) -> Option<usize> {
+        self.state_keys.iter().skip(1).position(|&k| k == key_idx).map(|p| p + 1)
     }
 
-    /// Resolves a yaml value record to a String (for use in store/load config keys).
-    fn resolve_value_to_string(&mut self, value_idx: u16) -> Result<Option<String>, StateError> {
-        crate::fn_log!("State", "resolve_value_to_string", &value_idx.to_string());
-        let vo = match self.manifest.values.get(value_idx as usize).copied() {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-
-        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
-
-        const TOKEN_OFFSETS: [(u32, u32); 6] = [
-            (fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_OFFSET_T0_DYNAMIC),
-            (fixed_bits::V_OFFSET_T1_IS_PATH, fixed_bits::V_OFFSET_T1_DYNAMIC),
-            (fixed_bits::V_OFFSET_T2_IS_PATH, fixed_bits::V_OFFSET_T2_DYNAMIC),
-            (fixed_bits::V_OFFSET_T3_IS_PATH, fixed_bits::V_OFFSET_T3_DYNAMIC),
-            (fixed_bits::V_OFFSET_T4_IS_PATH, fixed_bits::V_OFFSET_T4_DYNAMIC),
-            (fixed_bits::V_OFFSET_T5_IS_PATH, fixed_bits::V_OFFSET_T5_DYNAMIC),
-        ];
-
+    /// Resolves a `${...}`-containing template string by calling `State::get()` for each placeholder.
+    fn resolve_template(&mut self, template: &str) -> Result<Option<String>, StateError> {
         let mut result = String::new();
-
-        for (i, (off_is_path, off_dynamic)) in TOKEN_OFFSETS.iter().enumerate() {
-            let word = if i < 3 { 0 } else { 1 };
-            let is_path = fixed_bits::get(vo[word], *off_is_path, fixed_bits::V_MASK_IS_PATH) == 1;
-            let dyn_idx = fixed_bits::get(vo[word], *off_dynamic, fixed_bits::V_MASK_DYNAMIC) as u16;
-
-            if dyn_idx == 0 {
-                break;
-            }
-
-            if is_path {
-                let path_segments = match self.manifest.path_map.get(dyn_idx as usize) {
-                    Some(s) => s.to_vec(),
-                    None => return Ok(None),
-                };
-                let path_key: String = path_segments.iter()
-                    .filter_map(|&seg_idx| self.manifest.dynamic.get(seg_idx).map(|s| s.to_string()))
-                    .collect::<Vec<_>>()
-                    .join(".");
-                crate::fn_log!("State", "resolve/get", &path_key);
-                let resolved = self.get(&path_key)?;
-                crate::fn_log!("State", "resolve/got", if resolved.is_some() { "Some" } else { "None" });
-                let resolved = match resolved {
-                    Some(v) => v,
-                    None => return Ok(None),
-                };
-                let s = match &resolved {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    _ => return Ok(None),
-                };
-                result.push_str(&s);
-            } else {
-                let s = match self.manifest.dynamic.get(dyn_idx) {
-                    Some(s) => s.to_string(),
-                    None => return Ok(None),
-                };
-                result.push_str(&s);
-            }
-
-            if !is_template {
-                break;
-            }
+        let mut remaining = template;
+        while let Some(start) = remaining.find("${") {
+            result.push_str(&remaining[..start]);
+            remaining = &remaining[start + 2..];
+            let end = match remaining.find('}') {
+                Some(e) => e,
+                None => return Ok(None),
+            };
+            let path = &remaining[..end];
+            remaining = &remaining[end + 1..];
+            let resolved = match self.get(path)? {
+                Some(Value::String(s)) => s,
+                Some(Value::Number(n)) => n.to_string(),
+                Some(Value::Bool(b))   => b.to_string(),
+                _ => return Ok(None),
+            };
+            result.push_str(&resolved);
         }
-
+        result.push_str(remaining);
         Ok(Some(result))
     }
 
-    /// Builds a store/load config HashMap from a meta record index.
-    fn build_config(&mut self, meta_idx: u16) -> Result<Option<HashMap<String, Value>>, StateError> {
-        crate::fn_log!("State", "build_config", &meta_idx.to_string());
-        let record = match self.manifest.keys.get(meta_idx as usize).copied() {
-            Some(r) => r,
-            None => return Ok(None),
-        };
-        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
-        if child_idx == 0 { return Ok(None); }
-        let has_children = fixed_bits::get(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN);
-        let children = if has_children == 1 {
-            match self.manifest.children_map.get(child_idx) {
-                Some(c) => c.to_vec(),
-                None => return Ok(None),
+    /// Resolves a `ConfigValue` to a `serde_json::Value`.
+    /// `Placeholder` → `State::get()` (returns Value as-is for connection objects).
+    /// `Str` with `${...}` → template resolution → String.
+    /// `Str` static → String.
+    fn resolve_config_value(&mut self, cv: ConfigValue) -> Result<Option<Value>, StateError> {
+        match cv {
+            ConfigValue::Client(c) => Ok(Some(Value::Number(c.into()))),
+            ConfigValue::Placeholder(path) => self.get(&path),
+            ConfigValue::Object(path) => self.get(&path),
+            ConfigValue::Str(s) if s.contains("${") => {
+                Ok(self.resolve_template(&s)?.map(Value::String))
             }
-        } else {
-            vec![child_idx as u16]
+            ConfigValue::Str(s) => Ok(Some(Value::String(s))),
+            ConfigValue::Map(pairs) => {
+                let mut map = serde_json::Map::new();
+                for (k, v) in pairs {
+                    map.insert(k, Value::String(v));
+                }
+                Ok(Some(Value::Object(map)))
+            }
+        }
+    }
+
+    /// Resolves ManifestStore::build_config output into a HashMap for Store/Load.
+    fn resolve_config(&mut self, meta_idx: u16) -> Result<Option<HashMap<String, Value>>, StateError> {
+        let entries = match self.manifest.build_config(meta_idx) {
+            Some(e) => e,
+            None => return Ok(None),
         };
 
         let mut config = HashMap::new();
-
-        for &child_idx in &children {
-            let record = match self.manifest.keys.get(child_idx as usize).copied() {
-                Some(r) => r,
-                None => continue,
-            };
-            let prop   = fixed_bits::get(record, fixed_bits::K_OFFSET_PROP,   fixed_bits::K_MASK_PROP)   as u8;
-            let client = fixed_bits::get(record, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) as u8;
-            let is_leaf = fixed_bits::get(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF) == 1;
-            let value_idx = if is_leaf {
-                fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as u16
-            } else { 0 };
-
-            if client != 0 {
-                config.insert("client".to_string(), Value::Number(client.into()));
-                continue;
-            }
-
-            let prop_name = match codec::prop_decode(prop as u64) {
-                Some(name) => name,
-                None => continue,
-            };
-
-            if prop_name == "map" {
-                if let Some(map_val) = self.build_map_config(child_idx) {
-                    config.insert("map".to_string(), map_val);
-                }
-            } else if prop_name == "connection" {
-                if value_idx != 0 {
-                    if let Some(v) = self.resolve_value(value_idx)? {
-                        config.insert("connection".to_string(), v);
-                    }
-                }
-            } else if value_idx != 0 {
-                if let Some(s) = self.resolve_value_to_string(value_idx)? {
-                    config.insert(prop_name.to_string(), Value::String(s));
-                }
+        for (key, cv) in entries {
+            if let Some(v) = self.resolve_config_value(cv)? {
+                config.insert(key, v);
             }
         }
-
         Ok(Some(config))
-    }
-
-    /// Builds a map config object from a map prop record's children.
-    fn build_map_config(&self, map_idx: u16) -> Option<Value> {
-        let record = self.manifest.keys.get(map_idx as usize).copied()?;
-        let child_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_CHILD, fixed_bits::K_MASK_CHILD) as usize;
-        if child_idx == 0 { return Some(Value::Object(serde_json::Map::new())); }
-
-        let has_children = fixed_bits::get(record, fixed_bits::K_OFFSET_HAS_CHILDREN, fixed_bits::K_MASK_HAS_CHILDREN);
-        let children = if has_children == 1 {
-            self.manifest.children_map.get(child_idx)?.to_vec()
-        } else {
-            vec![child_idx as u16]
-        };
-
-        let mut map = serde_json::Map::new();
-        for &c in &children {
-            let child = self.manifest.keys.get(c as usize).copied()?;
-            let dyn_idx   = fixed_bits::get(child, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-            let value_idx = fixed_bits::get(child, fixed_bits::K_OFFSET_CHILD,   fixed_bits::K_MASK_CHILD)   as usize;
-            let is_path   = fixed_bits::get(child, fixed_bits::K_OFFSET_IS_PATH, fixed_bits::K_MASK_IS_PATH) == 1;
-
-            let key_str = if is_path {
-                let segs = self.manifest.path_map.get(dyn_idx as usize)?;
-                segs.iter()
-                    .filter_map(|&s| self.manifest.dynamic.get(s).map(|x| x.to_string()))
-                    .collect::<Vec<_>>()
-                    .join(".")
-            } else {
-                self.manifest.dynamic.get(dyn_idx)?.to_string()
-            };
-
-            let val_vo = self.manifest.values.get(value_idx).copied()?;
-            let col_dyn = fixed_bits::get(val_vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
-            let col_str = self.manifest.dynamic.get(col_dyn)?.to_string();
-
-            map.insert(key_str, Value::String(col_str));
-        }
-
-        Some(Value::Object(map))
-    }
-
-    /// Finds a state_vals index by key_index (skips null slot at 0).
-    fn find_state_value(&self, key_idx: u16) -> Option<usize> {
-        self.state_keys.iter().skip(1).position(|&k| k == key_idx).map(|p| p + 1)
     }
 
     /// Returns the value for `key`, checking state cache → _store → _load in order.
@@ -336,7 +242,7 @@ impl State {
         let file = file.to_string();
         let path = path.to_string();
 
-        if let Err(e) = self.manifest.load(&file) {
+        if let Err(e) = self.load_manifest(&file) {
             self.called_keys.remove(key);
             return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
@@ -349,7 +255,6 @@ impl State {
             }
         };
 
-        // check state cache
         if let Some(sv_idx) = self.find_state_value(key_idx) {
             let val = self.state_vals.get(sv_idx).cloned();
             self.called_keys.remove(key);
@@ -358,15 +263,13 @@ impl State {
 
         let meta = self.manifest.get_meta(&file, &path);
 
-        // check if _load client is State (load-only, no store read)
-        let has_state_client = meta.load.and_then(|load_idx| {
-            self.manifest.keys.get(load_idx as usize).copied()
-                .map(|r| fixed_bits::get(r, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT) == fixed_bits::CLIENT_STATE)
-        }).unwrap_or(false);
+        let has_state_client = meta.load
+            .map(|load_idx| self.manifest.get_client(load_idx) == fixed_bits::CLIENT_STATE)
+            .unwrap_or(false);
 
         if !has_state_client {
             if let Some(store_idx) = meta.store {
-                match self.build_config(store_idx) {
+                match self.resolve_config(store_idx) {
                     Ok(Some(config)) => {
                         if let Some(value) = self.store.get(&config) {
                             self.state_keys.push(key_idx);
@@ -384,9 +287,8 @@ impl State {
             }
         }
 
-        // try _load
         let result = if let Some(load_idx) = meta.load {
-            match self.build_config(load_idx) {
+            match self.resolve_config(load_idx) {
                 Ok(Some(mut config)) => {
                     if !config.contains_key("client") {
                         self.called_keys.remove(key);
@@ -406,7 +308,7 @@ impl State {
                     match self.load.handle(&config) {
                         Ok(loaded) => {
                             if let Some(store_idx) = meta.store {
-                                match self.build_config(store_idx) {
+                                match self.resolve_config(store_idx) {
                                     Ok(Some(store_config)) => {
                                         if self.store.set(&store_config, loaded.clone(), None).unwrap_or(false) {
                                             self.state_keys.push(key_idx);
@@ -417,9 +319,7 @@ impl State {
                                         self.state_keys.push(key_idx);
                                         self.state_vals.push(loaded.clone());
                                     }
-                                    Err(_) => {
-                                        // write-through cache failure is non-fatal
-                                    }
+                                    Err(_) => {}
                                 }
                             } else {
                                 self.state_keys.push(key_idx);
@@ -466,7 +366,7 @@ impl State {
         let file = file.to_string();
         let path = path.to_string();
 
-        if let Err(e) = self.manifest.load(&file) {
+        if let Err(e) = self.load_manifest(&file) {
             return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
@@ -478,7 +378,7 @@ impl State {
         let meta = self.manifest.get_meta(&file, &path);
 
         if let Some(store_idx) = meta.store {
-            match self.build_config(store_idx)? {
+            match self.resolve_config(store_idx)? {
                 Some(config) => {
                     return match self.store.set(&config, value.clone(), ttl) {
                         Ok(ok) => {
@@ -531,7 +431,7 @@ impl State {
         let file = file.to_string();
         let path = path.to_string();
 
-        if let Err(e) = self.manifest.load(&file) {
+        if let Err(e) = self.load_manifest(&file) {
             return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
@@ -543,7 +443,7 @@ impl State {
         let meta = self.manifest.get_meta(&file, &path);
 
         if let Some(store_idx) = meta.store {
-            match self.build_config(store_idx)? {
+            match self.resolve_config(store_idx)? {
                 Some(config) => {
                     return match self.store.delete(&config) {
                         Ok(ok) => {
@@ -594,7 +494,7 @@ impl State {
         let file = file.to_string();
         let path = path.to_string();
 
-        if let Err(e) = self.manifest.load(&file) {
+        if let Err(e) = self.load_manifest(&file) {
             return Err(StateError::ManifestLoadFailed(e.to_string()));
         }
 
@@ -609,11 +509,32 @@ impl State {
 
         let meta = self.manifest.get_meta(&file, &path);
         if let Some(store_idx) = meta.store {
-            if let Some(config) = self.build_config(store_idx)? {
+            if let Some(config) = self.resolve_config(store_idx)? {
                 return Ok(self.store.get(&config).is_some());
             }
         }
         Ok(false)
+    }
+}
+
+fn yaml_to_parse_value(v: serde_yaml_ng::Value) -> ParseValue {
+    match v {
+        serde_yaml_ng::Value::Mapping(m) => ParseValue::Mapping(
+            m.into_iter()
+                .filter_map(|(k, v)| {
+                    let key = match k {
+                        serde_yaml_ng::Value::String(s) => s,
+                        _ => return None,
+                    };
+                    Some((key, yaml_to_parse_value(v)))
+                })
+                .collect(),
+        ),
+        serde_yaml_ng::Value::String(s) => ParseValue::Scalar(s),
+        serde_yaml_ng::Value::Number(n) => ParseValue::Scalar(n.to_string()),
+        serde_yaml_ng::Value::Bool(b)   => ParseValue::Scalar(b.to_string()),
+        serde_yaml_ng::Value::Null      => ParseValue::Null,
+        _                               => ParseValue::Null,
     }
 }
 
@@ -662,7 +583,6 @@ mod tests {
 
     #[test]
     fn test_with_clients_build() {
-        // each builder returns Self without panic — wiring is correct
         let _ = State::new("./examples/manifest").with_kvs(Arc::new(StubKVS));
         let _ = State::new("./examples/manifest").with_db(Arc::new(StubDb));
         let _ = State::new("./examples/manifest").with_env(Arc::new(StubEnv));
