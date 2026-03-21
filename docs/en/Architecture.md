@@ -14,12 +14,12 @@
   6. FileClient
 
 - internal modules
-  1. Manifest
+  1. core::Manifest
   2. Store
   3. Load
   4. u64(fixed_bits.rs)
   5. Pools & Maps(pool.rs)
-  6. ParsedManifest(parser.rs)
+  6. parser.rs
   7. LogFormat
 
 *: *_client impl are not essential, optional modules.
@@ -32,7 +32,7 @@
 
 A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data following the `_store`/`_load` blocks defined in manifest YAMLs. `get()` automatically attempts loading on key miss. `set()` does not trigger loading. `delete()` removes the specified key from both store and cache. `exists()` checks key existence without triggering auto-load. It maintains an instance-level cache (`state_values`) separate from persistent stores.
 
-Manifest is an internal module used by State. It reads YAML files and builds fixed-length pool structures. It detects `_` prefix keys (meta keys) and separates them from field keys. Relative placeholders in values are qualified to absolute paths at parse time. Metadata (`_store`/`_load`/`_state`) is inherited from parent nodes; child overrides parent.
+State owns YAML I/O: it reads manifest files via `FileClient` and parses them into `core::Manifest` on first access. `core::Manifest` is an internal no_std struct that owns all bit-record data and provides decode/find/build_config queries. Relative placeholders in values are qualified to absolute paths at parse time. Metadata (`_store`/`_load`/`_state`) is inherited from parent nodes; child overrides parent.
 
 ## State
 
@@ -44,17 +44,17 @@ Returns: `Result<Option<Value>, StateError>`
 
 **Operation flow:**
 1. Check `called_keys` (recursion / limit detection)
-2. `Manifest::load()` → load file (first access only)
-3. `Manifest::find()` → get key_idx
+2. Load manifest file via `FileClient` (first access only)
+3. `core::Manifest::find()` → get key_idx
 4. **Check `state_values` (by key_idx)** ← Highest priority
-5. `Manifest::get_meta()` → get MetaIndices
+5. `core::Manifest::get_meta()` → get MetaIndices
 6. If `_load.client == State`: skip store. Otherwise: retrieve from store (KVS/InMemoryClient)
 7. On miss, auto-load via `Load::handle()`
 8. Return `Ok(Some(value))` / `Ok(None)` / `Err(StateError)`
 
 **Auto-load:**
 - If the state key misses, attempt auto-retrieval via `Load::handle()`
-- On error, return `Err(StateError::LoadFailed)`
+- On error, return `Err(StateError::LoadFailed(LoadError))`
 
 **Note on _state.type:**
 ```yaml
@@ -162,6 +162,18 @@ Application must implement the following traits to handle data stores:
   - expected target: HTTP endpoints
   - for both `_store.client` and `_load.client`
 
+6. **FileClient**
+  - expected operations: `get()`/`set()`/`delete()`
+  - trait signature:
+    - `fn get(&self, key: &str) -> Option<String>`
+    - `fn set(&self, key: &str, value: String) -> bool`
+    - `fn delete(&self, key: &str) -> bool`
+  - arguments: `"key":...` from `_{store,load}.key:...` in Manifest
+  - expected target: File I/O
+  - default impl `DefaultFileClient` is built-in (std::fs based)
+  - for both `_store.client` and `_load.client`
+  - **always used by State to read manifest YAMLs**
+
 ---
 
 ## Load::handle()
@@ -205,14 +217,14 @@ When `_load.client: State`, `Load::handle()` is not called; the value of `_load.
 ```
 1. called_keys check (recursion / limit detection)
    ↓
-2. Manifest::load() → load file (first access only)
+2. Load manifest file via FileClient (first access only)
    ↓
-3. Manifest::find() → get key_idx
+3. core::Manifest::find() → get key_idx
    ↓
 4. ★ Check state_values (by key_idx) ← Highest priority
    if find_state_value(key_idx).is_some() { return Ok(Some(value)); }
    ↓
-5. Manifest::get_meta() → get MetaIndices
+5. core::Manifest::get_meta() → get MetaIndices
    ↓
 6. _load.client == State → skip store
    otherwise: retrieve from store (KVS/InMemoryClient)
@@ -265,7 +277,7 @@ The State struct maintains an instance-level cache (`state_values: StateValueLis
 
 ## Placeholder Resolution Rules
 
-`${}` paths are **qualified to absolute paths at parse time (`Manifest::load()`)** — no conversion happens at State runtime.
+`${}` paths are **qualified to absolute paths at parse time** — no conversion happens at State runtime.
 
 **Qualify rule at parse time (`qualify_path()`):**
 - Path contains `.` → treated as absolute, used as-is
@@ -285,7 +297,19 @@ qualify_path("tenant_id", "cache", ["user"])
 
 ## error case
 
-- Two files with the same name but different extensions (`.yml` and `.yaml`) exist in manifestDir
-  - Error timing: when `Manifest::load()` detects both files
-  - Reason: Manifest ignores extensions (dot-separated paths represent hierarchy), so it cannot distinguish the two
-  - Note: same-extension duplicates are assumed to be prevented at the OS level
+**ManifestError:**
+- `FileNotFound` — manifest file not found in manifest dir
+- `AmbiguousFile` — two files with the same name but different extensions (`.yml` and `.yaml`) exist in manifestDir. Manifest ignores extensions (dot-separated paths represent hierarchy), so it cannot distinguish the two. Same-extension duplicates are assumed to be prevented at the OS level.
+- `ParseError` — YAML parse failed
+
+**LoadError:**
+- `ClientNotConfigured` — required client (Env/KVS/DB/HTTP/File) is not set on State
+- `ConfigMissing(String)` — a required config key (key/url/table/map/connection) is missing in the manifest
+- `NotFound(String)` — the client call succeeded but returned no data
+- `ParseError(String)` — JSON parse error from client response
+
+**StoreError:**
+- `ClientNotConfigured` — required client (KVS/InMemory/HTTP/File) is not set on State
+- `ConfigMissing(String)` — a required config key (key/url/client) is missing in the manifest
+- `SerializeError(String)` — JSON serialize error
+- `UnsupportedClient(u64)` — unsupported client id in config

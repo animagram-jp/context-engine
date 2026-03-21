@@ -104,7 +104,7 @@ user:
 | `HttpClient` | Http Request | as above | [HttpAdapter](./examples/adapters/http_client.rs) |
 | `FileClient` | File I/O | as above | [DefaultFileClient](./src/ports/default.rs) |
 
-- FileClient.get is always used by Manifest to read YAMLs.
+- FileClient.get is always used by State to read manifest YAMLs.
 - It's not essential to implement all *Client.
 
 3. Initialize State with your adapters and use it.

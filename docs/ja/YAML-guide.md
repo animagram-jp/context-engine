@@ -118,7 +118,7 @@ _store:
 _load:
   client: Env
   map:                               # (object, required) 環境変数マッピング
-    yaml_key: "Env_VAR_NAME"
+    yaml_key: "ENV_VAR_NAME"
 ```
 
 **_load.client: State**
