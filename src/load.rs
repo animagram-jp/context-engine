@@ -2,6 +2,7 @@ use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
     InMemoryClient, HttpClient, FileClient,
 };
+use crate::ports::provided::LoadError;
 use crate::core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -58,11 +59,11 @@ impl Load {
         self
     }
 
-    pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, String> {
+    pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, LoadError> {
         let client = config
             .get("client")
             .and_then(|v| v.as_u64())
-            .ok_or("Load::handle: 'client' not found in _load config")?;
+            .ok_or(LoadError::ConfigMissing("client".into()))?;
 
         match client {
             fixed_bits::CLIENT_ENV       => self.load_from_env(config),
@@ -71,21 +72,21 @@ impl Load {
             fixed_bits::CLIENT_DB        => self.load_from_db(config),
             fixed_bits::CLIENT_HTTP      => self.load_from_http(config),
             fixed_bits::CLIENT_FILE      => self.load_from_file(config),
-            _ => Err(format!("Load::handle: unsupported client '{}'", client)),
+            _ => Err(LoadError::ConfigMissing(format!("unsupported client '{}'", client))),
         }
     }
 
     fn load_from_env(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let env = self.env.as_deref()
-            .ok_or("Load::load_from_env: EnvClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let map = config
             .get("map")
             .and_then(|v| v.as_object())
-            .ok_or("Load::load_from_env: 'map' not found")?;
+            .ok_or(LoadError::ConfigMissing("map".into()))?;
 
         let mut result = serde_json::Map::new();
         for (config_key, env_key_value) in map {
@@ -102,75 +103,75 @@ impl Load {
     fn load_from_in_memory(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let in_memory = self.in_memory.as_deref()
-            .ok_or("Load::load_from_in_memory: InMemoryClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let key = config
             .get("key")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_in_memory: 'key' not found")?;
+            .ok_or(LoadError::ConfigMissing("key".into()))?;
 
         in_memory
             .get(key)
-            .ok_or_else(|| format!("Load::load_from_in_memory: key '{}' not found", key))
+            .ok_or_else(|| LoadError::NotFound(key.into()))
     }
 
     fn load_from_kvs(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let kvs = self.kvs.as_deref()
-            .ok_or("Load::load_from_kvs: KVSClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let key = config
             .get("key")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_kvs: 'key' not found")?;
+            .ok_or(LoadError::ConfigMissing("key".into()))?;
 
         let value_str = kvs
             .get(key)
-            .ok_or_else(|| format!("Load::load_from_kvs: key '{}' not found", key))?;
+            .ok_or_else(|| LoadError::NotFound(key.into()))?;
 
         serde_json::from_str(&value_str)
-            .map_err(|e| format!("Load::load_from_kvs: JSON parse error: {}", e))
+            .map_err(|e| LoadError::ParseError(e.to_string()))
     }
 
     fn load_from_db(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let db = self.db.as_deref()
-            .ok_or("Load::load_from_db: DbClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let table = config
             .get("table")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_db: 'table' not found")?;
+            .ok_or(LoadError::ConfigMissing("table".into()))?;
 
         let where_clause = config.get("where").and_then(|v| v.as_str());
 
         let map = config
             .get("map")
             .and_then(|v| v.as_object())
-            .ok_or("Load::load_from_db: 'map' not found")?;
+            .ok_or(LoadError::ConfigMissing("map".into()))?;
 
         let connection = config
             .get("connection")
-            .ok_or("Load::load_from_db: 'connection' not specified")?;
+            .ok_or(LoadError::ConfigMissing("connection".into()))?;
 
         let columns: Vec<&str> = map.values().filter_map(|v| v.as_str()).collect();
 
         if columns.is_empty() {
-            return Err("Load::load_from_db: no columns specified in map".to_string());
+            return Err(LoadError::ConfigMissing("map has no columns".into()));
         }
 
         let rows = db
             .get(connection, table, &columns, where_clause)
-            .ok_or_else(|| format!("Load::load_from_db: fetch failed for table '{}'", table))?;
+            .ok_or_else(|| LoadError::NotFound(table.into()))?;
 
         if rows.is_empty() {
-            return Err(format!("Load::load_from_db: no data found in table '{}'", table));
+            return Err(LoadError::NotFound(table.into()));
         }
 
         let row = &rows[0];
@@ -189,34 +190,34 @@ impl Load {
     fn load_from_file(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let file = self.file.as_deref()
-            .ok_or("Load::load_from_file: FileClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let key = config
             .get("key")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_file: 'key' not found")?;
+            .ok_or(LoadError::ConfigMissing("key".into()))?;
 
         let content = file
             .get(key)
-            .ok_or_else(|| format!("Load::load_from_file: key '{}' not found", key))?;
+            .ok_or_else(|| LoadError::NotFound(key.into()))?;
 
         serde_json::from_str(&content)
-            .map_err(|e| format!("Load::load_from_file: JSON parse error: {}", e))
+            .map_err(|e| LoadError::ParseError(e.to_string()))
     }
 
     fn load_from_http(
         &self,
         config: &HashMap<String, Value>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, LoadError> {
         let http = self.http.as_deref()
-            .ok_or("Load::load_from_http: HttpClient not configured")?;
+            .ok_or(LoadError::ClientNotConfigured)?;
 
         let url = config
             .get("url")
             .and_then(|v| v.as_str())
-            .ok_or("Load::load_from_http: 'url' not found")?;
+            .ok_or(LoadError::ConfigMissing("url".into()))?;
 
         let headers = config
             .get("headers")
@@ -226,7 +227,7 @@ impl Load {
                 .collect::<HashMap<String, String>>());
 
         let response = http.get(url, headers.as_ref())
-            .ok_or_else(|| format!("Load::load_from_http: GET '{}' failed", url))?;
+            .ok_or_else(|| LoadError::NotFound(url.into()))?;
 
         let map = config.get("map").and_then(|v| v.as_object());
         match map {
@@ -234,7 +235,7 @@ impl Load {
             Some(map) => {
                 let row = match &response {
                     Value::Array(arr) => arr.first()
-                        .ok_or_else(|| "Load::load_from_http: empty array response".to_string())?,
+                        .ok_or(LoadError::NotFound("empty array response".into()))?,
                     other => other,
                 };
                 let mut result = serde_json::Map::new();

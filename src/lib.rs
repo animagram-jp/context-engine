@@ -16,4 +16,4 @@ pub use ports::required::{
     HttpClient, FileClient,
 };
 
-pub use ports::provided::{ManifestError, StateError};
+pub use ports::provided::{ManifestError, StateError, LoadError, StoreError};

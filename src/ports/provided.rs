@@ -4,7 +4,6 @@ use serde_json::Value;
 pub enum ManifestError {
     FileNotFound(String),
     AmbiguousFile(String),
-    ReadError(String),
     ParseError(String),
 }
 
@@ -13,8 +12,53 @@ impl std::fmt::Display for ManifestError {
         match self {
             ManifestError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
             ManifestError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
-            ManifestError::ReadError(msg)     => write!(f, "ReadError: {}", msg),
             ManifestError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LoadError {
+    /// Required client (Env/KVS/DB/HTTP/File) is not configured.
+    ClientNotConfigured,
+    /// A required config key (key/url/table/map/connection) is missing.
+    ConfigMissing(String),
+    /// The client call succeeded but returned no data.
+    NotFound(String),
+    /// JSON parse error from client response.
+    ParseError(String),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadError::ClientNotConfigured      => write!(f, "ClientNotConfigured"),
+            LoadError::ConfigMissing(msg)       => write!(f, "ConfigMissing: {}", msg),
+            LoadError::NotFound(msg)            => write!(f, "NotFound: {}", msg),
+            LoadError::ParseError(msg)          => write!(f, "ParseError: {}", msg),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StoreError {
+    /// Required client (KVS/InMemory/HTTP/File) is not configured.
+    ClientNotConfigured,
+    /// A required config key (key/url/client) is missing.
+    ConfigMissing(String),
+    /// JSON serialize error.
+    SerializeError(String),
+    /// Unsupported client id in config.
+    UnsupportedClient(u64),
+}
+
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::ClientNotConfigured    => write!(f, "ClientNotConfigured"),
+            StoreError::ConfigMissing(msg)     => write!(f, "ConfigMissing: {}", msg),
+            StoreError::SerializeError(msg)    => write!(f, "SerializeError: {}", msg),
+            StoreError::UnsupportedClient(id)  => write!(f, "UnsupportedClient: {}", id),
         }
     }
 }
@@ -24,8 +68,8 @@ pub enum StateError {
     ManifestLoadFailed(String),
     KeyNotFound(String),
     RecursionLimitExceeded,
-    StoreFailed(String),
-    LoadFailed(String),
+    StoreFailed(StoreError),
+    LoadFailed(LoadError),
 }
 
 impl std::fmt::Display for StateError {
@@ -34,8 +78,8 @@ impl std::fmt::Display for StateError {
             StateError::ManifestLoadFailed(msg)  => write!(f, "ManifestLoadFailed: {}", msg),
             StateError::KeyNotFound(msg)          => write!(f, "KeyNotFound: {}", msg),
             StateError::RecursionLimitExceeded    => write!(f, "RecursionLimitExceeded"),
-            StateError::StoreFailed(msg)          => write!(f, "StoreFailed: {}", msg),
-            StateError::LoadFailed(msg)           => write!(f, "LoadFailed: {}", msg),
+            StateError::StoreFailed(e)            => write!(f, "StoreFailed: {}", e),
+            StateError::LoadFailed(e)             => write!(f, "LoadFailed: {}", e),
         }
     }
 }

@@ -1,4 +1,5 @@
 use crate::ports::required::{InMemoryClient, KVSClient, HttpClient, FileClient};
+use crate::ports::provided::StoreError;
 use crate::core::fixed_bits;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -82,35 +83,35 @@ impl Store {
         store_config: &HashMap<String, Value>,
         value: Value,
         ttl: Option<u64>,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, StoreError> {
         let client = store_config
             .get("client")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| "Store::set: 'client' not found in store config".to_string())?;
+            .ok_or(StoreError::ConfigMissing("client".into()))?;
 
         match client {
             fixed_bits::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_deref()
-                    .ok_or_else(|| "Store::set: InMemoryClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 Ok(in_memory.set(key, value))
             }
             fixed_bits::CLIENT_KVS => {
                 let kvs = self.kvs.as_deref()
-                    .ok_or_else(|| "Store::set: KVSClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 let serialized = serde_json::to_string(&value)
-                    .map_err(|e| format!("Store::set: JSON serialize error: {}", e))?;
+                    .map_err(|e| StoreError::SerializeError(e.to_string()))?;
                 let final_ttl = ttl.or_else(|| store_config.get("ttl").and_then(|v| v.as_u64()));
                 Ok(kvs.set(key, serialized, final_ttl))
             }
             fixed_bits::CLIENT_HTTP => {
                 let http = self.http.as_deref()
-                    .ok_or_else(|| "Store::set: HttpClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let url = store_config.get("url").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::set: 'url' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("url".into()))?;
                 let headers = store_config
                     .get("headers")
                     .and_then(|v| v.as_object())
@@ -121,43 +122,43 @@ impl Store {
             }
             fixed_bits::CLIENT_FILE => {
                 let file = self.file.as_deref()
-                    .ok_or_else(|| "Store::set: FileClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::set: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 let serialized = serde_json::to_string(&value)
-                    .map_err(|e| format!("Store::set: JSON serialize error: {}", e))?;
+                    .map_err(|e| StoreError::SerializeError(e.to_string()))?;
                 Ok(file.set(key, serialized))
             }
-            _ => Err(format!("Store::set: unsupported client '{}'", client)),
+            _ => Err(StoreError::UnsupportedClient(client)),
         }
     }
 
-    pub fn delete(&self, store_config: &HashMap<String, Value>) -> Result<bool, String> {
+    pub fn delete(&self, store_config: &HashMap<String, Value>) -> Result<bool, StoreError> {
         let client = store_config
             .get("client")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| "Store::delete: 'client' not found in store config".to_string())?;
+            .ok_or(StoreError::ConfigMissing("client".into()))?;
 
         match client {
             fixed_bits::CLIENT_IN_MEMORY => {
                 let in_memory = self.in_memory.as_deref()
-                    .ok_or_else(|| "Store::delete: InMemoryClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 Ok(in_memory.delete(key))
             }
             fixed_bits::CLIENT_KVS => {
                 let kvs = self.kvs.as_deref()
-                    .ok_or_else(|| "Store::delete: KVSClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 Ok(kvs.delete(key))
             }
             fixed_bits::CLIENT_HTTP => {
                 let http = self.http.as_deref()
-                    .ok_or_else(|| "Store::delete: HttpClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let url = store_config.get("url").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::delete: 'url' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("url".into()))?;
                 let headers = store_config
                     .get("headers")
                     .and_then(|v| v.as_object())
@@ -168,12 +169,12 @@ impl Store {
             }
             fixed_bits::CLIENT_FILE => {
                 let file = self.file.as_deref()
-                    .ok_or_else(|| "Store::delete: FileClient not configured".to_string())?;
+                    .ok_or(StoreError::ClientNotConfigured)?;
                 let key = store_config.get("key").and_then(|v| v.as_str())
-                    .ok_or_else(|| "Store::delete: 'key' not found in store config".to_string())?;
+                    .ok_or(StoreError::ConfigMissing("key".into()))?;
                 Ok(file.delete(key))
             }
-            _ => Err(format!("Store::delete: unsupported client '{}'", client)),
+            _ => Err(StoreError::UnsupportedClient(client)),
         }
     }
 }

@@ -4,11 +4,10 @@ use std::path::PathBuf;
 use crate::core::fixed_bits;
 use crate::core::manifest::{Manifest, ConfigValue};
 use crate::core::parser::{Value as ParseValue, parse};
-use crate::ports::provided::ManifestError;
+use crate::ports::provided::{ManifestError, StateError};
 use crate::ports::required::FileClient;
 use crate::store::Store;
 use crate::load::Load;
-use crate::ports::provided::StateError;
 
 use std::sync::Arc;
 
