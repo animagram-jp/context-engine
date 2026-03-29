@@ -1,5 +1,5 @@
 extern crate alloc;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
@@ -85,7 +85,7 @@ impl Manifest {
     }
 
     fn find_in(&self, segments: &[&str], candidates: &[u16]) -> Option<u16> {
-        let target = segments[0];
+        let target = segments[0].as_bytes();
         let rest = &segments[1..];
 
         for &idx in candidates {
@@ -137,7 +137,7 @@ impl Manifest {
                     continue;
                 }
                 let dyn_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-                if self.dynamic.get(dyn_idx) == Some(segment) {
+                if self.dynamic.get(dyn_idx) == Some(segment.as_bytes()) {
                     self.collect_meta(record, &mut meta);
                     found_idx = Some(idx);
                     break;
@@ -228,11 +228,11 @@ impl Manifest {
                 None => continue,
             };
 
-            if prop_name == "map" {
+            if prop_name == b"map" {
                 if let Some(pairs) = self.decode_map(child_idx) {
                     entries.push(("map".into(), ConfigValue::Map(pairs)));
                 }
-            } else if prop_name == "connection" {
+            } else if prop_name == b"connection" {
                 if value_idx != 0 {
                     if let Some(cv) = self.decode_value(value_idx) {
                         entries.push(("connection".into(), cv));
@@ -240,7 +240,8 @@ impl Manifest {
                 }
             } else if value_idx != 0 {
                 if let Some(cv) = self.decode_value(value_idx) {
-                    entries.push((prop_name.into(), cv));
+                    let name = String::from_utf8_lossy(prop_name).into_owned();
+                    entries.push((name, cv));
                 }
             }
         }
@@ -270,17 +271,19 @@ impl Manifest {
 
             let key_str = if is_path {
                 let segs = self.path_map.get(dyn_idx as usize)?;
-                segs.iter()
-                    .filter_map(|&s| self.dynamic.get(s).map(|x| x.to_string()))
-                    .collect::<Vec<_>>()
-                    .join(".")
+                let parts: Vec<&str> = segs.iter()
+                    .filter_map(|&s| self.dynamic.get(s).and_then(|b| core::str::from_utf8(b).ok()))
+                    .collect();
+                parts.join(".")
             } else {
-                self.dynamic.get(dyn_idx)?.to_string()
+                let b = self.dynamic.get(dyn_idx)?;
+                String::from_utf8_lossy(b).into_owned()
             };
 
             let val_vo = self.values.get(value_idx).copied()?;
             let col_dyn = fixed_bits::get(val_vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
-            let col_str = self.dynamic.get(col_dyn)?.to_string();
+            let col_b = self.dynamic.get(col_dyn)?;
+            let col_str = String::from_utf8_lossy(col_b).into_owned();
 
             pairs.push((key_str, col_str));
         }
@@ -331,7 +334,8 @@ impl Manifest {
                 result.push_str(&path);
                 result.push('}');
             } else {
-                result.push_str(self.dynamic.get(dyn_idx)?);
+                let b = self.dynamic.get(dyn_idx)?;
+                result.push_str(&String::from_utf8_lossy(b));
             }
         }
         Some(result)
@@ -340,11 +344,10 @@ impl Manifest {
     /// Resolves a path_map index to a dot-joined path string.
     fn resolve_path(&self, path_map_idx: u16) -> Option<String> {
         let segs = self.path_map.get(path_map_idx as usize)?;
-        let path = segs.iter()
-            .filter_map(|&s| self.dynamic.get(s).map(|x| x.to_string()))
-            .collect::<Vec<_>>()
-            .join(".");
-        Some(path)
+        let parts: Vec<&str> = segs.iter()
+            .filter_map(|&s| self.dynamic.get(s).and_then(|b| core::str::from_utf8(b).ok()))
+            .collect();
+        Some(parts.join("."))
     }
 }
 
@@ -371,15 +374,15 @@ mod tests {
     /// `entries` is the top-level key→subtree mapping for a single file.
     fn make(filename: &str, entries: Vec<(&str, Value)>) -> Manifest {
         let mut m = Manifest::new();
-        let root = Value::Mapping(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
+        let root = Value::Mapping(entries.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect());
         let pm = parse(filename, root, &mut m.dynamic, &mut m.keys, &mut m.values, &mut m.path_map, &mut m.children_map).unwrap();
         m.insert(filename.to_string(), pm);
         m
     }
 
-    fn scalar(s: &str) -> Value { Value::Scalar(s.to_string()) }
+    fn scalar(s: &str) -> Value { Value::Scalar(s.as_bytes().to_vec()) }
     fn mapping(entries: Vec<(&str, Value)>) -> Value {
-        Value::Mapping(entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+        Value::Mapping(entries.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect())
     }
 
     fn cache_manifest() -> Manifest {
@@ -448,9 +451,9 @@ mod tests {
     fn test_find_unique_indices_across_files() {
         let mut m = cache_manifest();
         let root2 = Value::Mapping(vec![
-            ("common".to_string(), Value::Mapping(vec![
-                ("_store".to_string(), Value::Mapping(vec![
-                    ("client".to_string(), Value::Scalar("InMemory".to_string())),
+            (b"common".to_vec(), Value::Mapping(vec![
+                (b"_store".to_vec(), Value::Mapping(vec![
+                    (b"client".to_vec(), Value::Scalar(b"InMemory".to_vec())),
                 ])),
             ])),
         ]);

@@ -1,4 +1,12 @@
-use serde_json::Value;
+/// The value type used throughout state-engine's public API.
+/// Binding-agnostic — no serde, no std beyond Vec.
+#[derive(Debug, PartialEq, Clone)]
+pub enum Value {
+    Scalar(Vec<u8>),
+    Sequence(Vec<Value>),
+    Mapping(Vec<(Vec<u8>, Value)>),
+    Null,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum ManifestError {

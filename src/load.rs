@@ -2,9 +2,8 @@ use crate::ports::required::{
     DbClient, EnvClient, KVSClient,
     InMemoryClient, HttpClient, FileClient,
 };
-use crate::ports::provided::LoadError;
+use crate::ports::provided::{LoadError, Value};
 use crate::core::fixed_bits;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -60,10 +59,12 @@ impl Load {
     }
 
     pub fn handle(&self, config: &HashMap<String, Value>) -> Result<Value, LoadError> {
-        let client = config
-            .get("client")
-            .and_then(|v| v.as_u64())
-            .ok_or(LoadError::ConfigMissing("client".into()))?;
+        let client = match config.get("client") {
+            Some(Value::Scalar(b)) => {
+                u64::from_le_bytes(b.as_slice().try_into().unwrap_or([0u8; 8]))
+            }
+            _ => return Err(LoadError::ConfigMissing("client".into())),
+        };
 
         match client {
             fixed_bits::CLIENT_ENV       => self.load_from_env(config),
@@ -83,21 +84,21 @@ impl Load {
         let env = self.env.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let map = config
-            .get("map")
-            .and_then(|v| v.as_object())
-            .ok_or(LoadError::ConfigMissing("map".into()))?;
+        let map = match config.get("map") {
+            Some(Value::Mapping(m)) => m,
+            _ => return Err(LoadError::ConfigMissing("map".into())),
+        };
 
-        let mut result = serde_json::Map::new();
+        let mut result = Vec::new();
         for (config_key, env_key_value) in map {
-            if let Some(env_key) = env_key_value.as_str() {
-                if let Some(value) = env.get(env_key) {
-                    result.insert(config_key.clone(), Value::String(value));
+            if let Value::Scalar(env_key) = env_key_value {
+                let env_key_str = std::str::from_utf8(env_key).unwrap_or("");
+                if let Some(value) = env.get(env_key_str) {
+                    result.push((config_key.clone(), Value::Scalar(value)));
                 }
             }
         }
-
-        Ok(Value::Object(result))
+        Ok(Value::Mapping(result))
     }
 
     fn load_from_in_memory(
@@ -107,11 +108,7 @@ impl Load {
         let in_memory = self.in_memory.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let key = config
-            .get("key")
-            .and_then(|v| v.as_str())
-            .ok_or(LoadError::ConfigMissing("key".into()))?;
-
+        let key = scalar_str(config, "key")?;
         in_memory
             .get(key)
             .ok_or_else(|| LoadError::NotFound(key.into()))
@@ -124,17 +121,11 @@ impl Load {
         let kvs = self.kvs.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let key = config
-            .get("key")
-            .and_then(|v| v.as_str())
-            .ok_or(LoadError::ConfigMissing("key".into()))?;
-
-        let value_str = kvs
+        let key = scalar_str(config, "key")?;
+        let bytes = kvs
             .get(key)
             .ok_or_else(|| LoadError::NotFound(key.into()))?;
-
-        serde_json::from_str(&value_str)
-            .map_err(|e| LoadError::ParseError(e.to_string()))
+        Ok(Value::Scalar(bytes))
     }
 
     fn load_from_db(
@@ -144,27 +135,23 @@ impl Load {
         let db = self.db.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let table = config
-            .get("table")
-            .and_then(|v| v.as_str())
-            .ok_or(LoadError::ConfigMissing("table".into()))?;
-
-        let where_clause = config.get("where").and_then(|v| v.as_str());
-
-        let map = config
-            .get("map")
-            .and_then(|v| v.as_object())
-            .ok_or(LoadError::ConfigMissing("map".into()))?;
-
         let connection = config
             .get("connection")
             .ok_or(LoadError::ConfigMissing("connection".into()))?;
 
-        let columns: Vec<&str> = map.values().filter_map(|v| v.as_str()).collect();
+        let table = scalar_str(config, "table")?;
 
-        if columns.is_empty() {
-            return Err(LoadError::ConfigMissing("map has no columns".into()));
-        }
+        let columns = match config.get("columns") {
+            Some(Value::Mapping(m)) => m.iter()
+                .filter_map(|(k, v)| {
+                    if let Value::Scalar(col) = v { Some((k.clone(), col.clone())) } else { None }
+                })
+                .collect::<Vec<_>>(),
+            _ => return Err(LoadError::ConfigMissing("columns".into())),
+        };
+
+        let where_clause = config.get("where")
+            .and_then(|v| if let Value::Scalar(b) = v { Some(b.as_slice()) } else { None });
 
         let rows = db
             .get(connection, table, &columns, where_clause)
@@ -174,17 +161,7 @@ impl Load {
             return Err(LoadError::NotFound(table.into()));
         }
 
-        let row = &rows[0];
-        let mut result = serde_json::Map::new();
-        for (config_key, db_column_value) in map {
-            if let Some(db_column) = db_column_value.as_str() {
-                if let Some(value) = row.get(db_column) {
-                    result.insert(config_key.clone(), value.clone());
-                }
-            }
-        }
-
-        Ok(Value::Object(result))
+        Ok(Value::Sequence(rows))
     }
 
     fn load_from_file(
@@ -194,17 +171,11 @@ impl Load {
         let file = self.file.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let key = config
-            .get("key")
-            .and_then(|v| v.as_str())
-            .ok_or(LoadError::ConfigMissing("key".into()))?;
-
-        let content = file
+        let key = scalar_str(config, "key")?;
+        let bytes = file
             .get(key)
             .ok_or_else(|| LoadError::NotFound(key.into()))?;
-
-        serde_json::from_str(&content)
-            .map_err(|e| LoadError::ParseError(e.to_string()))
+        Ok(Value::Scalar(bytes))
     }
 
     fn load_from_http(
@@ -214,41 +185,29 @@ impl Load {
         let http = self.http.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let url = config
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or(LoadError::ConfigMissing("url".into()))?;
+        let url = scalar_str(config, "url")?;
 
-        let headers = config
-            .get("headers")
-            .and_then(|v| v.as_object())
-            .map(|obj| obj.iter()
-                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                .collect::<HashMap<String, String>>());
+        let headers = match config.get("headers") {
+            Some(Value::Mapping(m)) => Some(
+                m.iter()
+                    .filter_map(|(k, v)| {
+                        if let Value::Scalar(val) = v { Some((k.clone(), val.clone())) } else { None }
+                    })
+                    .collect::<Vec<_>>()
+            ),
+            _ => None,
+        };
 
-        let response = http.get(url, headers.as_ref())
-            .ok_or_else(|| LoadError::NotFound(url.into()))?;
+        http.get(url, headers.as_deref())
+            .ok_or_else(|| LoadError::NotFound(url.into()))
+    }
+}
 
-        let map = config.get("map").and_then(|v| v.as_object());
-        match map {
-            None => Ok(response),
-            Some(map) => {
-                let row = match &response {
-                    Value::Array(arr) => arr.first()
-                        .ok_or(LoadError::NotFound("empty array response".into()))?,
-                    other => other,
-                };
-                let mut result = serde_json::Map::new();
-                for (config_key, src_key_value) in map {
-                    if let Some(src_key) = src_key_value.as_str() {
-                        if let Some(value) = row.get(src_key) {
-                            result.insert(config_key.clone(), value.clone());
-                        }
-                    }
-                }
-                Ok(Value::Object(result))
-            }
-        }
+fn scalar_str<'a>(config: &'a HashMap<String, Value>, key: &str) -> Result<&'a str, LoadError> {
+    match config.get(key) {
+        Some(Value::Scalar(b)) => std::str::from_utf8(b)
+            .map_err(|_| LoadError::ConfigMissing(key.into())),
+        _ => Err(LoadError::ConfigMissing(key.into())),
     }
 }
 
@@ -262,78 +221,41 @@ impl Default for Load {
 mod tests {
     use super::*;
 
+    fn client_config(client_id: u64) -> Value {
+        Value::Scalar(client_id.to_le_bytes().to_vec())
+    }
+
+    // --- Env ---
+
     struct MockEnvClient;
     impl EnvClient for MockEnvClient {
-        fn get(&self, key: &str) -> Option<String> {
+        fn get(&self, key: &str) -> Option<Vec<u8>> {
             match key {
-                "Db_HOST" => Some("localhost".to_string()),
-                "Db_PORT" => Some("5432".to_string()),
+                "DB_HOST" => Some(b"localhost".to_vec()),
+                "DB_PORT" => Some(b"5432".to_vec()),
                 _ => None,
             }
         }
-        fn set(&self, _key: &str, _value: String) -> bool { false }
+        fn set(&self, _key: &str, _value: Vec<u8>) -> bool { false }
         fn delete(&self, _key: &str) -> bool { false }
     }
 
-    struct MockFileClient {
-        store: std::sync::Mutex<HashMap<String, String>>,
-    }
-    impl MockFileClient {
-        fn new(entries: &[(&str, &str)]) -> Self {
-            Self {
-                store: std::sync::Mutex::new(
-                    entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
-                ),
-            }
-        }
-    }
-    impl FileClient for MockFileClient {
-        fn get(&self, key: &str) -> Option<String> {
-            self.store.lock().unwrap().get(key).cloned()
-        }
-        fn set(&self, key: &str, value: String) -> bool {
-            self.store.lock().unwrap().insert(key.to_string(), value);
-            true
-        }
-        fn delete(&self, key: &str) -> bool {
-            self.store.lock().unwrap().remove(key).is_some()
-        }
-    }
-
     #[test]
-    fn test_load_from_file() {
-        let file = MockFileClient::new(&[("session_data", r#"{"user_id":42}"#)]);
-        let load = Load::new().with_file(Arc::new(file));
-
+    fn test_load_from_env() {
+        let load = Load::new().with_env(Arc::new(MockEnvClient));
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
-        config.insert("key".to_string(), Value::String("session_data".to_string()));
-
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_ENV));
+        config.insert("map".to_string(), Value::Mapping(vec![
+            (b"host".to_vec(), Value::Scalar(b"DB_HOST".to_vec())),
+            (b"port".to_vec(), Value::Scalar(b"DB_PORT".to_vec())),
+        ]));
         let result = load.handle(&config).unwrap();
-        assert_eq!(result.get("user_id"), Some(&Value::Number(42.into())));
-    }
-
-    #[test]
-    fn test_load_from_file_key_not_found() {
-        let file = MockFileClient::new(&[]);
-        let load = Load::new().with_file(Arc::new(file));
-
-        let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
-        config.insert("key".to_string(), Value::String("missing".to_string()));
-
-        assert!(load.handle(&config).is_err());
-    }
-
-    #[test]
-    fn test_load_from_file_client_not_configured() {
-        let load = Load::new();
-
-        let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_FILE.into()));
-        config.insert("key".to_string(), Value::String("any".to_string()));
-
-        assert!(load.handle(&config).is_err());
+        if let Value::Mapping(m) = result {
+            let host = m.iter().find(|(k, _)| k == b"host").map(|(_, v)| v.clone());
+            assert_eq!(host, Some(Value::Scalar(b"localhost".to_vec())));
+        } else {
+            panic!("expected Mapping");
+        }
     }
 
     // --- InMemory ---
@@ -354,12 +276,12 @@ mod tests {
 
     #[test]
     fn test_load_from_in_memory() {
-        let data = serde_json::json!({"host": "localhost"});
+        let data = Value::Mapping(vec![(b"host".to_vec(), Value::Scalar(b"localhost".to_vec()))]);
         let client = Arc::new(MockInMemory::new(&[("conn", data.clone())]));
         let load = Load::new().with_in_memory(client);
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
-        config.insert("key".to_string(), Value::String("conn".to_string()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_IN_MEMORY));
+        config.insert("key".to_string(), Value::Scalar(b"conn".to_vec()));
         assert_eq!(load.handle(&config).unwrap(), data);
     }
 
@@ -368,8 +290,8 @@ mod tests {
         let client = Arc::new(MockInMemory::new(&[]));
         let load = Load::new().with_in_memory(client);
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
-        config.insert("key".to_string(), Value::String("missing".to_string()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_IN_MEMORY));
+        config.insert("key".to_string(), Value::Scalar(b"missing".to_vec()));
         assert!(load.handle(&config).is_err());
     }
 
@@ -377,35 +299,35 @@ mod tests {
     fn test_load_from_in_memory_client_not_configured() {
         let load = Load::new();
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_IN_MEMORY.into()));
-        config.insert("key".to_string(), Value::String("k".to_string()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_IN_MEMORY));
+        config.insert("key".to_string(), Value::Scalar(b"k".to_vec()));
         assert!(load.handle(&config).is_err());
     }
 
     // --- KVS ---
 
     struct MockKVS {
-        store: std::sync::Mutex<HashMap<String, String>>,
+        store: std::sync::Mutex<HashMap<String, Vec<u8>>>,
     }
     impl MockKVS {
-        fn new(entries: &[(&str, &str)]) -> Self {
-            Self { store: std::sync::Mutex::new(entries.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()) }
+        fn new(entries: &[(&str, &[u8])]) -> Self {
+            Self { store: std::sync::Mutex::new(entries.iter().map(|(k, v)| (k.to_string(), v.to_vec())).collect()) }
         }
     }
     impl KVSClient for MockKVS {
-        fn get(&self, key: &str) -> Option<String> { self.store.lock().unwrap().get(key).cloned() }
-        fn set(&self, key: &str, value: String, _: Option<u64>) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
+        fn get(&self, key: &str) -> Option<Vec<u8>> { self.store.lock().unwrap().get(key).cloned() }
+        fn set(&self, key: &str, value: Vec<u8>, _: Option<u64>) -> bool { self.store.lock().unwrap().insert(key.to_string(), value); true }
         fn delete(&self, key: &str) -> bool { self.store.lock().unwrap().remove(key).is_some() }
     }
 
     #[test]
     fn test_load_from_kvs() {
-        let client = Arc::new(MockKVS::new(&[("sess", r#"{"user_id":1}"#)]));
+        let client = Arc::new(MockKVS::new(&[("sess", b"{\"user_id\":1}")]));
         let load = Load::new().with_kvs(client);
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
-        config.insert("key".to_string(), Value::String("sess".to_string()));
-        assert_eq!(load.handle(&config).unwrap().get("user_id"), Some(&Value::Number(1.into())));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_KVS));
+        config.insert("key".to_string(), Value::Scalar(b"sess".to_vec()));
+        assert!(matches!(load.handle(&config).unwrap(), Value::Scalar(_)));
     }
 
     #[test]
@@ -413,8 +335,8 @@ mod tests {
         let client = Arc::new(MockKVS::new(&[]));
         let load = Load::new().with_kvs(client);
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
-        config.insert("key".to_string(), Value::String("missing".to_string()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_KVS));
+        config.insert("key".to_string(), Value::Scalar(b"missing".to_vec()));
         assert!(load.handle(&config).is_err());
     }
 
@@ -422,46 +344,50 @@ mod tests {
     fn test_load_from_kvs_client_not_configured() {
         let load = Load::new();
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_KVS.into()));
-        config.insert("key".to_string(), Value::String("k".to_string()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_KVS));
+        config.insert("key".to_string(), Value::Scalar(b"k".to_vec()));
         assert!(load.handle(&config).is_err());
     }
 
     // --- DB ---
 
     struct MockDb {
-        rows: Vec<HashMap<String, Value>>,
+        rows: Vec<Value>,
     }
     impl MockDb {
-        fn new(rows: Vec<HashMap<String, Value>>) -> Self { Self { rows } }
+        fn new(rows: Vec<Value>) -> Self { Self { rows } }
     }
     impl DbClient for MockDb {
-        fn get(&self, _conn: &Value, _table: &str, _cols: &[&str], _where: Option<&str>) -> Option<Vec<HashMap<String, Value>>> {
+        fn get(&self, _conn: &Value, _table: &str, _cols: &[(Vec<u8>, Vec<u8>)], _where: Option<&[u8]>) -> Option<Vec<Value>> {
             if self.rows.is_empty() { None } else { Some(self.rows.clone()) }
         }
-        fn set(&self, _: &Value, _: &str, _: &HashMap<String, Value>, _: Option<&str>) -> bool { false }
-        fn delete(&self, _: &Value, _: &str, _: Option<&str>) -> bool { false }
+        fn set(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> bool { false }
+        fn delete(&self, _: &Value, _: &str, _: Option<&[u8]>) -> bool { false }
     }
 
-    fn db_config(table: &str, map: &[(&str, &str)]) -> HashMap<String, Value> {
+    fn db_config(table: &str, columns: &[(&str, &str)]) -> HashMap<String, Value> {
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_DB.into()));
-        config.insert("table".to_string(), Value::String(table.to_string()));
-        config.insert("connection".to_string(), Value::Object(serde_json::Map::new()));
-        let mut map_obj = serde_json::Map::new();
-        for (k, v) in map { map_obj.insert(k.to_string(), Value::String(v.to_string())); }
-        config.insert("map".to_string(), Value::Object(map_obj));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_DB));
+        config.insert("table".to_string(), Value::Scalar(table.as_bytes().to_vec()));
+        config.insert("connection".to_string(), Value::Mapping(vec![]));
+        config.insert("columns".to_string(), Value::Mapping(
+            columns.iter().map(|(k, v)| (k.as_bytes().to_vec(), Value::Scalar(v.as_bytes().to_vec()))).collect()
+        ));
         config
     }
 
     #[test]
     fn test_load_from_db() {
-        let mut row = HashMap::new();
-        row.insert("id".to_string(), Value::Number(42.into()));
-        let client = Arc::new(MockDb::new(vec![row]));
+        let row = Value::Mapping(vec![(b"id".to_vec(), Value::Scalar(b"42".to_vec()))]);
+        let client = Arc::new(MockDb::new(vec![row.clone()]));
         let load = Load::new().with_db(client);
         let config = db_config("users", &[("id", "id")]);
-        assert_eq!(load.handle(&config).unwrap().get("id"), Some(&Value::Number(42.into())));
+        let result = load.handle(&config).unwrap();
+        if let Value::Sequence(rows) = result {
+            assert_eq!(rows[0], row);
+        } else {
+            panic!("expected Sequence");
+        }
     }
 
     #[test]
@@ -487,37 +413,26 @@ mod tests {
     impl MockHttp {
         fn new(response: Option<Value>) -> Self { Self { response } }
     }
-    impl crate::ports::required::HttpClient for MockHttp {
-        fn get(&self, _: &str, _: Option<&HashMap<String, String>>) -> Option<Value> { self.response.clone() }
-        fn set(&self, _: &str, _: Value, _: Option<&HashMap<String, String>>) -> bool { false }
-        fn delete(&self, _: &str, _: Option<&HashMap<String, String>>) -> bool { false }
+    impl HttpClient for MockHttp {
+        fn get(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Value> { self.response.clone() }
+        fn set(&self, _: &str, _: Value, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
+        fn delete(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
     }
 
     fn http_config(url: &str) -> HashMap<String, Value> {
         let mut c = HashMap::new();
-        c.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_HTTP.into()));
-        c.insert("url".to_string(), Value::String(url.to_string()));
+        c.insert("client".to_string(), client_config(fixed_bits::CLIENT_HTTP));
+        c.insert("url".to_string(), Value::Scalar(url.as_bytes().to_vec()));
         c
     }
 
     #[test]
-    fn test_load_from_http_no_map() {
-        let client = Arc::new(MockHttp::new(Some(serde_json::json!({"status": "ok"}))));
+    fn test_load_from_http() {
+        let response = Value::Mapping(vec![(b"status".to_vec(), Value::Scalar(b"ok".to_vec()))]);
+        let client = Arc::new(MockHttp::new(Some(response.clone())));
         let load = Load::new().with_http(client);
         let config = http_config("http://example.com/health");
-        assert_eq!(load.handle(&config).unwrap(), serde_json::json!({"status": "ok"}));
-    }
-
-    #[test]
-    fn test_load_from_http_with_map() {
-        let client = Arc::new(MockHttp::new(Some(serde_json::json!({"status": "ok"}))));
-        let load = Load::new().with_http(client);
-        let mut config = http_config("http://example.com/health");
-        let mut map = serde_json::Map::new();
-        map.insert("health".to_string(), Value::String("status".to_string()));
-        config.insert("map".to_string(), Value::Object(map));
-        let result = load.handle(&config).unwrap();
-        assert_eq!(result.get("health"), Some(&Value::String("ok".to_string())));
+        assert_eq!(load.handle(&config).unwrap(), response);
     }
 
     #[test]
@@ -535,22 +450,59 @@ mod tests {
         assert!(load.handle(&config).is_err());
     }
 
+    // --- File ---
+
+    struct MockFileClient {
+        store: std::sync::Mutex<HashMap<String, Vec<u8>>>,
+    }
+    impl MockFileClient {
+        fn new(entries: &[(&str, &[u8])]) -> Self {
+            Self {
+                store: std::sync::Mutex::new(
+                    entries.iter().map(|(k, v)| (k.to_string(), v.to_vec())).collect()
+                ),
+            }
+        }
+    }
+    impl FileClient for MockFileClient {
+        fn get(&self, key: &str) -> Option<Vec<u8>> {
+            self.store.lock().unwrap().get(key).cloned()
+        }
+        fn set(&self, key: &str, value: Vec<u8>) -> bool {
+            self.store.lock().unwrap().insert(key.to_string(), value);
+            true
+        }
+        fn delete(&self, key: &str) -> bool {
+            self.store.lock().unwrap().remove(key).is_some()
+        }
+    }
+
     #[test]
-    fn test_load_from_env() {
-        let env = MockEnvClient;
-        let load = Load::new().with_env(Arc::new(env));
-
+    fn test_load_from_file() {
+        let file = MockFileClient::new(&[("session_data", b"{\"user_id\":42}")]);
+        let load = Load::new().with_file(Arc::new(file));
         let mut config = HashMap::new();
-        config.insert("client".to_string(), Value::Number(fixed_bits::CLIENT_ENV.into()));
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_FILE));
+        config.insert("key".to_string(), Value::Scalar(b"session_data".to_vec()));
+        assert!(matches!(load.handle(&config).unwrap(), Value::Scalar(_)));
+    }
 
-        let mut map = serde_json::Map::new();
-        map.insert("host".to_string(), Value::String("Db_HOST".to_string()));
-        map.insert("port".to_string(), Value::String("Db_PORT".to_string()));
-        config.insert("map".to_string(), Value::Object(map));
+    #[test]
+    fn test_load_from_file_key_not_found() {
+        let file = MockFileClient::new(&[]);
+        let load = Load::new().with_file(Arc::new(file));
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_FILE));
+        config.insert("key".to_string(), Value::Scalar(b"missing".to_vec()));
+        assert!(load.handle(&config).is_err());
+    }
 
-        let result = load.handle(&config).unwrap();
-
-        assert_eq!(result.get("host"), Some(&Value::String("localhost".to_string())));
-        assert_eq!(result.get("port"), Some(&Value::String("5432".to_string())));
+    #[test]
+    fn test_load_from_file_client_not_configured() {
+        let load = Load::new();
+        let mut config = HashMap::new();
+        config.insert("client".to_string(), client_config(fixed_bits::CLIENT_FILE));
+        config.insert("key".to_string(), Value::Scalar(b"any".to_vec()));
+        assert!(load.handle(&config).is_err());
     }
 }

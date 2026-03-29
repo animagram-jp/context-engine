@@ -1,4 +1,4 @@
-use serde_json::Value;
+use crate::ports::provided::Value;
 
 /// # Examples
 /// ```
@@ -15,33 +15,30 @@ impl LogFormat {
         format!("{}::{}({})", class, fn_name, args_str)
     }
 
-    /// Format JSON value for log output
+    /// Format Value for log output
     ///
     /// # Examples
     /// ```
-    /// use state_engine::LogFormat;
-    /// use serde_json::json;
+    /// use state_engine::{LogFormat, Value};
     ///
-    /// assert_eq!(LogFormat::format_arg(&json!("text")), "'text'");
-    /// assert_eq!(LogFormat::format_arg(&json!(42)), "42");
-    /// assert_eq!(LogFormat::format_arg(&json!(true)), "true");
-    /// assert_eq!(LogFormat::format_arg(&json!(null)), "null");
-    /// assert_eq!(LogFormat::format_arg(&json!([])), "[]");
-    /// assert_eq!(LogFormat::format_arg(&json!({})), "{}");
-    /// assert_eq!(LogFormat::format_arg(&json!([1, 2, 3])), "[3 items]");
-    /// assert_eq!(LogFormat::format_arg(&json!({"a": 1})), "{1 fields}");
+    /// assert_eq!(LogFormat::format_arg(&Value::Scalar(b"text".to_vec())), "'text'");
+    /// assert_eq!(LogFormat::format_arg(&Value::Null), "null");
+    /// assert_eq!(LogFormat::format_arg(&Value::Sequence(vec![])), "[]");
+    /// assert_eq!(LogFormat::format_arg(&Value::Mapping(vec![])), "{}");
+    /// assert_eq!(LogFormat::format_arg(&Value::Sequence(vec![Value::Null, Value::Null, Value::Null])), "[3 items]");
+    /// assert_eq!(LogFormat::format_arg(&Value::Mapping(vec![(b"a".to_vec(), Value::Null)])), "{1 fields}");
     /// ```
     pub fn format_arg(value: &Value) -> String {
         match value {
-            Value::String(s) if s.len() > 50 => format!("'{}'...", &s[..47]),
-            Value::String(s) => format!("'{}'", s),
-            Value::Array(arr) if arr.is_empty() => "[]".to_string(),
-            Value::Array(arr) => format!("[{} items]", arr.len()),
-            Value::Object(obj) if obj.is_empty() => "{}".to_string(),
-            Value::Object(obj) => format!("{{{} fields}}", obj.len()),
+            Value::Scalar(b) => {
+                let s = String::from_utf8_lossy(b);
+                if s.len() > 50 { format!("'{}'...", &s[..47]) } else { format!("'{}'", s) }
+            }
+            Value::Sequence(arr) if arr.is_empty() => "[]".to_string(),
+            Value::Sequence(arr) => format!("[{} items]", arr.len()),
+            Value::Mapping(obj) if obj.is_empty() => "{}".to_string(),
+            Value::Mapping(obj) => format!("{{{} fields}}", obj.len()),
             Value::Null => "null".to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::Number(n) => n.to_string(),
         }
     }
 
@@ -89,7 +86,6 @@ macro_rules! fn_log {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_fn_multiple_args() {
@@ -103,7 +99,7 @@ mod tests {
     #[test]
     fn test_format_arg_long_string() {
         let long_str = "a".repeat(60);
-        let result = LogFormat::format_arg(&json!(long_str));
+        let result = LogFormat::format_arg(&Value::Scalar(long_str.into_bytes()));
         assert!(result.starts_with("'aaa"));
         assert!(result.ends_with("'..."));
         assert_eq!(result.len(), 52);

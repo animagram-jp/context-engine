@@ -1,10 +1,9 @@
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use crate::core::fixed_bits;
 use crate::core::manifest::{Manifest, ConfigValue};
 use crate::core::parser::{Value as ParseValue, parse};
-use crate::ports::provided::{ManifestError, StateError};
+use crate::ports::provided::{ManifestError, StateError, Value};
 use crate::ports::required::FileClient;
 use crate::store::Store;
 use crate::load::Load;
@@ -110,7 +109,10 @@ impl State {
             )),
         };
 
-        let yaml_root: serde_yaml_ng::Value = serde_yaml_ng::from_str(&content)
+        let content_str = std::str::from_utf8(&content)
+            .map_err(|e| ManifestError::ParseError(format!("UTF-8 error: {}", e)))?;
+
+        let yaml_root: serde_yaml_ng::Value = serde_yaml_ng::from_str(content_str)
             .map_err(|e| ManifestError::ParseError(format!("YAML parse error: {}", e)))?;
 
         let pm = parse(
@@ -138,7 +140,6 @@ impl State {
         self.state_keys.iter().skip(1).position(|&k| k == key_idx).map(|p| p + 1)
     }
 
-    /// Resolves a `${...}`-containing template string by calling `State::get()` for each placeholder.
     fn resolve_template(&mut self, template: &str) -> Result<Option<String>, StateError> {
         let mut result = String::new();
         let mut remaining = template;
@@ -152,9 +153,7 @@ impl State {
             let path = &remaining[..end];
             remaining = &remaining[end + 1..];
             let resolved = match self.get(path)? {
-                Some(Value::String(s)) => s,
-                Some(Value::Number(n)) => n.to_string(),
-                Some(Value::Bool(b))   => b.to_string(),
+                Some(Value::Scalar(b)) => String::from_utf8_lossy(&b).into_owned(),
                 _ => return Ok(None),
             };
             result.push_str(&resolved);
@@ -163,29 +162,24 @@ impl State {
         Ok(Some(result))
     }
 
-    /// Resolves a `ConfigValue` to a `serde_json::Value`.
-    /// `Placeholder` → `State::get()` (returns Value as-is for connection objects).
-    /// `Str` with `${...}` → template resolution → String.
-    /// `Str` static → String.
     fn resolve_config_value(&mut self, cv: ConfigValue) -> Result<Option<Value>, StateError> {
         match cv {
-            ConfigValue::Client(c) => Ok(Some(Value::Number(c.into()))),
+            ConfigValue::Client(c) => Ok(Some(Value::Scalar(c.to_le_bytes().to_vec()))),
             ConfigValue::Placeholder(path) => self.get(&path),
             ConfigValue::Str(s) if s.contains("${") => {
-                Ok(self.resolve_template(&s)?.map(Value::String))
+                Ok(self.resolve_template(&s)?.map(|s| Value::Scalar(s.into_bytes())))
             }
-            ConfigValue::Str(s) => Ok(Some(Value::String(s))),
+            ConfigValue::Str(s) => Ok(Some(Value::Scalar(s.into_bytes()))),
             ConfigValue::Map(pairs) => {
-                let mut map = serde_json::Map::new();
-                for (k, v) in pairs {
-                    map.insert(k, Value::String(v));
-                }
-                Ok(Some(Value::Object(map)))
+                Ok(Some(Value::Mapping(
+                    pairs.into_iter()
+                        .map(|(k, v)| (k.into_bytes(), Value::Scalar(v.into_bytes())))
+                        .collect()
+                )))
             }
         }
     }
 
-    /// Resolves ManifestStore::build_config output into a HashMap for Store/Load.
     fn resolve_config(&mut self, meta_idx: u16) -> Result<Option<HashMap<String, Value>>, StateError> {
         let entries = match self.manifest.build_config(meta_idx) {
             Some(e) => e,
@@ -206,9 +200,8 @@ impl State {
     /// # Examples
     ///
     /// ```
-    /// use state_engine::State;
+    /// use state_engine::{State, Value};
     /// use state_engine::InMemoryClient;
-    /// use serde_json::{json, Value};
     ///
     /// struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
@@ -223,7 +216,7 @@ impl State {
     ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// // set then get
-    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// state.set("connection.common", Value::Scalar(b"test".to_vec()), None).unwrap();
     /// assert!(state.get("connection.common").unwrap().is_some());
     /// ```
     pub fn get(&mut self, key: &str) -> Result<Option<Value>, StateError> {
@@ -314,13 +307,15 @@ impl State {
                     }
 
                     // unqualify map keys for Load
-                    if let Some(Value::Object(map_obj)) = config.get("map").cloned() {
-                        let mut unqualified = serde_json::Map::new();
-                        for (qk, v) in map_obj {
-                            let field = qk.rfind('.').map_or(qk.as_str(), |p| &qk[p+1..]);
-                            unqualified.insert(field.to_string(), v);
-                        }
-                        config.insert("map".to_string(), Value::Object(unqualified));
+                    if let Some(Value::Mapping(map_pairs)) = config.get("map").cloned() {
+                        let unqualified: Vec<(Vec<u8>, Value)> = map_pairs.into_iter()
+                            .map(|(qk, v)| {
+                                let field = qk.iter().rposition(|&b| b == b'.')
+                                    .map_or(qk.clone(), |p| qk[p+1..].to_vec());
+                                (field, v)
+                            })
+                            .collect();
+                        config.insert("map".to_string(), Value::Mapping(unqualified));
                     }
 
                     match self.load.handle(&config) {
@@ -337,7 +332,7 @@ impl State {
                                         self.state_keys.push(key_idx);
                                         self.state_vals.push(loaded.clone());
                                     }
-                                    Err(_) => {} // write-through cache failure is non-fatal; loaded value is still returned
+                                    Err(_) => {}
                                 }
                             } else {
                                 self.state_keys.push(key_idx);
@@ -362,9 +357,8 @@ impl State {
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::State;
+    /// # use state_engine::{State, Value};
     /// # use state_engine::InMemoryClient;
-    /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
@@ -376,7 +370,7 @@ impl State {
     /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(std::sync::Arc::new(client));
     ///
-    /// assert!(state.set("connection.common", json!({"host": "localhost"}), None).unwrap());
+    /// assert!(state.set("connection.common", Value::Scalar(b"data".to_vec()), None).unwrap());
     /// ```
     pub fn set(&mut self, key: &str, value: Value, ttl: Option<u64>) -> Result<bool, StateError> {
         crate::fn_log!("State", "set", key);
@@ -424,9 +418,8 @@ impl State {
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::State;
+    /// # use state_engine::{State, Value};
     /// # use state_engine::InMemoryClient;
-    /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
@@ -438,7 +431,7 @@ impl State {
     /// let mut state = State::new("./examples/manifest")
     ///     .with_in_memory(std::sync::Arc::new(client));
     ///
-    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// state.set("connection.common", Value::Scalar(b"data".to_vec()), None).unwrap();
     /// assert!(state.delete("connection.common").unwrap());
     /// // after delete, store has no data; _load is attempted but EnvClient is not configured here
     /// assert!(state.get("connection.common").is_err() || state.get("connection.common").unwrap().is_none());
@@ -488,9 +481,8 @@ impl State {
     /// # Examples
     ///
     /// ```
-    /// # use state_engine::State;
+    /// # use state_engine::{State, Value};
     /// # use state_engine::InMemoryClient;
-    /// # use serde_json::{json, Value};
     /// # struct MockInMemory { data: std::sync::Mutex<std::collections::HashMap<String, Value>> }
     /// # impl MockInMemory { fn new() -> Self { Self { data: Default::default() } } }
     /// # impl InMemoryClient for MockInMemory {
@@ -503,7 +495,7 @@ impl State {
     ///     .with_in_memory(std::sync::Arc::new(client));
     ///
     /// assert!(!state.exists("connection.common").unwrap());
-    /// state.set("connection.common", json!({"host": "localhost"}), None).unwrap();
+    /// state.set("connection.common", Value::Scalar(b"data".to_vec()), None).unwrap();
     /// assert!(state.exists("connection.common").unwrap());
     /// ```
     pub fn exists(&mut self, key: &str) -> Result<bool, StateError> {
@@ -522,7 +514,7 @@ impl State {
         };
 
         if let Some(sv_idx) = self.find_state_value(key_idx) {
-            return Ok(!self.state_vals.get(sv_idx).map_or(true, |v| v.is_null()));
+            return Ok(!matches!(self.state_vals.get(sv_idx), Some(Value::Null) | None));
         }
 
         let meta = self.manifest.get_meta(&file, &path);
@@ -541,16 +533,19 @@ fn yaml_to_parse_value(v: serde_yaml_ng::Value) -> ParseValue {
             m.into_iter()
                 .filter_map(|(k, v)| {
                     let key = match k {
-                        serde_yaml_ng::Value::String(s) => s,
+                        serde_yaml_ng::Value::String(s) => s.into_bytes(),
                         _ => return None,
                     };
                     Some((key, yaml_to_parse_value(v)))
                 })
                 .collect(),
         ),
-        serde_yaml_ng::Value::String(s) => ParseValue::Scalar(s),
-        serde_yaml_ng::Value::Number(n) => ParseValue::Scalar(n.to_string()),
-        serde_yaml_ng::Value::Bool(b)   => ParseValue::Scalar(b.to_string()),
+        serde_yaml_ng::Value::Sequence(s) => ParseValue::Sequence(
+            s.into_iter().map(yaml_to_parse_value).collect()
+        ),
+        serde_yaml_ng::Value::String(s) => ParseValue::Scalar(s.into_bytes()),
+        serde_yaml_ng::Value::Number(n) => ParseValue::Scalar(n.to_string().into_bytes()),
+        serde_yaml_ng::Value::Bool(b)   => ParseValue::Scalar(b.to_string().into_bytes()),
         serde_yaml_ng::Value::Null      => ParseValue::Null,
         _                               => ParseValue::Null,
     }
@@ -560,43 +555,41 @@ fn yaml_to_parse_value(v: serde_yaml_ng::Value) -> ParseValue {
 mod tests {
     use super::*;
     use crate::ports::required::{KVSClient, DbClient, EnvClient, FileClient};
-    use serde_json::Value;
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     struct StubKVS;
     impl KVSClient for StubKVS {
-        fn get(&self, _: &str) -> Option<String> { None }
-        fn set(&self, _: &str, _: String, _: Option<u64>) -> bool { false }
+        fn get(&self, _: &str) -> Option<Vec<u8>> { None }
+        fn set(&self, _: &str, _: Vec<u8>, _: Option<u64>) -> bool { false }
         fn delete(&self, _: &str) -> bool { false }
     }
 
     struct StubDb;
     impl DbClient for StubDb {
-        fn get(&self, _: &Value, _: &str, _: &[&str], _: Option<&str>) -> Option<Vec<HashMap<String, Value>>> { None }
-        fn set(&self, _: &Value, _: &str, _: &HashMap<String, Value>, _: Option<&str>) -> bool { false }
-        fn delete(&self, _: &Value, _: &str, _: Option<&str>) -> bool { false }
+        fn get(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> Option<Vec<Value>> { None }
+        fn set(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> bool { false }
+        fn delete(&self, _: &Value, _: &str, _: Option<&[u8]>) -> bool { false }
     }
 
     struct StubEnv;
     impl EnvClient for StubEnv {
-        fn get(&self, _: &str) -> Option<String> { None }
-        fn set(&self, _: &str, _: String) -> bool { false }
+        fn get(&self, _: &str) -> Option<Vec<u8>> { None }
+        fn set(&self, _: &str, _: Vec<u8>) -> bool { false }
         fn delete(&self, _: &str) -> bool { false }
     }
 
     struct StubFile;
     impl FileClient for StubFile {
-        fn get(&self, _: &str) -> Option<String> { None }
-        fn set(&self, _: &str, _: String) -> bool { false }
+        fn get(&self, _: &str) -> Option<Vec<u8>> { None }
+        fn set(&self, _: &str, _: Vec<u8>) -> bool { false }
         fn delete(&self, _: &str) -> bool { false }
     }
 
     struct StubHttp;
     impl crate::ports::required::HttpClient for StubHttp {
-        fn get(&self, _: &str, _: Option<&HashMap<String, String>>) -> Option<Value> { None }
-        fn set(&self, _: &str, _: Value, _: Option<&HashMap<String, String>>) -> bool { false }
-        fn delete(&self, _: &str, _: Option<&HashMap<String, String>>) -> bool { false }
+        fn get(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Value> { None }
+        fn set(&self, _: &str, _: Value, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
+        fn delete(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
     }
 
     #[test]

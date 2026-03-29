@@ -1,116 +1,88 @@
 use super::fixed_bits;
 
-pub const ROOT_NAMES: &[(&str, u64)] = &[
-    ("_load",  fixed_bits::ROOT_LOAD),
-    ("_store", fixed_bits::ROOT_STORE),
-    ("_state", fixed_bits::ROOT_STATE),
+pub const ROOT_NAMES: &[(&[u8], u64)] = &[
+    (b"_load",  fixed_bits::ROOT_LOAD),
+    (b"_store", fixed_bits::ROOT_STORE),
+    (b"_state", fixed_bits::ROOT_STATE),
 ];
 
-pub fn root_encode(s: &str) -> u64 {
+pub fn root_encode(s: &[u8]) -> u64 {
     ROOT_NAMES.iter()
         .find(|(name, _)| *name == s)
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::ROOT_NULL)
 }
 
-pub fn root_decode(v: u64) -> Option<&'static str> {
+pub fn root_decode(v: u64) -> Option<&'static [u8]> {
     ROOT_NAMES.iter()
         .find(|(_, val)| *val == v)
         .map(|(name, _)| *name)
 }
 
-pub const CLIENT_NAMES: &[(&str, u64)] = &[
-    ("State",    fixed_bits::CLIENT_STATE),
-    ("InMemory", fixed_bits::CLIENT_IN_MEMORY),
-    ("Env",      fixed_bits::CLIENT_ENV),
-    ("KVS",      fixed_bits::CLIENT_KVS),
-    ("Db",       fixed_bits::CLIENT_DB),
-    ("HTTP",     fixed_bits::CLIENT_HTTP),
-    ("File",     fixed_bits::CLIENT_FILE),
+pub const CLIENT_NAMES: &[(&[u8], u64)] = &[
+    (b"State",    fixed_bits::CLIENT_STATE),
+    (b"InMemory", fixed_bits::CLIENT_IN_MEMORY),
+    (b"Env",      fixed_bits::CLIENT_ENV),
+    (b"KVS",      fixed_bits::CLIENT_KVS),
+    (b"Db",       fixed_bits::CLIENT_DB),
+    (b"HTTP",     fixed_bits::CLIENT_HTTP),
+    (b"File",     fixed_bits::CLIENT_FILE),
 ];
 
-pub fn client_encode(s: &str) -> u64 {
+pub fn client_encode(s: &[u8]) -> u64 {
     CLIENT_NAMES.iter()
         .find(|(name, _)| *name == s)
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::CLIENT_NULL)
 }
 
-pub fn client_decode(v: u64) -> Option<&'static str> {
+pub fn client_decode(v: u64) -> Option<&'static [u8]> {
     CLIENT_NAMES.iter()
         .find(|(_, val)| *val == v)
         .map(|(name, _)| *name)
 }
 
-pub const PROP_NAMES: &[(&str, u64)] = &[
-    ("type",       fixed_bits::PROP_TYPE),
-    ("key",        fixed_bits::PROP_KEY),
-    ("connection", fixed_bits::PROP_CONNECTION),
-    ("map",        fixed_bits::PROP_MAP),
-    ("ttl",        fixed_bits::PROP_TTL),
-    ("table",      fixed_bits::PROP_TABLE),
-    ("where",      fixed_bits::PROP_WHERE),
-    ("url",        fixed_bits::PROP_URL),
-    ("headers",    fixed_bits::PROP_HEADERS),
+pub const PROP_NAMES: &[(&[u8], u64)] = &[
+    (b"type",       fixed_bits::PROP_TYPE),
+    (b"key",        fixed_bits::PROP_KEY),
+    (b"connection", fixed_bits::PROP_CONNECTION),
+    (b"map",        fixed_bits::PROP_MAP),
+    (b"ttl",        fixed_bits::PROP_TTL),
+    (b"table",      fixed_bits::PROP_TABLE),
+    (b"where",      fixed_bits::PROP_WHERE),
+    (b"url",        fixed_bits::PROP_URL),
+    (b"headers",    fixed_bits::PROP_HEADERS),
 ];
 
-pub fn prop_encode(s: &str) -> u64 {
+pub fn prop_encode(s: &[u8]) -> u64 {
     PROP_NAMES.iter()
         .find(|(name, _)| *name == s)
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::PROP_NULL)
 }
 
-pub fn prop_decode(v: u64) -> Option<&'static str> {
+pub fn prop_decode(v: u64) -> Option<&'static [u8]> {
     PROP_NAMES.iter()
         .find(|(_, val)| *val == v)
         .map(|(name, _)| *name)
 }
 
-/// Per-client required/optional prop indices.
-/// State layer uses this to mechanically build call arguments from manifest records.
-///
-/// Layout per entry: (client, &[props])
-/// - InMemory : key
-/// - KVS      : key, ttl
-/// - Env      : map
-/// - Db       : connection, table, map, where
-/// - HTTP     : url, headers, map
-/// - File     : key, map
-/// - State    : key
-pub const CLIENT_PROPS: &[(u64, &[u64])] = &[
-    (fixed_bits::CLIENT_STATE,     &[fixed_bits::PROP_KEY]),
-    (fixed_bits::CLIENT_IN_MEMORY, &[fixed_bits::PROP_KEY]),
-    (fixed_bits::CLIENT_ENV,       &[fixed_bits::PROP_MAP]),
-    (fixed_bits::CLIENT_KVS,       &[fixed_bits::PROP_KEY, fixed_bits::PROP_TTL]),
-    (fixed_bits::CLIENT_DB,        &[fixed_bits::PROP_CONNECTION, fixed_bits::PROP_TABLE, fixed_bits::PROP_MAP, fixed_bits::PROP_WHERE]),
-    (fixed_bits::CLIENT_HTTP,      &[fixed_bits::PROP_URL, fixed_bits::PROP_HEADERS, fixed_bits::PROP_MAP]),
-    (fixed_bits::CLIENT_FILE,      &[fixed_bits::PROP_KEY, fixed_bits::PROP_MAP]),
+pub const TYPE_NAMES: &[(&[u8], u64)] = &[
+    (b"integer",  fixed_bits::TYPE_I64),
+    (b"string",   fixed_bits::TYPE_UTF8),
+    (b"float",    fixed_bits::TYPE_F64),
+    (b"boolean",  fixed_bits::TYPE_BOOLEAN),
+    (b"datetime", fixed_bits::TYPE_DATETIME),
 ];
 
-pub fn client_props(client: u64) -> &'static [u64] {
-    CLIENT_PROPS.iter()
-        .find(|(c, _)| *c == client)
-        .map(|(_, props)| *props)
-        .unwrap_or(&[])
-}
-
-pub const TYPE_NAMES: &[(&str, u64)] = &[
-    ("integer",  fixed_bits::TYPE_I64),
-    ("string",   fixed_bits::TYPE_UTF8),
-    ("float",    fixed_bits::TYPE_F64),
-    ("boolean",  fixed_bits::TYPE_BOOLEAN),
-    ("datetime", fixed_bits::TYPE_DATETIME),
-];
-
-pub fn type_encode(s: &str) -> u64 {
+pub fn type_encode(s: &[u8]) -> u64 {
     TYPE_NAMES.iter()
         .find(|(name, _)| *name == s)
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::TYPE_NULL)
 }
 
-pub fn type_decode(v: u64) -> Option<&'static str> {
+pub fn type_decode(v: u64) -> Option<&'static [u8]> {
     TYPE_NAMES.iter()
         .find(|(_, val)| *val == v)
         .map(|(name, _)| *name)
@@ -126,14 +98,6 @@ mod tests {
             assert_eq!(client_encode(name), val);
             assert_eq!(client_decode(val), Some(name));
         }
-    }
-
-    #[test]
-    fn test_client_props() {
-        for &(client, props) in CLIENT_PROPS {
-            assert_eq!(client_props(client), props);
-        }
-        assert!(client_props(fixed_bits::CLIENT_NULL).is_empty());
     }
 
     #[test]
@@ -162,10 +126,10 @@ mod tests {
 
     #[test]
     fn test_unknown_encode() {
-        assert_eq!(client_encode("Unknown"), fixed_bits::CLIENT_NULL);
-        assert_eq!(root_encode("_unknown"), fixed_bits::ROOT_NULL);
-        assert_eq!(prop_encode("unknown"), fixed_bits::PROP_NULL);
-        assert_eq!(type_encode("unknown"), fixed_bits::TYPE_NULL);
+        assert_eq!(client_encode(b"Unknown"), fixed_bits::CLIENT_NULL);
+        assert_eq!(root_encode(b"_unknown"), fixed_bits::ROOT_NULL);
+        assert_eq!(prop_encode(b"unknown"), fixed_bits::PROP_NULL);
+        assert_eq!(type_encode(b"unknown"), fixed_bits::TYPE_NULL);
     }
 
     #[test]

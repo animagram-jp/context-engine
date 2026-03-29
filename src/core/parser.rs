@@ -7,16 +7,8 @@ use super::pool::DynamicPool;
 use super::fixed_bits;
 use super::codec;
 
-/// Generic value type for manifest parsing.
-/// Binding-agnostic — no serde, no std, no alloc beyond Vec/String.
-///
-/// Callers (crate/, wasi/, js/, php/) are responsible for converting
-/// their native format (YAML, JSON, etc.) into Value before calling parse().
-pub enum Value {
-    Mapping(Vec<(String, Value)>),
-    Scalar(String),
-    Null,
-}
+/// Re-export the public Value type for use in parsing.
+pub use crate::ports::provided::Value;
 
 /// Thin record for a single loaded manifest file.
 /// Stores only the key_idx of the file root record in the shared keys vec.
@@ -46,8 +38,9 @@ pub fn parse(
         return Err("DSL root must be a mapping".to_string());
     };
 
+
     // filename root record (placeholder, child index filled below)
-    let dyn_idx = dynamic.intern(filename);
+    let dyn_idx = dynamic.intern(filename.as_bytes());
     let mut file_record = fixed_bits::new();
     file_record = fixed_bits::set(file_record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
     let file_idx = keys.len() as u16;
@@ -55,8 +48,8 @@ pub fn parse(
 
     // traverse top-level keys
     let mut child_indices: Vec<u16> = Vec::new();
-    for (key_str, value) in &mapping {
-        let child_idx = traverse_field_key(key_str, value, filename, &[], dynamic, keys, values, path_map, children_map)?;
+    for (key_bytes, value) in &mapping {
+        let child_idx = traverse_field_key(key_bytes, value, filename, &[], dynamic, keys, values, path_map, children_map)?;
         child_indices.push(child_idx);
     }
 
@@ -80,17 +73,17 @@ pub fn parse(
 /// Traverses a field key node (non-meta key).
 /// `ancestors` excludes filename — only field key path segments (for qualify).
 fn traverse_field_key(
-    key_str: &str,
+    key_bytes: &[u8],
     value: &Value,
     filename: &str,
-    ancestors: &[&str],
+    ancestors: &[&[u8]],
     dynamic: &mut DynamicPool,
     keys: &mut Vec<u64>,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
     children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
-    let dyn_idx = dynamic.intern(key_str);
+    let dyn_idx = dynamic.intern(key_bytes);
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, fixed_bits::ROOT_NULL);
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC, dyn_idx as u64);
@@ -98,19 +91,19 @@ fn traverse_field_key(
     let key_idx = keys.len() as u16;
     keys.push(record);
 
-    let mut current: Vec<&str> = ancestors.to_vec();
-    current.push(key_str);
+    let mut current: Vec<&[u8]> = ancestors.to_vec();
+    current.push(key_bytes);
 
     if let Value::Mapping(mapping) = value {
         let mut child_indices: Vec<u16> = Vec::new();
         let mut meta_indices: Vec<u16> = Vec::new();
 
-        for (k_str, v) in mapping {
-            if k_str.starts_with('_') {
-                let meta_idx = traverse_meta_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
+        for (k_bytes, v) in mapping {
+            if k_bytes.first() == Some(&b'_') {
+                let meta_idx = traverse_meta_key(k_bytes, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
                 meta_indices.push(meta_idx);
             } else {
-                let child_idx = traverse_field_key(k_str, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
+                let child_idx = traverse_field_key(k_bytes, v, filename, &current, dynamic, keys, values, path_map, children_map)?;
                 child_indices.push(child_idx);
             }
         }
@@ -146,17 +139,17 @@ fn traverse_field_key(
 
 /// Traverses a meta key node (_load, _store, _state).
 fn traverse_meta_key(
-    key_str: &str,
+    key_bytes: &[u8],
     value: &Value,
     filename: &str,
-    ancestors: &[&str],
+    ancestors: &[&[u8]],
     dynamic: &mut DynamicPool,
     keys: &mut Vec<u64>,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
     children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
-    let root_val = codec::root_encode(key_str);
+    let root_val = codec::root_encode(key_bytes);
 
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT, root_val);
@@ -167,8 +160,8 @@ fn traverse_meta_key(
     if let Value::Mapping(mapping) = value {
         let mut child_indices: Vec<u16> = Vec::new();
 
-        for (k_str, v) in mapping {
-            let child_idx = traverse_prop_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
+        for (k_bytes, v) in mapping {
+            let child_idx = traverse_prop_key(k_bytes, v, filename, ancestors, dynamic, keys, values, path_map, children_map)?;
             child_indices.push(child_idx);
         }
 
@@ -191,31 +184,31 @@ fn traverse_meta_key(
 
 /// Traverses a prop key node (client, key, ttl, table, connection, where, map, type).
 fn traverse_prop_key(
-    key_str: &str,
+    key_bytes: &[u8],
     value: &Value,
     filename: &str,
-    ancestors: &[&str],
+    ancestors: &[&[u8]],
     dynamic: &mut DynamicPool,
     keys: &mut Vec<u64>,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
     children_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
-    let (prop_val, client_val) = if key_str == "client" {
+    let (prop_val, client_val) = if key_bytes == b"client" {
         (fixed_bits::PROP_NULL, codec::client_encode(
-            match value { Value::Scalar(s) => s.as_str(), _ => "" }
+            match value { Value::Scalar(s) => s.as_slice(), _ => b"" }
         ))
     } else {
-        (codec::prop_encode(key_str), fixed_bits::CLIENT_NULL)
+        (codec::prop_encode(key_bytes), fixed_bits::CLIENT_NULL)
     };
 
     let mut record = fixed_bits::new();
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_PROP, fixed_bits::K_MASK_PROP, prop_val);
     record = fixed_bits::set(record, fixed_bits::K_OFFSET_CLIENT, fixed_bits::K_MASK_CLIENT, client_val);
 
-    if key_str == "type" {
+    if key_bytes == b"type" {
         let type_val = codec::type_encode(
-            match value { Value::Scalar(s) => s.as_str(), _ => "" }
+            match value { Value::Scalar(s) => s.as_slice(), _ => b"" }
         );
         record = fixed_bits::set(record, fixed_bits::K_OFFSET_TYPE, fixed_bits::K_MASK_TYPE, type_val);
     }
@@ -223,11 +216,11 @@ fn traverse_prop_key(
     let key_idx = keys.len() as u16;
     keys.push(record);
 
-    if key_str == "map" {
+    if key_bytes == b"map" {
         if let Value::Mapping(mapping) = value {
             let mut child_indices: Vec<u16> = Vec::new();
-            for (k_str, v) in mapping {
-                let child_idx = traverse_map_key(k_str, v, filename, ancestors, dynamic, keys, values, path_map)?;
+            for (k_bytes, v) in mapping {
+                let child_idx = traverse_map_key(k_bytes, v, filename, ancestors, dynamic, keys, values, path_map)?;
                 child_indices.push(child_idx);
             }
             let record = keys[key_idx as usize];
@@ -243,7 +236,7 @@ fn traverse_prop_key(
             };
             keys[key_idx as usize] = record;
         }
-    } else if key_str != "client" {
+    } else if key_bytes != b"client" {
         let val_idx = build_yaml_value(value, filename, ancestors, dynamic, values, path_map)?;
         let record = keys[key_idx as usize];
         let record = fixed_bits::set(record, fixed_bits::K_OFFSET_IS_LEAF, fixed_bits::K_MASK_IS_LEAF, 1);
@@ -256,17 +249,17 @@ fn traverse_prop_key(
 
 /// Traverses a map child key (is_path=true).
 fn traverse_map_key(
-    key_str: &str,
+    key_bytes: &[u8],
     value: &Value,
     filename: &str,
-    ancestors: &[&str],
+    ancestors: &[&[u8]],
     dynamic: &mut DynamicPool,
     keys: &mut Vec<u64>,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
-    let qualified = build_qualified_path(filename, ancestors, key_str);
-    let seg_indices: Vec<u16> = qualified.split('.')
+    let qualified = build_qualified_path(filename, ancestors, key_bytes);
+    let seg_indices: Vec<u16> = qualified.split(|&b| b == b'.')
         .map(|seg| dynamic.intern(seg))
         .collect();
     let path_idx = path_map.len() as u16;
@@ -289,20 +282,21 @@ fn traverse_map_key(
 fn build_yaml_value(
     value: &Value,
     filename: &str,
-    ancestors: &[&str],
+    ancestors: &[&[u8]],
     dynamic: &mut DynamicPool,
     values: &mut Vec<[u64; 2]>,
     path_map: &mut Vec<Vec<u16>>,
 ) -> Result<u16, String> {
     let s = match value {
-        Value::Scalar(s) => s.clone(),
-        Value::Null      => return Ok(0),
-        Value::Mapping(_) => return Err("unexpected mapping as scalar value".to_string()),
+        Value::Scalar(s)   => s.clone(),
+        Value::Null        => return Ok(0),
+        Value::Mapping(_)  => return Err("unexpected mapping as scalar value".to_string()),
+        Value::Sequence(_) => return Err("unexpected sequence as scalar value".to_string()),
     };
 
     let tokens = split_template(&s);
     if tokens.len() > 6 {
-        return Err(format!("value '{}' has {} tokens, max 6", s, tokens.len()));
+        return Err(format!("value has {} tokens, max 6", tokens.len()));
     }
     let is_template = tokens.len() > 1;
 
@@ -324,7 +318,7 @@ fn build_yaml_value(
     for (i, token) in tokens.iter().enumerate().take(6) {
         let dyn_idx = if token.is_path {
             let qualified = qualify_path(&token.text, filename, ancestors);
-            let seg_indices: Vec<u16> = qualified.split('.')
+            let seg_indices: Vec<u16> = qualified.split(|&b| b == b'.')
                 .map(|seg| dynamic.intern(seg))
                 .collect();
             let path_idx = path_map.len() as u16;
@@ -346,65 +340,75 @@ fn build_yaml_value(
 }
 
 
-/// A single template token: either a literal string or a path placeholder.
+/// A single template token: either a literal byte sequence or a path placeholder.
 struct Token {
-    text: String,
+    text: Vec<u8>,
     is_path: bool,
 }
 
-/// Splits a string by `${}` placeholders into tokens.
-/// `"user:${session.id}"` → [Token("user:", false), Token("session.id", true)]
-fn split_template(s: &str) -> Vec<Token> {
+/// Splits a byte slice by `${}` placeholders into tokens.
+/// `b"user:${session.id}"` → [Token(b"user:", false), Token(b"session.id", true)]
+fn split_template(s: &[u8]) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut rest = s;
 
     loop {
-        if let Some(start) = rest.find("${") {
+        if let Some(start) = find_bytes(rest, b"${") {
             if start > 0 {
-                tokens.push(Token { text: rest[..start].to_string(), is_path: false });
+                tokens.push(Token { text: rest[..start].to_vec(), is_path: false });
             }
             rest = &rest[start + 2..];
-            if let Some(end) = rest.find('}') {
-                tokens.push(Token { text: rest[..end].to_string(), is_path: true });
+            if let Some(end) = rest.iter().position(|&b| b == b'}') {
+                tokens.push(Token { text: rest[..end].to_vec(), is_path: true });
                 rest = &rest[end + 1..];
             } else {
-                tokens.push(Token { text: rest.to_string(), is_path: false });
+                tokens.push(Token { text: rest.to_vec(), is_path: false });
                 break;
             }
         } else {
             if !rest.is_empty() {
-                tokens.push(Token { text: rest.to_string(), is_path: false });
+                tokens.push(Token { text: rest.to_vec(), is_path: false });
             }
             break;
         }
     }
 
     if tokens.is_empty() {
-        tokens.push(Token { text: s.to_string(), is_path: false });
+        tokens.push(Token { text: s.to_vec(), is_path: false });
     }
 
     tokens
 }
 
-/// Qualifies a placeholder path to an absolute path.
-fn qualify_path(path: &str, filename: &str, ancestors: &[&str]) -> String {
-    if path.contains('.') {
-        return path.to_string();
-    }
-    if ancestors.is_empty() {
-        format!("{}.{}", filename, path)
-    } else {
-        format!("{}.{}.{}", filename, ancestors.join("."), path)
-    }
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Builds a qualified path string for map keys: `filename.ancestors.key_str`
-fn build_qualified_path(filename: &str, ancestors: &[&str], key_str: &str) -> String {
-    if ancestors.is_empty() {
-        format!("{}.{}", filename, key_str)
-    } else {
-        format!("{}.{}.{}", filename, ancestors.join("."), key_str)
+/// Qualifies a placeholder path to an absolute path.
+fn qualify_path(path: &[u8], filename: &str, ancestors: &[&[u8]]) -> Vec<u8> {
+    if path.contains(&b'.') {
+        return path.to_vec();
     }
+    let mut result = filename.as_bytes().to_vec();
+    for ancestor in ancestors {
+        result.push(b'.');
+        result.extend_from_slice(ancestor);
+    }
+    result.push(b'.');
+    result.extend_from_slice(path);
+    result
+}
+
+/// Builds a qualified path for map keys: `filename.ancestors.key`
+fn build_qualified_path(filename: &str, ancestors: &[&[u8]], key: &[u8]) -> Vec<u8> {
+    let mut result = filename.as_bytes().to_vec();
+    for ancestor in ancestors {
+        result.push(b'.');
+        result.extend_from_slice(ancestor);
+    }
+    result.push(b'.');
+    result.extend_from_slice(key);
+    result
 }
 
 #[cfg(test)]
@@ -419,54 +423,54 @@ mod tests {
         (DynamicPool::new(), vec![0], vec![[0, 0]], vec![vec![]], vec![vec![]])
     }
 
-    fn s(v: &str) -> Value { Value::Scalar(v.to_string()) }
+    fn s(v: &str) -> Value { Value::Scalar(v.as_bytes().to_vec()) }
     fn m(pairs: Vec<(&str, Value)>) -> Value {
-        Value::Mapping(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+        Value::Mapping(pairs.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect())
     }
 
     // --- split_template ---
 
     #[test]
     fn test_split_template_static() {
-        let tokens = split_template("literal");
+        let tokens = split_template(b"literal");
         assert_eq!(tokens.len(), 1);
         assert!(!tokens[0].is_path);
-        assert_eq!(tokens[0].text, "literal");
+        assert_eq!(tokens[0].text, b"literal");
     }
 
     #[test]
     fn test_split_template_path_only() {
-        let tokens = split_template("${connection.tenant}");
+        let tokens = split_template(b"${connection.tenant}");
         assert_eq!(tokens.len(), 1);
         assert!(tokens[0].is_path);
-        assert_eq!(tokens[0].text, "connection.tenant");
+        assert_eq!(tokens[0].text, b"connection.tenant");
     }
 
     #[test]
     fn test_split_template_mixed() {
-        let tokens = split_template("user:${session.id}");
+        let tokens = split_template(b"user:${session.id}");
         assert_eq!(tokens.len(), 2);
         assert!(!tokens[0].is_path);
-        assert_eq!(tokens[0].text, "user:");
+        assert_eq!(tokens[0].text, b"user:");
         assert!(tokens[1].is_path);
-        assert_eq!(tokens[1].text, "session.id");
+        assert_eq!(tokens[1].text, b"session.id");
     }
 
     // --- qualify_path ---
 
     #[test]
     fn test_qualify_path_absolute() {
-        assert_eq!(qualify_path("connection.common", "cache", &["user"]), "connection.common");
+        assert_eq!(qualify_path(b"connection.common", "cache", &[b"user".as_slice()]), b"connection.common");
     }
 
     #[test]
     fn test_qualify_path_relative() {
-        assert_eq!(qualify_path("org_id", "cache", &["user"]), "cache.user.org_id");
+        assert_eq!(qualify_path(b"org_id", "cache", &[b"user".as_slice()]), b"cache.user.org_id");
     }
 
     #[test]
     fn test_qualify_path_relative_no_ancestors() {
-        assert_eq!(qualify_path("org_id", "cache", &[]), "cache.org_id");
+        assert_eq!(qualify_path(b"org_id", "cache", &[]), b"cache.org_id");
     }
 
     // --- parse: field key → ROOT_NULL ---
@@ -575,8 +579,8 @@ mod tests {
 
         let dyn_a = fixed_bits::get(keys[pm_a.file_key_idx as usize], fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
         let dyn_b = fixed_bits::get(keys[pm_b.file_key_idx as usize], fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
-        assert_eq!(dynamic.get(dyn_a), Some("a"));
-        assert_eq!(dynamic.get(dyn_b), Some("b"));
+        assert_eq!(dynamic.get(dyn_a), Some(b"a".as_slice()));
+        assert_eq!(dynamic.get(dyn_b), Some(b"b".as_slice()));
     }
 
     // --- parse: root must be Mapping ---
