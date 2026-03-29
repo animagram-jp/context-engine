@@ -84,7 +84,7 @@ impl Load {
         let env = self.env.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let (yaml_keys, ext_keys) = split_map(config)?;
+        let (yaml_keys, ext_keys) = get_map_keys(config)?;
         let values = env.get(&ext_keys)
             .ok_or(LoadError::ClientNotConfigured)?;
         Ok(zip_to_mapping(yaml_keys, values))
@@ -130,7 +130,7 @@ impl Load {
 
         let table = scalar_str(config, "table")?;
 
-        let (yaml_keys, ext_keys) = split_map(config)?;
+        let (yaml_keys, ext_keys) = get_map_keys(config)?;
 
         let where_clause = config.get("where")
             .and_then(|v| if let Value::Scalar(b) = v { Some(b.as_slice()) } else { None });
@@ -165,7 +165,7 @@ impl Load {
 
         let url = scalar_str(config, "url")?;
 
-        let (yaml_keys, ext_keys) = split_map(config)?;
+        let (yaml_keys, ext_keys) = get_map_keys(config)?;
 
         let headers = match config.get("headers") {
             Some(Value::Mapping(m)) => Some(
@@ -185,21 +185,16 @@ impl Load {
     }
 }
 
-/// Splits a `map` config entry into (yaml_keys, ext_keys).
-/// yaml_keys: the left-hand side (state-engine field names)
-/// ext_keys:  the right-hand side (external source field names, passed to adapter)
-fn split_map(config: &HashMap<String, Value>) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), LoadError> {
-    match config.get("map") {
-        Some(Value::Mapping(m)) => {
-            let (yaml_keys, ext_keys) = m.iter()
-                .filter_map(|(k, v)| {
-                    if let Value::Scalar(ext) = v { Some((k.clone(), ext.clone())) } else { None }
-                })
-                .unzip();
-            Ok((yaml_keys, ext_keys))
-        }
-        _ => Err(LoadError::ConfigMissing("map".into())),
-    }
+fn get_map_keys(config: &HashMap<String, Value>) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), LoadError> {
+    let yaml_keys = match config.get("yaml_keys") {
+        Some(Value::Sequence(s)) => s.iter().filter_map(|v| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect(),
+        _ => return Err(LoadError::ConfigMissing("yaml_keys".into())),
+    };
+    let ext_keys = match config.get("ext_keys") {
+        Some(Value::Sequence(s)) => s.iter().filter_map(|v| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect(),
+        _ => return Err(LoadError::ConfigMissing("ext_keys".into())),
+    };
+    Ok((yaml_keys, ext_keys))
 }
 
 /// Zips yaml_keys and values into a Value::Mapping.
@@ -229,6 +224,12 @@ mod tests {
         Value::Scalar(client_id.to_le_bytes().to_vec())
     }
 
+    fn map_config(pairs: &[(&str, &str)]) -> (Value, Value) {
+        let yaml_keys = Value::Sequence(pairs.iter().map(|(k, _)| Value::Scalar(k.as_bytes().to_vec())).collect());
+        let ext_keys  = Value::Sequence(pairs.iter().map(|(_, v)| Value::Scalar(v.as_bytes().to_vec())).collect());
+        (yaml_keys, ext_keys)
+    }
+
     // --- Env ---
 
     struct MockEnvClient;
@@ -250,10 +251,9 @@ mod tests {
         let load = Load::new().with_env(Arc::new(MockEnvClient));
         let mut config = HashMap::new();
         config.insert("client".to_string(), client_config(fixed_bits::CLIENT_ENV));
-        config.insert("map".to_string(), Value::Mapping(vec![
-            (b"host".to_vec(), Value::Scalar(b"DB_HOST".to_vec())),
-            (b"port".to_vec(), Value::Scalar(b"DB_PORT".to_vec())),
-        ]));
+        let (yaml_keys, ext_keys) = map_config(&[("host", "DB_HOST"), ("port", "DB_PORT")]);
+        config.insert("yaml_keys".to_string(), yaml_keys);
+        config.insert("ext_keys".to_string(), ext_keys);
         let result = load.handle(&config).unwrap();
         if let Value::Mapping(m) = result {
             let host = m.iter().find(|(k, _)| k == b"host").map(|(_, v)| v.clone());
@@ -375,9 +375,9 @@ mod tests {
         config.insert("client".to_string(), client_config(fixed_bits::CLIENT_DB));
         config.insert("table".to_string(), Value::Scalar(table.as_bytes().to_vec()));
         config.insert("connection".to_string(), Value::Mapping(vec![]));
-        config.insert("map".to_string(), Value::Mapping(
-            map.iter().map(|(k, v)| (k.as_bytes().to_vec(), Value::Scalar(v.as_bytes().to_vec()))).collect()
-        ));
+        let (yaml_keys, ext_keys) = map_config(map);
+        config.insert("yaml_keys".to_string(), yaml_keys);
+        config.insert("ext_keys".to_string(), ext_keys);
         config
     }
 
@@ -436,9 +436,9 @@ mod tests {
         let mut c = HashMap::new();
         c.insert("client".to_string(), client_config(fixed_bits::CLIENT_HTTP));
         c.insert("url".to_string(), Value::Scalar(url.as_bytes().to_vec()));
-        c.insert("map".to_string(), Value::Mapping(vec![
-            (b"status".to_vec(), Value::Scalar(b"status".to_vec())),
-        ]));
+        let (yaml_keys, ext_keys) = map_config(&[("status", "status")]);
+        c.insert("yaml_keys".to_string(), yaml_keys);
+        c.insert("ext_keys".to_string(), ext_keys);
         c
     }
 

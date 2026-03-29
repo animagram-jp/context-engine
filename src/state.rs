@@ -188,7 +188,14 @@ impl State {
 
         let mut config = HashMap::new();
         for (key, cv) in entries {
-            if let Some(v) = self.resolve_config_value(cv)? {
+            if key == "map" {
+                if let ConfigValue::Map(pairs) = cv {
+                    let yaml_keys = Value::Sequence(pairs.iter().map(|(k, _)| Value::Scalar(k.as_bytes().to_vec())).collect());
+                    let ext_keys  = Value::Sequence(pairs.into_iter().map(|(_, v)| Value::Scalar(v.into_bytes())).collect());
+                    config.insert("yaml_keys".into(), yaml_keys);
+                    config.insert("ext_keys".into(),  ext_keys);
+                }
+            } else if let Some(v) = self.resolve_config_value(cv)? {
                 config.insert(key, v);
             }
         }

@@ -58,10 +58,9 @@ impl Store {
             fixed_bits::CLIENT_HTTP => {
                 let http = self.http.as_deref()?;
                 let url = scalar_str(store_config, "url")?;
-                let ext_keys = split_ext_keys(store_config)?;
+                let (yaml_keys, ext_keys) = get_map_keys(store_config)?;
                 let headers = headers_list(store_config);
                 let values = http.get(url, &ext_keys, headers.as_deref())?;
-                let yaml_keys = split_yaml_keys(store_config)?;
                 Some(zip_to_mapping(yaml_keys, values))
             }
             fixed_bits::CLIENT_FILE => {
@@ -192,20 +191,16 @@ fn headers_list(config: &HashMap<String, Value>) -> Option<Vec<(Vec<u8>, Vec<u8>
     }
 }
 
-fn split_yaml_keys(config: &HashMap<String, Value>) -> Option<Vec<Vec<u8>>> {
-    match config.get("map") {
-        Some(Value::Mapping(m)) => Some(m.iter().map(|(k, _)| k.clone()).collect()),
-        _ => None,
-    }
-}
-
-fn split_ext_keys(config: &HashMap<String, Value>) -> Option<Vec<Vec<u8>>> {
-    match config.get("map") {
-        Some(Value::Mapping(m)) => Some(
-            m.iter().filter_map(|(_, v)| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect()
-        ),
-        _ => None,
-    }
+fn get_map_keys(config: &HashMap<String, Value>) -> Option<(Vec<Vec<u8>>, Vec<Vec<u8>>)> {
+    let yaml_keys = match config.get("yaml_keys") {
+        Some(Value::Sequence(s)) => s.iter().filter_map(|v| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect(),
+        _ => return None,
+    };
+    let ext_keys = match config.get("ext_keys") {
+        Some(Value::Sequence(s)) => s.iter().filter_map(|v| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect(),
+        _ => return None,
+    };
+    Some((yaml_keys, ext_keys))
 }
 
 fn zip_to_mapping(yaml_keys: Vec<Vec<u8>>, values: Vec<Value>) -> Value {
@@ -425,9 +420,8 @@ mod tests {
         let mut c = HashMap::new();
         c.insert("client".to_string(), client_config(fixed_bits::CLIENT_HTTP));
         c.insert("url".to_string(), Value::Scalar(url.as_bytes().to_vec()));
-        c.insert("map".to_string(), Value::Mapping(vec![
-            (b"status".to_vec(), Value::Scalar(b"status".to_vec())),
-        ]));
+        c.insert("yaml_keys".to_string(), Value::Sequence(vec![Value::Scalar(b"status".to_vec())]));
+        c.insert("ext_keys".to_string(),  Value::Sequence(vec![Value::Scalar(b"status".to_vec())]));
         c
     }
 
