@@ -14,10 +14,10 @@ impl EnvAdapter {
 }
 
 impl EnvClient for EnvAdapter {
-    fn get(&self, key: &str) -> Option<String> {
-        std::env::var(key).ok()
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        std::env::var(key).ok().map(|s| s.into_bytes())
     }
 
-    fn set(&self, _key: &str, _value: String) -> bool { false }
+    fn set(&self, _key: &str, _value: Vec<u8>) -> bool { false }
     fn delete(&self, _key: &str) -> bool { false }
 }

@@ -3,7 +3,7 @@
 /// Implements the InMemoryClient Required Port.
 /// Manages in-memory key-value storage for the current process.
 
-use serde_json::Value;
+use state_engine::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use state_engine::ports::required::InMemoryClient;

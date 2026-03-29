@@ -1,5 +1,4 @@
 use crate::ports::provided::Value;
-use std::collections::HashMap;
 
 /// In-process memory store. Internal mutability is the implementor's responsibility.
 pub trait InMemoryClient: Send + Sync {

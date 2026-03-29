@@ -23,17 +23,17 @@ impl KVSAdapter {
 }
 
 impl KVSClient for KVSAdapter {
-    fn get(&self, key: &str) -> Option<String> {
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
         let client = self.client.lock().unwrap();
         let mut conn = client.get_connection().ok()?;
         redis::cmd("GET")
             .arg(key)
-            .query::<Option<String>>(&mut conn)
+            .query::<Option<Vec<u8>>>(&mut conn)
             .ok()
             .flatten()
     }
 
-    fn set(&self, key: &str, value: String, ttl: Option<u64>) -> bool {
+    fn set(&self, key: &str, value: Vec<u8>, ttl: Option<u64>) -> bool {
         let client = self.client.lock().unwrap();
         let mut conn = match client.get_connection() {
             Ok(c) => c,

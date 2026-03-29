@@ -2,8 +2,8 @@
 ///
 /// Implements the DbClient Required Port.
 
+use state_engine::Value;
 use state_engine::ports::required::DbClient;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -19,19 +19,22 @@ impl DbAdapter {
     }
 
     fn get_connection_name(config: &Value) -> Result<String, String> {
-        let tag = config.get("tag")
-            .and_then(|v| v.as_str())
+        let fields = match config {
+            Value::Mapping(f) => f,
+            _ => return Err("connection must be a mapping".to_string()),
+        };
+
+        let tag = fields.iter()
+            .find(|(k, _)| k == b"tag")
+            .and_then(|(_, v)| match v { Value::Scalar(b) => std::str::from_utf8(b).ok(), _ => None })
             .ok_or_else(|| "Missing 'tag' field in connection config".to_string())?;
 
         if tag == "common" {
             Ok(format!("connection.{}", tag))
         } else if tag == "tenant" {
-            let id = config.get("id")
-                .and_then(|v| match v {
-                    Value::String(s) => Some(s.clone()),
-                    Value::Number(n) => Some(n.to_string()),
-                    _ => None,
-                })
+            let id = fields.iter()
+                .find(|(k, _)| k == b"id")
+                .and_then(|(_, v)| match v { Value::Scalar(b) => std::str::from_utf8(b).ok(), _ => None })
                 .ok_or_else(|| "Missing 'id' field for tenant connection".to_string())?;
             Ok(format!("connection.{}{}", tag, id))
         } else {
@@ -40,14 +43,23 @@ impl DbAdapter {
     }
 
     async fn connect_from_config(config: &Value) -> Result<tokio_postgres::Client, String> {
-        let config_obj = config.as_object()
-            .ok_or("connection must be an object")?;
+        let fields = match config {
+            Value::Mapping(f) => f,
+            _ => return Err("connection must be a mapping".to_string()),
+        };
 
-        let host = config_obj.get("host").and_then(|v| v.as_str()).ok_or("Missing host")?;
-        let port = config_obj.get("port").and_then(|v| v.as_u64()).unwrap_or(5432) as u16;
-        let database = config_obj.get("database").and_then(|v| v.as_str()).ok_or("Missing database")?;
-        let username = config_obj.get("username").and_then(|v| v.as_str()).ok_or("Missing username")?;
-        let password = config_obj.get("password").and_then(|v| v.as_str()).ok_or("Missing password")?;
+        let scalar = |key: &[u8]| -> Option<&str> {
+            fields.iter()
+                .find(|(k, _)| k.as_slice() == key)
+                .and_then(|(_, v)| match v { Value::Scalar(b) => std::str::from_utf8(b).ok(), _ => None })
+        };
+
+        let host     = scalar(b"host").ok_or("Missing host")?;
+        let port_str = scalar(b"port").unwrap_or("5432");
+        let port     = port_str.parse::<u16>().unwrap_or(5432);
+        let database = scalar(b"database").ok_or("Missing database")?;
+        let username = scalar(b"username").ok_or("Missing username")?;
+        let password = scalar(b"password").ok_or("Missing password")?;
 
         let conn_str = format!(
             "host={} port={} dbname={} user={} password={}",
@@ -73,9 +85,9 @@ impl DbClient for DbAdapter {
         &self,
         connection: &Value,
         table: &str,
-        columns: &[&str],
-        where_clause: Option<&str>,
-    ) -> Option<Vec<HashMap<String, Value>>> {
+        columns: &[(Vec<u8>, Vec<u8>)],
+        where_clause: Option<&[u8]>,
+    ) -> Option<Vec<Value>> {
         let runtime = tokio::runtime::Runtime::new().ok()?;
 
         runtime.block_on(async {
@@ -88,9 +100,14 @@ impl DbClient for DbAdapter {
             }
 
             let client = pool_lock.get(&conn_name)?;
-            let column_list = if columns.is_empty() { "*".to_string() } else { columns.join(", ") };
 
-            let query = if let Some(wc) = where_clause {
+            let col_names: Vec<&str> = columns.iter()
+                .filter_map(|(k, _)| std::str::from_utf8(k).ok())
+                .collect();
+            let column_list = if col_names.is_empty() { "*".to_string() } else { col_names.join(", ") };
+
+            let where_str = where_clause.and_then(|b| std::str::from_utf8(b).ok());
+            let query = if let Some(wc) = where_str {
                 format!("SELECT {} FROM {} WHERE {}", column_list, table, wc)
             } else {
                 format!("SELECT {} FROM {}", column_list, table)
@@ -100,26 +117,34 @@ impl DbClient for DbAdapter {
 
             let mut results = Vec::new();
             for row in rows {
-                let mut map = HashMap::new();
+                let mut fields = Vec::new();
                 for (idx, column) in row.columns().iter().enumerate() {
-                    let value: Value = match column.type_() {
+                    let val: Value = match column.type_() {
                         &tokio_postgres::types::Type::INT4 => {
-                            row.try_get::<_, i32>(idx).map(|v| serde_json::json!(v)).unwrap_or(Value::Null)
+                            row.try_get::<_, i32>(idx)
+                                .map(|v| Value::Scalar(v.to_string().into_bytes()))
+                                .unwrap_or(Value::Null)
                         }
                         &tokio_postgres::types::Type::INT8 => {
-                            row.try_get::<_, i64>(idx).map(|v| serde_json::json!(v)).unwrap_or(Value::Null)
+                            row.try_get::<_, i64>(idx)
+                                .map(|v| Value::Scalar(v.to_string().into_bytes()))
+                                .unwrap_or(Value::Null)
                         }
                         &tokio_postgres::types::Type::TEXT | &tokio_postgres::types::Type::VARCHAR => {
-                            row.try_get::<_, String>(idx).map(|v| serde_json::json!(v)).unwrap_or(Value::Null)
+                            row.try_get::<_, String>(idx)
+                                .map(|v| Value::Scalar(v.into_bytes()))
+                                .unwrap_or(Value::Null)
                         }
                         &tokio_postgres::types::Type::BOOL => {
-                            row.try_get::<_, bool>(idx).map(|v| serde_json::json!(v)).unwrap_or(Value::Null)
+                            row.try_get::<_, bool>(idx)
+                                .map(|v| Value::Scalar(if v { b"true".to_vec() } else { b"false".to_vec() }))
+                                .unwrap_or(Value::Null)
                         }
                         _ => Value::Null,
                     };
-                    map.insert(column.name().to_string(), value);
+                    fields.push((column.name().as_bytes().to_vec(), val));
                 }
-                results.push(map);
+                results.push(Value::Mapping(fields));
             }
 
             Some(results)
@@ -130,14 +155,14 @@ impl DbClient for DbAdapter {
         &self,
         _connection: &Value,
         _table: &str,
-        _values: &HashMap<String, Value>,
-        _where_clause: Option<&str>,
+        _columns: &[(Vec<u8>, Vec<u8>)],
+        _where_clause: Option<&[u8]>,
     ) -> bool { false }
 
     fn delete(
         &self,
         _connection: &Value,
         _table: &str,
-        _where_clause: Option<&str>,
+        _where_clause: Option<&[u8]>,
     ) -> bool { false }
 }
