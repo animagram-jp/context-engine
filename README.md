@@ -16,7 +16,7 @@ It behaves as described in YAML DSL.
 |---------|---------|------|-------------|
 | 0.1   | Released  | 2026-2-12 | initial |
 | 0.1.5 | Current   | 2026-3-21  | improve #43 |
-| 0.1.6 | Scheduled  | 2026-3-29 | improve #49 #50 |
+| 0.1.6 | Scheduled  | 2026-4-5 | improve #49 #50 |
 
 ## Provided Functions
 
