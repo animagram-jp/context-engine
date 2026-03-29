@@ -390,16 +390,61 @@ impl State {
         let meta = self.manifest.get_meta(&file, &path);
 
         if let Some(store_idx) = meta.store {
+            let owner_idx = meta.store_owner;
+            let is_leaf = owner_idx != key_idx;
+
+            // For leaf keys: build updated owner Mapping via read-modify-write
+            let store_value = if is_leaf {
+                let field = path.rsplit('.').next().unwrap_or(&path).as_bytes().to_vec();
+
+                // 1. state_vals から owner Mapping を取得、なければ store から read
+                let owner_mapping = match self.find_state_value(owner_idx)
+                    .and_then(|i| self.state_vals.get(i).cloned())
+                {
+                    Some(v @ Value::Mapping(_)) => Some(v),
+                    _ => {
+                        match self.resolve_config(store_idx)? {
+                            Some(ref config) => self.store.get(config),
+                            None => None,
+                        }
+                    }
+                };
+
+                // 2. Mapping にフィールドを差し込む
+                let mut pairs = match owner_mapping {
+                    Some(Value::Mapping(p)) => p,
+                    _ => vec![],
+                };
+                if let Some(entry) = pairs.iter_mut().find(|(k, _)| *k == field) {
+                    entry.1 = value.clone();
+                } else {
+                    pairs.push((field, value.clone()));
+                }
+                Value::Mapping(pairs)
+            } else {
+                value.clone()
+            };
+
             match self.resolve_config(store_idx)? {
                 Some(config) => {
-                    return match self.store.set(&config, value.clone(), ttl) {
+                    return match self.store.set(&config, store_value.clone(), ttl) {
                         Ok(ok) => {
                             if ok {
-                                if let Some(sv_idx) = self.find_state_value(key_idx) {
-                                    self.state_vals[sv_idx] = value;
+                                // owner の state_vals を更新
+                                if let Some(sv_idx) = self.find_state_value(owner_idx) {
+                                    self.state_vals[sv_idx] = store_value;
                                 } else {
-                                    self.state_keys.push(key_idx);
-                                    self.state_vals.push(value);
+                                    self.state_keys.push(owner_idx);
+                                    self.state_vals.push(store_value);
+                                }
+                                // 葉キー自身も state_vals に記録
+                                if is_leaf {
+                                    if let Some(sv_idx) = self.find_state_value(key_idx) {
+                                        self.state_vals[sv_idx] = value;
+                                    } else {
+                                        self.state_keys.push(key_idx);
+                                        self.state_vals.push(value);
+                                    }
                                 }
                             }
                             Ok(ok)
@@ -566,14 +611,14 @@ mod tests {
 
     struct StubDb;
     impl DbClient for StubDb {
-        fn get(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> Option<Vec<Value>> { None }
-        fn set(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> bool { false }
+        fn get(&self, _: &Value, _: &str, _: &[Vec<u8>], _: Option<&[u8]>) -> Option<Vec<Value>> { None }
+        fn set(&self, _: &Value, _: &str, _: &[Vec<u8>], _: Option<&[u8]>) -> bool { false }
         fn delete(&self, _: &Value, _: &str, _: Option<&[u8]>) -> bool { false }
     }
 
     struct StubEnv;
     impl EnvClient for StubEnv {
-        fn get(&self, _: &str) -> Option<Vec<u8>> { None }
+        fn get(&self, _: &[Vec<u8>]) -> Option<Vec<Value>> { None }
         fn set(&self, _: &str, _: Vec<u8>) -> bool { false }
         fn delete(&self, _: &str) -> bool { false }
     }
@@ -587,7 +632,7 @@ mod tests {
 
     struct StubHttp;
     impl crate::ports::required::HttpClient for StubHttp {
-        fn get(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Value> { None }
+        fn get(&self, _: &str, _: &[Vec<u8>], _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Vec<Value>> { None }
         fn set(&self, _: &str, _: Value, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
         fn delete(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
     }

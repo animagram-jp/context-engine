@@ -1,4 +1,5 @@
 mod core;
+pub mod codec_value;
 pub mod log_format;
 pub mod ports;
 pub mod load;

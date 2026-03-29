@@ -130,9 +130,10 @@ fn run_tests() -> (usize, usize) {
     test!("set and get leaf key cache.user.org_id", {
         let im = Arc::new(InMemoryAdapter::new());
         im.set("request-attributes-user-key", scalar("1"));
+        let kvs = Arc::new(KVSAdapter::new().unwrap());
         let mut state = make_state(
             Arc::new(EnvAdapter::new()),
-            Arc::new(KVSAdapter::new().unwrap()),
+            Arc::clone(&kvs),
             Arc::new(DbAdapter::new()),
             im,
             Arc::new(HttpAdapter),
@@ -141,6 +142,19 @@ fn run_tests() -> (usize, usize) {
         assert!(state.set("cache.user.org_id", scalar("100"), None).unwrap());
         let got = state.get("cache.user.org_id").unwrap();
         assert_eq!(got, Some(scalar("100")));
+
+        // verify Redis directly: KVS key is "user:1" (session.sso_user_id=1)
+        // expected: encoded Mapping with org_id=100, not raw b"100"
+        let raw = kvs.raw_get("user:1");
+        assert!(raw.is_some(), "user:1 should exist in Redis");
+        let decoded = state_engine::codec_value::decode(raw.as_deref().unwrap());
+        assert!(decoded.is_some(), "Redis value should decode as Value");
+        let decoded = decoded.unwrap();
+        assert_eq!(
+            mapping_get(&decoded, b"org_id"),
+            Some(&scalar("100")),
+            "org_id in Redis mapping should be 100"
+        );
     });
 
     test!("set and get leaf key cache.user.id", {

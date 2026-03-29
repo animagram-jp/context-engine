@@ -10,6 +10,16 @@ pub struct KVSAdapter {
 }
 
 impl KVSAdapter {
+    pub fn raw_get(&self, key: &str) -> Option<Vec<u8>> {
+        let client = self.client.lock().unwrap();
+        let mut conn = client.get_connection().ok()?;
+        redis::cmd("GET")
+            .arg(key)
+            .query::<Option<Vec<u8>>>(&mut conn)
+            .ok()
+            .flatten()
+    }
+
     pub fn new() -> Result<Self, String> {
         let host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "localhost".to_string());
         let port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());

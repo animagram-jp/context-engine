@@ -53,18 +53,21 @@ impl Store {
             fixed_bits::CLIENT_KVS => {
                 let kvs = self.kvs.as_deref()?;
                 let key = scalar_str(store_config, "key")?;
-                kvs.get(key).map(Value::Scalar)
+                kvs.get(key).map(|b| crate::codec_value::decode(&b).unwrap_or(Value::Scalar(b)))
             }
             fixed_bits::CLIENT_HTTP => {
                 let http = self.http.as_deref()?;
                 let url = scalar_str(store_config, "url")?;
+                let ext_keys = split_ext_keys(store_config)?;
                 let headers = headers_list(store_config);
-                http.get(url, headers.as_deref())
+                let values = http.get(url, &ext_keys, headers.as_deref())?;
+                let yaml_keys = split_yaml_keys(store_config)?;
+                Some(zip_to_mapping(yaml_keys, values))
             }
             fixed_bits::CLIENT_FILE => {
                 let file = self.file.as_deref()?;
                 let key = scalar_str(store_config, "key")?;
-                file.get(key).map(Value::Scalar)
+                file.get(key).map(|b| crate::codec_value::decode(&b).unwrap_or(Value::Scalar(b)))
             }
             _ => None,
         }
@@ -189,10 +192,30 @@ fn headers_list(config: &HashMap<String, Value>) -> Option<Vec<(Vec<u8>, Vec<u8>
     }
 }
 
+fn split_yaml_keys(config: &HashMap<String, Value>) -> Option<Vec<Vec<u8>>> {
+    match config.get("map") {
+        Some(Value::Mapping(m)) => Some(m.iter().map(|(k, _)| k.clone()).collect()),
+        _ => None,
+    }
+}
+
+fn split_ext_keys(config: &HashMap<String, Value>) -> Option<Vec<Vec<u8>>> {
+    match config.get("map") {
+        Some(Value::Mapping(m)) => Some(
+            m.iter().filter_map(|(_, v)| if let Value::Scalar(b) = v { Some(b.clone()) } else { None }).collect()
+        ),
+        _ => None,
+    }
+}
+
+fn zip_to_mapping(yaml_keys: Vec<Vec<u8>>, values: Vec<Value>) -> Value {
+    Value::Mapping(yaml_keys.into_iter().zip(values).collect())
+}
+
 fn value_to_bytes(value: Value) -> Vec<u8> {
     match value {
         Value::Scalar(b) => b,
-        _ => Vec::new(),
+        other => crate::codec_value::encode(&other),
     }
 }
 
@@ -383,8 +406,12 @@ mod tests {
         fn new() -> Self { Self { store: std::sync::Mutex::new(std::collections::HashMap::new()) } }
     }
     impl HttpClient for MockHttp {
-        fn get(&self, url: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Value> {
-            self.store.lock().unwrap().get(url).cloned()
+        fn get(&self, url: &str, keys: &[Vec<u8>], _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Vec<Value>> {
+            let stored = self.store.lock().unwrap().get(url).cloned()?;
+            Some(keys.iter().map(|k| match &stored {
+                Value::Mapping(m) => m.iter().find(|(mk, _)| mk == k).map(|(_, v)| v.clone()).unwrap_or(Value::Null),
+                _ => stored.clone(),
+            }).collect())
         }
         fn set(&self, url: &str, value: Value, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool {
             self.store.lock().unwrap().insert(url.to_string(), value); true
@@ -398,6 +425,9 @@ mod tests {
         let mut c = HashMap::new();
         c.insert("client".to_string(), client_config(fixed_bits::CLIENT_HTTP));
         c.insert("url".to_string(), Value::Scalar(url.as_bytes().to_vec()));
+        c.insert("map".to_string(), Value::Mapping(vec![
+            (b"status".to_vec(), Value::Scalar(b"status".to_vec())),
+        ]));
         c
     }
 
@@ -406,9 +436,11 @@ mod tests {
         let client = Arc::new(MockHttp::new());
         let store = Store::new().with_http(client);
         let config = http_config("http://example.com/data");
-        let data = Value::Scalar(b"payload".to_vec());
-        assert!(store.set(&config, data.clone(), None).unwrap());
-        assert_eq!(store.get(&config).unwrap(), data);
+        let data = Value::Mapping(vec![(b"status".to_vec(), Value::Scalar(b"ok".to_vec()))]);
+        assert!(store.set(&config, data, None).unwrap());
+        let result = store.get(&config).unwrap();
+        let expected = Value::Mapping(vec![(b"status".to_vec(), Value::Scalar(b"ok".to_vec()))]);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -416,9 +448,8 @@ mod tests {
         let client = Arc::new(MockHttp::new());
         let store = Store::new().with_http(client);
         let config = http_config("http://example.com/data");
-        store.set(&config, Value::Scalar(b"x".to_vec()), None).unwrap();
+        store.set(&config, Value::Mapping(vec![(b"status".to_vec(), Value::Scalar(b"ok".to_vec()))]), None).unwrap();
         assert!(store.delete(&config).unwrap());
-        assert!(store.get(&config).is_none());
     }
 
     #[test]

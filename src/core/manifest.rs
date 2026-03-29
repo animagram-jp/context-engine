@@ -3,8 +3,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
-use super::fixed_bits;
 use super::codec;
+use super::fixed_bits;
 use super::pool::DynamicPool;
 use super::parser::ParsedManifest;
 
@@ -123,7 +123,7 @@ impl Manifest {
 
         let segments: Vec<&str> = if path.is_empty() { alloc::vec![] } else { path.split('.').collect() };
         let mut meta = MetaIndices::default();
-        self.collect_meta(file_record, &mut meta);
+        self.collect_meta(file_record, file_idx, &mut meta);
 
         let mut candidates = self.children_of(file_record);
         for segment in &segments {
@@ -138,7 +138,7 @@ impl Manifest {
                 }
                 let dyn_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
                 if self.dynamic.get(dyn_idx) == Some(segment.as_bytes()) {
-                    self.collect_meta(record, &mut meta);
+                    self.collect_meta(record, idx, &mut meta);
                     found_idx = Some(idx);
                     break;
                 }
@@ -154,7 +154,7 @@ impl Manifest {
         meta
     }
 
-    fn collect_meta(&self, record: u64, meta: &mut MetaIndices) {
+    fn collect_meta(&self, record: u64, node_idx: u16, meta: &mut MetaIndices) {
         for &idx in &self.children_of(record) {
             let child = match self.keys.get(idx as usize).copied() {
                 Some(r) => r,
@@ -162,9 +162,9 @@ impl Manifest {
             };
             let root = fixed_bits::get(child, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT);
             match root {
-                fixed_bits::ROOT_LOAD  => meta.load  = Some(idx),
-                fixed_bits::ROOT_STORE => meta.store = Some(idx),
-                fixed_bits::ROOT_STATE => meta.state = Some(idx),
+                fixed_bits::ROOT_LOAD  => { meta.load  = Some(idx); meta.load_owner  = node_idx; }
+                fixed_bits::ROOT_STORE => { meta.store = Some(idx); meta.store_owner = node_idx; }
+                fixed_bits::ROOT_STATE => { meta.state = Some(idx); }
                 _ => {}
             }
         }
@@ -223,16 +223,13 @@ impl Manifest {
                 continue;
             }
 
-            let prop_name = match codec::prop_decode(prop as u64) {
-                Some(name) => name,
-                None => continue,
-            };
+            if prop as u64 == fixed_bits::PROP_NULL { continue; }
 
-            if prop_name == b"map" {
+            if prop as u64 == fixed_bits::PROP_MAP {
                 if let Some(pairs) = self.decode_map(child_idx) {
                     entries.push(("map".into(), ConfigValue::Map(pairs)));
                 }
-            } else if prop_name == b"connection" {
+            } else if prop as u64 == fixed_bits::PROP_CONNECTION {
                 if value_idx != 0 {
                     if let Some(cv) = self.decode_value(value_idx) {
                         entries.push(("connection".into(), cv));
@@ -240,8 +237,10 @@ impl Manifest {
                 }
             } else if value_idx != 0 {
                 if let Some(cv) = self.decode_value(value_idx) {
-                    let name = String::from_utf8_lossy(prop_name).into_owned();
-                    entries.push((name, cv));
+                    if let Some((name_bytes, _)) = codec::PROP_NAMES.iter().find(|(_, v)| *v == prop as u64) {
+                        let name = String::from_utf8_lossy(name_bytes).into_owned();
+                        entries.push((name, cv));
+                    }
                 }
             }
         }
@@ -358,11 +357,14 @@ impl Default for Manifest {
 }
 
 /// Indices of meta records for a given node, collected from root to node (child overrides parent).
+/// `load_owner` / `store_owner` are the key_idx of the node that directly defines `_load` / `_store`.
 #[derive(Debug, Default)]
 pub struct MetaIndices {
-    pub load:  Option<u16>,
-    pub store: Option<u16>,
-    pub state: Option<u16>,
+    pub load:        Option<u16>,
+    pub load_owner:  u16,
+    pub store:       Option<u16>,
+    pub store_owner: u16,
+    pub state:       Option<u16>,
 }
 
 #[cfg(test)]

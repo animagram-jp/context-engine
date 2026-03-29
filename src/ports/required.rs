@@ -17,9 +17,11 @@ pub trait KVSClient: Send + Sync {
 }
 
 /// Environment / config store.
+/// `keys` is the list of external key names (map values from manifest).
+/// Returns values in the same order as `keys`.
 /// Internal mutability is the implementor's responsibility.
 pub trait EnvClient: Send + Sync {
-    fn get(&self, key: &str) -> Option<Vec<u8>>;
+    fn get(&self, keys: &[Vec<u8>]) -> Option<Vec<Value>>;
     fn set(&self, key: &str, value: Vec<u8>) -> bool;
     fn delete(&self, key: &str) -> bool;
 }
@@ -27,20 +29,21 @@ pub trait EnvClient: Send + Sync {
 /// Relational DB client.
 /// Do NOT call State inside DbClient — it would cause recursion.
 /// `connection` is a Value::Mapping resolved from the manifest.
-/// `columns` is the raw manifest `map` object; adapter is responsible for column extraction.
+/// `keys` is the list of db column names (map values from manifest).
+/// Returns values in the same order as `keys`.
 pub trait DbClient: Send + Sync {
     fn get(
         &self,
         connection: &Value,
         table: &str,
-        columns: &[(Vec<u8>, Vec<u8>)],
+        keys: &[Vec<u8>],
         where_clause: Option<&[u8]>,
     ) -> Option<Vec<Value>>;
     fn set(
         &self,
         connection: &Value,
         table: &str,
-        columns: &[(Vec<u8>, Vec<u8>)],
+        keys: &[Vec<u8>],
         where_clause: Option<&[u8]>,
     ) -> bool;
     fn delete(
@@ -52,13 +55,16 @@ pub trait DbClient: Send + Sync {
 }
 
 /// HTTP client.
+/// `keys` is the list of response field names (map values from manifest).
+/// Returns values in the same order as `keys`.
 /// `headers` is an optional list of (name, value) byte pairs.
 pub trait HttpClient: Send + Sync {
     fn get(
         &self,
         url: &str,
+        keys: &[Vec<u8>],
         headers: Option<&[(Vec<u8>, Vec<u8>)]>,
-    ) -> Option<Value>;
+    ) -> Option<Vec<Value>>;
     fn set(
         &self,
         url: &str,

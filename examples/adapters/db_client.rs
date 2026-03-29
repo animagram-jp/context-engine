@@ -85,7 +85,7 @@ impl DbClient for DbAdapter {
         &self,
         connection: &Value,
         table: &str,
-        columns: &[(Vec<u8>, Vec<u8>)],
+        map: &[(Vec<u8>, Vec<u8>)],
         where_clause: Option<&[u8]>,
     ) -> Option<Vec<Value>> {
         let runtime = tokio::runtime::Runtime::new().ok()?;
@@ -101,8 +101,8 @@ impl DbClient for DbAdapter {
 
             let client = pool_lock.get(&conn_name)?;
 
-            let col_names: Vec<&str> = columns.iter()
-                .filter_map(|(k, _)| std::str::from_utf8(k).ok())
+            let col_names: Vec<&str> = map.iter()
+                .filter_map(|(_, v)| std::str::from_utf8(v).ok())
                 .collect();
             let column_list = if col_names.is_empty() { "*".to_string() } else { col_names.join(", ") };
 
@@ -155,7 +155,7 @@ impl DbClient for DbAdapter {
         &self,
         _connection: &Value,
         _table: &str,
-        _columns: &[(Vec<u8>, Vec<u8>)],
+        _map: &[(Vec<u8>, Vec<u8>)],
         _where_clause: Option<&[u8]>,
     ) -> bool { false }
 

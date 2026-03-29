@@ -34,6 +34,10 @@ ON CONFLICT DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS idx_users_sso_user_id ON users(sso_user_id);
 
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO current_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO current_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO PUBLIC;
+
 
 -- tenant_db: per-tenant data
 

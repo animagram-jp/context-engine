@@ -84,21 +84,10 @@ impl Load {
         let env = self.env.as_deref()
             .ok_or(LoadError::ClientNotConfigured)?;
 
-        let map = match config.get("map") {
-            Some(Value::Mapping(m)) => m,
-            _ => return Err(LoadError::ConfigMissing("map".into())),
-        };
-
-        let mut result = Vec::new();
-        for (config_key, env_key_value) in map {
-            if let Value::Scalar(env_key) = env_key_value {
-                let env_key_str = std::str::from_utf8(env_key).unwrap_or("");
-                if let Some(value) = env.get(env_key_str) {
-                    result.push((config_key.clone(), Value::Scalar(value)));
-                }
-            }
-        }
-        Ok(Value::Mapping(result))
+        let (yaml_keys, ext_keys) = split_map(config)?;
+        let values = env.get(&ext_keys)
+            .ok_or(LoadError::ClientNotConfigured)?;
+        Ok(zip_to_mapping(yaml_keys, values))
     }
 
     fn load_from_in_memory(
@@ -125,7 +114,7 @@ impl Load {
         let bytes = kvs
             .get(key)
             .ok_or_else(|| LoadError::NotFound(key.into()))?;
-        Ok(Value::Scalar(bytes))
+        Ok(crate::codec_value::decode(&bytes).unwrap_or(Value::Scalar(bytes)))
     }
 
     fn load_from_db(
@@ -141,27 +130,16 @@ impl Load {
 
         let table = scalar_str(config, "table")?;
 
-        let columns = match config.get("columns") {
-            Some(Value::Mapping(m)) => m.iter()
-                .filter_map(|(k, v)| {
-                    if let Value::Scalar(col) = v { Some((k.clone(), col.clone())) } else { None }
-                })
-                .collect::<Vec<_>>(),
-            _ => return Err(LoadError::ConfigMissing("columns".into())),
-        };
+        let (yaml_keys, ext_keys) = split_map(config)?;
 
         let where_clause = config.get("where")
             .and_then(|v| if let Value::Scalar(b) = v { Some(b.as_slice()) } else { None });
 
-        let rows = db
-            .get(connection, table, &columns, where_clause)
+        let values = db
+            .get(connection, table, &ext_keys, where_clause)
             .ok_or_else(|| LoadError::NotFound(table.into()))?;
 
-        if rows.is_empty() {
-            return Err(LoadError::NotFound(table.into()));
-        }
-
-        Ok(Value::Sequence(rows))
+        Ok(zip_to_mapping(yaml_keys, values))
     }
 
     fn load_from_file(
@@ -175,7 +153,7 @@ impl Load {
         let bytes = file
             .get(key)
             .ok_or_else(|| LoadError::NotFound(key.into()))?;
-        Ok(Value::Scalar(bytes))
+        Ok(crate::codec_value::decode(&bytes).unwrap_or(Value::Scalar(bytes)))
     }
 
     fn load_from_http(
@@ -186,6 +164,8 @@ impl Load {
             .ok_or(LoadError::ClientNotConfigured)?;
 
         let url = scalar_str(config, "url")?;
+
+        let (yaml_keys, ext_keys) = split_map(config)?;
 
         let headers = match config.get("headers") {
             Some(Value::Mapping(m)) => Some(
@@ -198,9 +178,33 @@ impl Load {
             _ => None,
         };
 
-        http.get(url, headers.as_deref())
-            .ok_or_else(|| LoadError::NotFound(url.into()))
+        let values = http.get(url, &ext_keys, headers.as_deref())
+            .ok_or_else(|| LoadError::NotFound(url.into()))?;
+
+        Ok(zip_to_mapping(yaml_keys, values))
     }
+}
+
+/// Splits a `map` config entry into (yaml_keys, ext_keys).
+/// yaml_keys: the left-hand side (state-engine field names)
+/// ext_keys:  the right-hand side (external source field names, passed to adapter)
+fn split_map(config: &HashMap<String, Value>) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>), LoadError> {
+    match config.get("map") {
+        Some(Value::Mapping(m)) => {
+            let (yaml_keys, ext_keys) = m.iter()
+                .filter_map(|(k, v)| {
+                    if let Value::Scalar(ext) = v { Some((k.clone(), ext.clone())) } else { None }
+                })
+                .unzip();
+            Ok((yaml_keys, ext_keys))
+        }
+        _ => Err(LoadError::ConfigMissing("map".into())),
+    }
+}
+
+/// Zips yaml_keys and values into a Value::Mapping.
+fn zip_to_mapping(yaml_keys: Vec<Vec<u8>>, values: Vec<Value>) -> Value {
+    Value::Mapping(yaml_keys.into_iter().zip(values).collect())
 }
 
 fn scalar_str<'a>(config: &'a HashMap<String, Value>, key: &str) -> Result<&'a str, LoadError> {
@@ -229,12 +233,13 @@ mod tests {
 
     struct MockEnvClient;
     impl EnvClient for MockEnvClient {
-        fn get(&self, key: &str) -> Option<Vec<u8>> {
-            match key {
-                "DB_HOST" => Some(b"localhost".to_vec()),
-                "DB_PORT" => Some(b"5432".to_vec()),
-                _ => None,
-            }
+        fn get(&self, keys: &[Vec<u8>]) -> Option<Vec<Value>> {
+            let vals = keys.iter().map(|k| match k.as_slice() {
+                b"DB_HOST" => Value::Scalar(b"localhost".to_vec()),
+                b"DB_PORT" => Value::Scalar(b"5432".to_vec()),
+                _ => Value::Null,
+            }).collect();
+            Some(vals)
         }
         fn set(&self, _key: &str, _value: Vec<u8>) -> bool { false }
         fn delete(&self, _key: &str) -> bool { false }
@@ -358,36 +363,34 @@ mod tests {
         fn new(rows: Vec<Value>) -> Self { Self { rows } }
     }
     impl DbClient for MockDb {
-        fn get(&self, _conn: &Value, _table: &str, _cols: &[(Vec<u8>, Vec<u8>)], _where: Option<&[u8]>) -> Option<Vec<Value>> {
+        fn get(&self, _conn: &Value, _table: &str, _keys: &[Vec<u8>], _where: Option<&[u8]>) -> Option<Vec<Value>> {
             if self.rows.is_empty() { None } else { Some(self.rows.clone()) }
         }
-        fn set(&self, _: &Value, _: &str, _: &[(Vec<u8>, Vec<u8>)], _: Option<&[u8]>) -> bool { false }
+        fn set(&self, _: &Value, _: &str, _: &[Vec<u8>], _: Option<&[u8]>) -> bool { false }
         fn delete(&self, _: &Value, _: &str, _: Option<&[u8]>) -> bool { false }
     }
 
-    fn db_config(table: &str, columns: &[(&str, &str)]) -> HashMap<String, Value> {
+    fn db_config(table: &str, map: &[(&str, &str)]) -> HashMap<String, Value> {
         let mut config = HashMap::new();
         config.insert("client".to_string(), client_config(fixed_bits::CLIENT_DB));
         config.insert("table".to_string(), Value::Scalar(table.as_bytes().to_vec()));
         config.insert("connection".to_string(), Value::Mapping(vec![]));
-        config.insert("columns".to_string(), Value::Mapping(
-            columns.iter().map(|(k, v)| (k.as_bytes().to_vec(), Value::Scalar(v.as_bytes().to_vec()))).collect()
+        config.insert("map".to_string(), Value::Mapping(
+            map.iter().map(|(k, v)| (k.as_bytes().to_vec(), Value::Scalar(v.as_bytes().to_vec()))).collect()
         ));
         config
     }
 
     #[test]
     fn test_load_from_db() {
-        let row = Value::Mapping(vec![(b"id".to_vec(), Value::Scalar(b"42".to_vec()))]);
-        let client = Arc::new(MockDb::new(vec![row.clone()]));
+        // adapter returns field values in ext_keys order
+        let client = Arc::new(MockDb::new(vec![Value::Scalar(b"42".to_vec())]));
         let load = Load::new().with_db(client);
         let config = db_config("users", &[("id", "id")]);
         let result = load.handle(&config).unwrap();
-        if let Value::Sequence(rows) = result {
-            assert_eq!(rows[0], row);
-        } else {
-            panic!("expected Sequence");
-        }
+        // zip_to_mapping: yaml_key "id" → Value::Scalar("42")
+        let expected = Value::Mapping(vec![(b"id".to_vec(), Value::Scalar(b"42".to_vec()))]);
+        assert_eq!(result, expected);
     }
 
     #[test]
@@ -414,7 +417,17 @@ mod tests {
         fn new(response: Option<Value>) -> Self { Self { response } }
     }
     impl HttpClient for MockHttp {
-        fn get(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Value> { self.response.clone() }
+        fn get(&self, _: &str, keys: &[Vec<u8>], _: Option<&[(Vec<u8>, Vec<u8>)]>) -> Option<Vec<Value>> {
+            self.response.as_ref().map(|v| {
+                keys.iter().map(|k| match v {
+                    Value::Mapping(m) => m.iter()
+                        .find(|(mk, _)| mk == k)
+                        .map(|(_, mv)| mv.clone())
+                        .unwrap_or(Value::Null),
+                    _ => v.clone(),
+                }).collect()
+            })
+        }
         fn set(&self, _: &str, _: Value, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
         fn delete(&self, _: &str, _: Option<&[(Vec<u8>, Vec<u8>)]>) -> bool { false }
     }
@@ -423,6 +436,9 @@ mod tests {
         let mut c = HashMap::new();
         c.insert("client".to_string(), client_config(fixed_bits::CLIENT_HTTP));
         c.insert("url".to_string(), Value::Scalar(url.as_bytes().to_vec()));
+        c.insert("map".to_string(), Value::Mapping(vec![
+            (b"status".to_vec(), Value::Scalar(b"status".to_vec())),
+        ]));
         c
     }
 
