@@ -8,15 +8,25 @@ use super::fixed_bits;
 use super::pool::DynamicPool;
 use super::parser::ParsedManifest;
 
+/// A single token in a template value.
+#[derive(Debug)]
+pub enum TemplateToken {
+    /// Literal byte sequence.
+    Literal(Vec<u8>),
+    /// A path placeholder — intern-index sequence (file segment + field segments).
+    Path(Vec<u16>),
+}
+
 /// A resolved or unresolved config value produced by `build_config`.
-/// State layer is responsible for resolving `Placeholder` variants via `State::get()`.
+/// State layer is responsible for resolving `Path` and `Template` variants.
 #[derive(Debug)]
 pub enum ConfigValue {
     /// Static string value (no placeholder resolution needed).
     Str(String),
-    /// A placeholder path that must be resolved via State::get().
-    /// Used for both scalar placeholders and object-valued placeholders (e.g. connection).
-    Placeholder(String),
+    /// A single path reference — intern-index sequence to resolve via State.
+    Path(Vec<u16>),
+    /// A mixed literal+path template — tokens to resolve and concatenate.
+    Template(Vec<TemplateToken>),
     /// A map of (yaml_key → db_column) pairs.
     Map(Vec<(String, String)>),
     /// Numeric client id.
@@ -290,27 +300,10 @@ impl Manifest {
     }
 
     /// Decodes a value record into a ConfigValue.
-    /// If the value is a placeholder path, returns Placeholder(path_string).
-    /// If it's a template or static string, returns Str(string) or Placeholder for single-path tokens.
+    /// - Single path token (non-template)  → `Path(Vec<u16>)` (intern-index segments)
+    /// - Mixed literal+path (template)     → `Template(Vec<TemplateToken>)`
+    /// - Pure literal (no paths)           → `Str(String)`
     pub fn decode_value(&self, value_idx: u16) -> Option<ConfigValue> {
-        let vo = self.values.get(value_idx as usize).copied()?;
-        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
-        let is_path0 = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_MASK_IS_PATH) == 1;
-        let dyn_idx0 = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
-
-        // single pure placeholder (non-template, is_path) → Placeholder
-        if is_path0 && dyn_idx0 != 0 && !is_template {
-            let path = self.resolve_path(dyn_idx0)?;
-            return Some(ConfigValue::Placeholder(path));
-        }
-
-        // template or static: collect all tokens
-        Some(ConfigValue::Str(self.decode_value_tokens(vo)?))
-    }
-
-    /// Decodes all tokens of a value record into a raw string,
-    /// embedding placeholder paths as `${path}` so the caller can resolve them.
-    pub fn decode_value_tokens(&self, vo: [u64; 2]) -> Option<String> {
         const TOKEN_OFFSETS: [(u32, u32); 6] = [
             (fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_OFFSET_T0_DYNAMIC),
             (fixed_bits::V_OFFSET_T1_IS_PATH, fixed_bits::V_OFFSET_T1_DYNAMIC),
@@ -320,33 +313,90 @@ impl Manifest {
             (fixed_bits::V_OFFSET_T5_IS_PATH, fixed_bits::V_OFFSET_T5_DYNAMIC),
         ];
 
-        let mut result = String::new();
-        for (i, (off_is_path, off_dynamic)) in TOKEN_OFFSETS.iter().enumerate() {
-            let word = if i < 3 { 0 } else { 1 };
-            let is_path = fixed_bits::get(vo[word], *off_is_path, fixed_bits::V_MASK_IS_PATH) == 1;
-            let dyn_idx = fixed_bits::get(vo[word], *off_dynamic, fixed_bits::V_MASK_DYNAMIC) as u16;
-            if dyn_idx == 0 { break; }
+        let vo = self.values.get(value_idx as usize).copied()?;
+        let is_template = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_IS_TEMPLATE, fixed_bits::V_MASK_IS_TEMPLATE) == 1;
+        let is_path0 = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_IS_PATH, fixed_bits::V_MASK_IS_PATH) == 1;
+        let dyn_idx0 = fixed_bits::get(vo[0], fixed_bits::V_OFFSET_T0_DYNAMIC, fixed_bits::V_MASK_DYNAMIC) as u16;
 
-            if is_path {
-                let path = self.resolve_path(dyn_idx)?;
-                result.push_str("${");
-                result.push_str(&path);
-                result.push('}');
-            } else {
-                let b = self.dynamic.get(dyn_idx)?;
-                result.push_str(&String::from_utf8_lossy(b));
-            }
+        // single pure path reference (non-template) → Path
+        if is_path0 && dyn_idx0 != 0 && !is_template {
+            let segs = self.path_map.get(dyn_idx0 as usize)?.clone();
+            return Some(ConfigValue::Path(segs));
         }
-        Some(result)
+
+        // template: collect tokens as TemplateToken list
+        if is_template {
+            let mut tokens = Vec::new();
+            for (i, (off_is_path, off_dynamic)) in TOKEN_OFFSETS.iter().enumerate() {
+                let word = if i < 3 { 0 } else { 1 };
+                let is_path = fixed_bits::get(vo[word], *off_is_path, fixed_bits::V_MASK_IS_PATH) == 1;
+                let dyn_idx = fixed_bits::get(vo[word], *off_dynamic, fixed_bits::V_MASK_DYNAMIC) as u16;
+                if dyn_idx == 0 { break; }
+                if is_path {
+                    let segs = self.path_map.get(dyn_idx as usize)?.clone();
+                    tokens.push(TemplateToken::Path(segs));
+                } else {
+                    let b = self.dynamic.get(dyn_idx)?.to_vec();
+                    tokens.push(TemplateToken::Literal(b));
+                }
+            }
+            return Some(ConfigValue::Template(tokens));
+        }
+
+        // pure literal
+        let b = self.dynamic.get(dyn_idx0)?.to_vec();
+        Some(ConfigValue::Str(String::from_utf8_lossy(&b).into_owned()))
     }
 
-    /// Resolves a path_map index to a dot-joined path string.
-    fn resolve_path(&self, path_map_idx: u16) -> Option<String> {
-        let segs = self.path_map.get(path_map_idx as usize)?;
-        let parts: Vec<&str> = segs.iter()
-            .filter_map(|&s| self.dynamic.get(s).and_then(|b| core::str::from_utf8(b).ok()))
-            .collect();
-        Some(parts.join("."))
+    /// Reconstructs a dot-joined key string from intern-index segments.
+    /// Returns an error string if any segment index is invalid.
+    pub fn segs_to_key(&self, segs: &[u16]) -> Result<String, crate::ports::provided::StateError> {
+        let mut parts = Vec::with_capacity(segs.len());
+        for &s in segs {
+            let b = self.dynamic.get(s)
+                .ok_or_else(|| crate::ports::provided::StateError::KeyNotFound(format!("invalid segment index {}", s)))?;
+            parts.push(String::from_utf8_lossy(b).into_owned());
+        }
+        Ok(parts.join("."))
+    }
+
+    /// Finds a field-key record by intern-index segment list.
+    /// `segs[0]` must be the file name segment, `segs[1..]` are the field path.
+    pub fn find_by_segs(&self, segs: &[u16]) -> Option<u16> {
+        if segs.is_empty() { return None; }
+        let file_name = self.dynamic.get(segs[0])?;
+        let file_str = core::str::from_utf8(file_name).ok()?;
+        let file_idx = self.files.get(file_str)?.file_key_idx;
+        if segs.len() == 1 {
+            return Some(file_idx);
+        }
+        let file_record = self.keys.get(file_idx as usize).copied()?;
+        let top_level = self.children_of(file_record);
+        self.find_in_by_segs(&segs[1..], &top_level)
+    }
+
+    fn find_in_by_segs(&self, segs: &[u16], candidates: &[u16]) -> Option<u16> {
+        let target_idx = segs[0];
+        let rest = &segs[1..];
+        for &idx in candidates {
+            let record = self.keys.get(idx as usize).copied()?;
+            if fixed_bits::get(record, fixed_bits::K_OFFSET_ROOT, fixed_bits::K_MASK_ROOT) != fixed_bits::ROOT_NULL {
+                continue;
+            }
+            let dyn_idx = fixed_bits::get(record, fixed_bits::K_OFFSET_DYNAMIC, fixed_bits::K_MASK_DYNAMIC) as u16;
+            if dyn_idx != target_idx {
+                continue;
+            }
+            if rest.is_empty() {
+                return Some(idx);
+            }
+            let next = self.children_of(record);
+            if next.is_empty() {
+                return None;
+            }
+            return self.find_in_by_segs(rest, &next);
+        }
+        None
     }
 }
 
@@ -555,12 +605,12 @@ mod tests {
     }
 
     #[test]
-    fn test_build_config_connection_is_placeholder() {
+    fn test_build_config_connection_is_path() {
         let m = cache_manifest();
         let meta = m.get_meta("cache", "user");
         let entries = m.build_config(meta.load.unwrap()).unwrap();
         let conn = entries.iter().find(|(k, _)| k == "connection");
-        assert!(matches!(conn, Some((_, ConfigValue::Placeholder(_)))));
+        assert!(matches!(conn, Some((_, ConfigValue::Path(_)))));
     }
 
     #[test]
@@ -576,40 +626,43 @@ mod tests {
     }
 
     #[test]
-    fn test_build_config_key_with_template_is_str() {
+    fn test_build_config_key_with_template_is_template() {
         let m = cache_manifest();
         let meta = m.get_meta("cache", "user");
         let entries = m.build_config(meta.store.unwrap()).unwrap();
         let key = entries.iter().find(|(k, _)| k == "key");
-        assert!(matches!(key, Some((_, ConfigValue::Str(_)))));
-        if let Some((_, ConfigValue::Str(s))) = key {
-            assert!(s.contains("${"));
-        }
+        assert!(matches!(key, Some((_, ConfigValue::Template(_)))));
     }
 
     // --- decode_value ---
 
     #[test]
-    fn test_decode_value_single_placeholder() {
-        // connection: ${connection.tenant} → Placeholder
+    fn test_decode_value_single_path() {
+        // connection: ${connection.tenant} → Path with segments ["connection", "tenant"]
         let m = cache_manifest();
         let meta = m.get_meta("cache", "user");
         let entries = m.build_config(meta.load.unwrap()).unwrap();
         let conn = entries.iter().find(|(k, _)| k == "connection");
-        assert!(matches!(conn, Some((_, ConfigValue::Placeholder(p))) if p == "connection.tenant"));
+        if let Some((_, ConfigValue::Path(segs))) = conn {
+            let key = m.segs_to_key(segs).unwrap();
+            assert_eq!(key, "connection.tenant");
+        } else {
+            panic!("expected Path");
+        }
     }
 
     #[test]
-    fn test_decode_value_template_embeds_placeholder() {
-        // key: "user:${session.sso_user_id}" → Str containing ${...}
+    fn test_decode_value_template_is_template_variant() {
+        // key: "user:${session.sso_user_id}" → Template with Literal + Path tokens
         let m = cache_manifest();
         let meta = m.get_meta("cache", "user");
         let entries = m.build_config(meta.store.unwrap()).unwrap();
         let key = entries.iter().find(|(k, _)| k == "key");
-        if let Some((_, ConfigValue::Str(s))) = key {
-            assert!(s.contains("${session.sso_user_id}"));
+        if let Some((_, ConfigValue::Template(tokens))) = key {
+            assert!(tokens.iter().any(|t| matches!(t, TemplateToken::Literal(_))));
+            assert!(tokens.iter().any(|t| matches!(t, TemplateToken::Path(_))));
         } else {
-            panic!("expected Str");
+            panic!("expected Template");
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use crate::core::fixed_bits;
-use crate::core::manifest::{Manifest, ConfigValue};
+use crate::core::manifest::{Manifest, ConfigValue, TemplateToken};
 use crate::core::parser::{Value as ParseValue, parse};
 use crate::ports::provided::{ManifestError, StateError, Value};
 use crate::ports::required::FileClient;
@@ -140,34 +140,39 @@ impl State {
         self.state_keys.iter().skip(1).position(|&k| k == key_idx).map(|p| p + 1)
     }
 
-    fn resolve_template(&mut self, template: &str) -> Result<Option<String>, StateError> {
-        let mut result = String::new();
-        let mut remaining = template;
-        while let Some(start) = remaining.find("${") {
-            result.push_str(&remaining[..start]);
-            remaining = &remaining[start + 2..];
-            let end = match remaining.find('}') {
-                Some(e) => e,
-                None => return Ok(None),
-            };
-            let path = &remaining[..end];
-            remaining = &remaining[end + 1..];
-            let resolved = match self.get(path)? {
-                Some(Value::Scalar(b)) => String::from_utf8_lossy(&b).into_owned(),
-                _ => return Ok(None),
-            };
-            result.push_str(&resolved);
+    fn get_by_path(&mut self, segs: &[u16]) -> Result<Option<Value>, StateError> {
+        let key = self.manifest.segs_to_key(segs)?;
+        if self.called_keys.len() >= self.max_recursion || self.called_keys.contains(&key) {
+            return Err(StateError::RecursionLimitExceeded);
         }
-        result.push_str(remaining);
-        Ok(Some(result))
+        let key_idx = match self.manifest.find_by_segs(segs) {
+            Some(idx) => idx,
+            None => return Err(StateError::KeyNotFound(key)),
+        };
+        self.called_keys.insert(key.clone());
+        let result = self.get_core(key_idx, &key);
+        self.called_keys.remove(&key);
+        result
     }
 
     fn resolve_config_value(&mut self, cv: ConfigValue) -> Result<Option<Value>, StateError> {
         match cv {
             ConfigValue::Client(c) => Ok(Some(Value::Scalar(c.to_le_bytes().to_vec()))),
-            ConfigValue::Placeholder(path) => self.get(&path),
-            ConfigValue::Str(s) if s.contains("${") => {
-                Ok(self.resolve_template(&s)?.map(|s| Value::Scalar(s.into_bytes())))
+            ConfigValue::Path(segs) => self.get_by_path(&segs),
+            ConfigValue::Template(tokens) => {
+                let mut result = Vec::new();
+                for token in tokens {
+                    match token {
+                        TemplateToken::Literal(b) => result.extend_from_slice(&b),
+                        TemplateToken::Path(segs) => {
+                            match self.get_by_path(&segs)? {
+                                Some(Value::Scalar(b)) => result.extend_from_slice(&b),
+                                _ => return Ok(None),
+                            }
+                        }
+                    }
+                }
+                Ok(Some(Value::Scalar(result)))
             }
             ConfigValue::Str(s) => Ok(Some(Value::Scalar(s.into_bytes()))),
             ConfigValue::Map(pairs) => {
@@ -289,15 +294,14 @@ impl State {
         // CLIENT_STATE: extract key path directly from build_config without resolving
         if has_state_client {
             if let Some(load_idx) = meta.load {
-                let state_key = self.manifest.build_config(load_idx)
+                let state_key_segs = self.manifest.build_config(load_idx)
                     .and_then(|entries| entries.into_iter().find(|(k, _)| k == "key"))
                     .and_then(|(_, cv)| match cv {
-                        ConfigValue::Placeholder(p) => Some(p),
-                        ConfigValue::Str(s) => Some(s),
+                        ConfigValue::Path(segs) => Some(segs),
                         _ => None,
                     });
-                let result = match state_key {
-                    Some(k) => self.get(&k),
+                let result = match state_key_segs {
+                    Some(segs) => self.get_by_path(&segs),
                     None => Ok(None),
                 };
                 self.called_keys.remove(key);

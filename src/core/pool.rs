@@ -26,6 +26,11 @@ impl DynamicPool {
     pub fn get(&self, index: u16) -> Option<&[u8]> {
         self.slots.get(index as usize).map(|s| s.as_slice())
     }
+
+    /// Returns the index of an already-interned byte slice, or None if not present.
+    pub fn find(&self, s: &[u8]) -> Option<u16> {
+        self.slots.iter().position(|x| x.as_slice() == s).map(|i| i as u16)
+    }
 }
 
 impl Default for DynamicPool {

@@ -1,8 +1,17 @@
-// fixed bits record for intern pools
+// - keyword: a string used as a key in DSL 
+// - key: fixed bits of flags, reserved value or keyword index
+// - path: keyword indices
+// - value: indices composed of 
+// - arg
+//
 // note:
 // - Value 0 means null in each field.
 
 // key record (64 bits)
+// note:
+// - is_path: is child keys of "_load.map" or has "{}" (placeholder)
+// - has_children: has multiple child keys
+// - is_leaf: has value(= has no child keys)
 //
 // | category    | field         | bits | offset |
 // |-------------|---------------|------|--------|
@@ -17,7 +26,10 @@
 // | child index | child index   |   16 |     14 |
 // | padding     | -             |   14 |      0 |
 
-// value record (128 bits, [u64; 2])
+// value record (128 bits)
+// note:
+// - is_template: contains both static and placeholder (handled as string concat)
+// - is_path: is a segment of placeholder (Value parser removes "{}")
 //
 // | category | field         | bits | offset |
 // |----------|---------------|------|--------|
