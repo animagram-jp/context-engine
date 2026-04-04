@@ -1,6 +1,6 @@
-# state-engine
+# context-engine
 
-Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). state-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This OSS is positioned as the foundational technology for the reconstructed web system architecture described in [## background](#background).
+Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). context-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture(see [## background](#background)).
 
 - [original text(ja)](#original-text-ja)
 
@@ -16,9 +16,9 @@ Data labels used by a web system's runtime within a single processing cycle shou
 
 | mod | description | fn |
 |-------|------|---------|
-| **State** | operates state data following manifest YAMLs | `get()`, `set()`, `delete()`, `exists()` |
+| State | operates state data following manifest YAMLs | `get()`, `set()`, `delete()`, `exists()` |
 
-## Why state-engine?
+## Why context-engine?
 
 **Before:**
 ```Rust
@@ -41,7 +41,7 @@ let user = state.get("session.user")?;
 ```toml
 # Cargo.toml
 [dependencies]
-state-engine = "0.1"
+context-engine = "0.1"
 ```
 
 ## Quick Start
@@ -74,8 +74,8 @@ session:
 3. Initialize Manifest, Store Clients and State.
 
 ```rust
-use state_engine::Manifest;
-use state_engine::State;
+use context_engine::Manifest;
+use context_engine::State;
 use std::sync::Arc;
 
 let memory = Arc::new(MemoryImpl::new());
@@ -87,7 +87,7 @@ let mut state = State::new()
     .with_memory(memory)
     .with_db(db);
 
-// Use state-engine
+// Use context-engine
 let user_name = state.get("session.user.name")?;
 ```
 
@@ -114,11 +114,11 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 ## tree
 
 ```
-state-egnine/
+./
   README.md           # this
   Cargo.toml
   docs/
-    DSL_guide.md
+    Dsl_guide.md
     Architecture.md
 
   src/
@@ -162,7 +162,7 @@ Apache-2.0
 
 ## Original Text (ja)
 
-webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。state-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このOSSは、[## background](#background)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
+webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。context-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このライブラリは、[## background](#background)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
 
 ### 背景
 

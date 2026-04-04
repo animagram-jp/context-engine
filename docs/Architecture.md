@@ -1,6 +1,27 @@
-# Architecture
+# アーキテクチャ
 
-## index
+## ライブラリ要件
+
+- README 3行目参照
+- システムが認識するべき概念を階層構造の名前空間で表現できたとする。この時、名前空間から導かれる全通りの(部分含む)パスが、ランタイムの単一処理スコープで操作する可能性のある値のキーを網羅している。このキー群の値全てを、DSLにて漏れなく取得方法の定義を宣言する。
+
+## 機能構成
+
+- parse & compile: DSLを読み込み、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
+- toraversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
+- adressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンス。
+
+## モジュール構成
+
+- Dsl: 
+- Manifest: fn 
+- State
+
+| mod | description | ports |
+|-------|------|---------|
+| Dsl | DSLを読み込み、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する | new(Vec<(u64, u32)>),compile(&[&Path]) |
+| Index | Dsl:compile(DSL)を呼び出し、アドレスリスト(Box<(u64, u32)>)を保持し、トラバーサルによってメモリ位置群を取得する | `toraverse()` |
+| Context  | operates state data following manifest YAMLs | `toraverse()` |
 
 - provided modules (library provided)
   1. State
