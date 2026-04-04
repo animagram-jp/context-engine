@@ -1,0 +1,82 @@
+session:
+  user:
+    _load:
+      client: tenant_db
+      key: users.id.${session.user.id}
+    id:
+      _load:
+        client: http_request
+        key: authorization.user
+    password_hash:
+      _load:
+        client: tenant_db
+        key: users.id.${session.user.id}
+        secondary_key: password_hash
+    tenant:
+      _load:
+        client: common_db
+        key: tenants.id.${session.user.tenant.id}
+      id:
+        _load:
+          client: http_request
+          key: authorization.tenant
+      code:
+        _load: 
+          secondary_key: code
+        _store:
+          client: redis
+      name:
+        _load: 
+          secondary_key: name
+      email:
+        _load: 
+          secondary_key: email
+      locale:
+        _load: 
+          secondary_key: locale
+      allowed_ips:
+        _load: 
+          secondary_key: allowed_ips
+    is_manager:
+      _load: 
+        secondary_key: is_manager
+    name:
+      _load: 
+          secondary_key: name
+    email:
+      _load: 
+          secondary_key: email
+    preference:
+      color-mode:
+      _load: 
+          secondary_key: preference.color-mode      
+
+common_db:
+  _load:
+    client: env
+  host:
+    _load:
+      key: host
+  port:
+    _load:
+      key: port
+  driver: postgres
+  charset: UTF8
+
+tenant_db:
+  _load:
+    client:common_db
+    key: tenants.id.${session.user.tenant.id}
+    
+  host:
+    _load:
+      secondary_key: host
+  port:
+    _load:
+      secondary_key: port
+  username:
+    _load:
+      secondary_key: username
+  password:
+    _load:
+      secondary_key: password

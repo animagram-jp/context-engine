@@ -1,32 +1,20 @@
 # state-engine
 
-プロセスのための宣言的なステートデータ管理システムです。
-プロセス上でステートデータを構造化し、開発者が定義するストアAPIを使って同期可能な状態を保ちます。
-YAML DSLで記述された定義に従って振る舞います。
-
-- YAML manifestによる複雑なステートライフサイクルの自動化
-- 中間表を必要としないマルチテナントDbアプリケーション
-- [## background](#background)記載の再定義されたwebアーキテクチャに基づいて構築
+webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。state-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このOSSは、[## background](#background)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
 
 ## background
 
 **webシステムの構成再定義**
 
-- computer: (ネットワーク通信機能を要する)コンピューター。
-- server: 人間(ユーザー)に奉仕するcomputer
-- orchestrator: webシステムを構成するcomputerのうち、システム内部の維持を管理するもの(optional)
-- database: 明示的に削除されるまでデータを維持し、terminalやconductorにCRUDを受け付けるserver
-- terminal: 人間が直接触るインターフェースを提供するserver. 「端末」
-- conductor: databaseとterminalに対してそれぞれ通信し、二者の同期状態を維持するserver(optional)
+人々の営みの動作の一部を、ネットワーク機能を持ったコンピューターのデータ処理で代替えすることで、その間の検証可能性の保証と、物理的制約の緩和などの恩恵を受けることができる。これを実現する、ハードウェアを通して電気信号として入力を受け取り、処理後、所定のハードウェア群に出力する仕組みのことを、webシステムと呼ぶ。webシステムの実現には、第一に、システムに必要な概念体系を、人間言語とコンピューターのビット列それぞれで定義することが必要である。
 
 ```yaml
-# terms relationship
-computer:
-  orchestrator:
-  server:
-    database:
-    terminal:
-    conductor:
+# computers structure of web system
+computer:       "(ネットワーク通信機能を要する)コンピューター"
+  server:       "人間(ユーザー・開発者)に処理能力を提供する"
+    fixture:    "継続的な待機により、ネットワーク機能を提供する"
+    terminal:   "人間とのインターフェースを提供する。端末。"
+  orchestrator: "サーバー群の維持を管理する(optional)"
 ```
 
 ## Architecture

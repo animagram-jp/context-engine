@@ -1,12 +1,6 @@
 # state-engine
 
-Declarative state data management system for a process. 
-Structures state data on process and keeps it syncable using your store clients.
-It behaves as described in YAML DSL.
-
-- Automates complex state lifecycles through developer-defined YAML manifests.
-- Enables multi-tenant DB apps without junction tables.
-- Built on a reimagined web architecture (see [## Background](#Background)).
+Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). state-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This OSS is positioned as the foundational technology for the reconstructed web system architecture described in ## background.
 
 - [also README(patch translation for ja-JP )](./docs/ja/README.md)
 
@@ -29,22 +23,18 @@ It behaves as described in YAML DSL.
 **Before:**
 ```Rust
 // Manual cache management
-let cache_key = format!("user:{}", id);
-let user = redis.get(&cache_key).or_else(|| {
+let session_key = format!("user:{}", id);
+let user = redis.get(&session_key).or_else(|| {
     let user = db.query("SELECT * FROM users WHERE id=?", id)?;
-    redis.set(&cache_key, &user, 3600);
+    redis.set(&session_key, &user, 3600);
     Some(user)
 })?;
 ```
 
 **After:**
 ```Rust
-let user = state.get("cache.user")?;
+let user = state.get("session.user")?;
 ```
-
-- ✅ Multi-tenant DB without junction tables 
-- ✅ Automatic KVS/DB synchronization 
-- ✅ No manual cache invalidation 
 
 ## Installation
 
@@ -70,7 +60,6 @@ session:
   _load:
     client: InMemory
     key: "request-header-user-key"
-
 
 user:
   _store:
@@ -98,11 +87,11 @@ user:
 | Interface | expected store | fn | sample |
 |-----------|----------------|-----|--------|
 | `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
+| `FileClient` | File I/O | as above | [DefaultFileClient](./src/ports/default.rs) |
 | `EnvClient` | Environment Variables |  as above | [EnvAdapter](./examples/adapters/env_client.rs) |
 | `KVSClient` | Key-Vlue Store | as above | [KVSAdapter](./examples/adapters/kvs_client.rs) |
 | `DbClient` | SQL Database | as above | [DbAdapter](./examples/adapters/db_client.rs) |
 | `HttpClient` | Http Request | as above | [HttpAdapter](./examples/adapters/http_client.rs) |
-| `FileClient` | File I/O | as above | [DefaultFileClient](./src/ports/default.rs) |
 
 - FileClient.get is always used by State to read manifest YAMLs.
 - It's not essential to implement all *Client.
@@ -144,7 +133,7 @@ Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 ┌─────────────────────────────────────┐
 │    Required Ports (App Adapters)    │
 ├─────────────────────────────────────┤
-│  InMemory / KVS / DB / HTTP / File  │
+│  InMemory / File / KVS / DB / HTTP  │
 └─────────────────────────────────────┘
         ▲
         │ implement
@@ -156,10 +145,9 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 ## tree
 
 ```
-./
-  README.md
+state-egnine/
+  README.md           # this
   Cargo.toml
-
   docs/               # guides
     en/
       Architecture.md
@@ -168,13 +156,12 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       README.md
       Architecture.md
       YAML-guide.md
-
   src/
   examples/
     manifest/         # manifest YAML examples
-      connection.yml  # sample 1
-      cache.yml       # sample 2
-      session.yml     # sample 3
+      connection.yml
+      cache.yml
+      session.yml
     adapters/
     app/
       docker-compose.yml
@@ -182,17 +169,17 @@ see for details [Architecture.md](./docs/en/Architecture.md)
       Dockerfile
       db/
       src/
-        main.rs
-        adapters.rs
 ```
 
-## tests
+## test
 
-unit tests, intergeration tests on example app (docker compose) passed
+Unit tests and integration tests on docker compose
 
 ```bash
+# unit test
 cargo test --features=logging -- --nocapture
 
+# integration tests
 cd examples/app && ./run.sh
 ```
 
@@ -200,15 +187,17 @@ cd examples/app && ./run.sh
 
 **reimagined web architecture**
 
+By substituting a portion of human activities with data processing on network-capable computers, we gain benefits such as assurance of verifiability and reduction of physical constraints. The mechanism that realizes this — receiving input as electrical signals through hardware, processing it, and outputting to designated hardware — is called a web system. To realize a web system, it is first necessary to define the conceptual framework it requires in both human language and the language of computer.
+
 ```yaml
-computer: "A network-capable node in the system."
-  orchestrator: "A computer responsible for internal system coordination and maintenance. (optional)"
-  server: "A computer that serves human users."
-    database: "A server that persists data without an inherent expiration and accepts CRUD operations."
-    terminal: "A server that provides a direct human-facing interface."
-    conductor: "A server that communicates independently with both a database and terminals, and keeps state data syncable between them. (optional)"
+# computers structure of web system
+computer:       "Network-capable nodes in the system."
+  server:       "Computers that serves human users."
+    fixture:    "Servers that provides continuous network."
+    terminal:   "Servers that provides human interfaces."
+  orchestrator: "Computers responsible for maintenance of servers. (optional)"
 ```
 
 ## License
 
-MIT
+Apache-2.0
