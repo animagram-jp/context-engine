@@ -1,16 +1,16 @@
 # state-engine
 
-Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). state-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This OSS is positioned as the foundational technology for the reconstructed web system architecture described in ## background.
+Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). state-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This OSS is positioned as the foundational technology for the reconstructed web system architecture described in [## background](#background).
 
-- [also README(patch translation for ja-JP )](./docs/ja/README.md)
+- [original text(ja)](#original-text-ja)
 
 ## Version
 
-| Version | Status  | Date | description |
-|---------|---------|------|-------------|
-| 0.1   | Released  | 2026-2-12 | initial |
-| 0.1.5 | Current   | 2026-3-21  | improve #43 |
-| 0.1.6 | Scheduled  | 2026-4-5 | improve #49 #50 |
+| Version | Status    | Date      | Description |
+|---------|-----------|-----------|-------------|
+| 0.1     | Released  | 2026-2-12 | initial |
+| 0.1.5   | Current   | 2026-3-21 | improve #43 |
+| 0.1.6   | Scheduled | 2026-4-5  | improve #49 #50 |
 
 ## Provided Functions
 
@@ -49,95 +49,64 @@ state-engine = "0.1"
 1. Write a yaml file.
 
 ```yaml
-# manifest/example.yml
 session:
-  user-key:
-  _state:
-    type: integer
-  _store:
-    client: InMemory
-    key: "request-attributes-user-key"
-  _load:
-    client: InMemory
-    key: "request-header-user-key"
-
-user:
-  _store:
-    client: KVS
-    key: "user:${example.session.user-key}"
-  _load:
-    client: Db
-    table: "users"
-    where: "id=${example.session.user-key}"
-    map:
-      name: "name"
-  name:
-    _state:
-      type: string
+  user:
+    id:
+      _load:
+        client: Memory
+        key: "request.authorization.user.id"
+    name:
+      _load:
+        client: Db
+        key: "users.${session.user.id}.name"
 ```
 
-| case | sample |
-|------|--------|
-| cache in KVS | [cache.yml](./examples/manifest/cache.yml) |
-| database connection config | [connection.yml](./examples/manifest/connection.yml) |
-| request scope | [session.yml](./examples/manifest/session.yml) |
+| case              | example |
+|-------------------|--------|
+| multi-tenant app  | [tenant.yml](./examples/manifest.yml) |
 
-2. Implement some Required Ports for your stores.
+2. Implement some required ports for your stores.
 
-| Interface | expected store | fn | sample |
-|-----------|----------------|-----|--------|
-| `InMemoryClient` | Local Process Memory | `get()` / `set()` / `delete()` | [InMemoryAdapter](./examples/adapters/in_memory.rs) |
-| `FileClient` | File I/O | as above | [DefaultFileClient](./src/ports/default.rs) |
-| `EnvClient` | Environment Variables |  as above | [EnvAdapter](./examples/adapters/env_client.rs) |
-| `KVSClient` | Key-Vlue Store | as above | [KVSAdapter](./examples/adapters/kvs_client.rs) |
-| `DbClient` | SQL Database | as above | [DbAdapter](./examples/adapters/db_client.rs) |
-| `HttpClient` | Http Request | as above | [HttpAdapter](./examples/adapters/http_client.rs) |
+| Trait         | fn                         | example |
+|---------------|----------------------------|---------|
+| `StoreClient` | `get()` `set()` `delete()` | [implements.rs](./examples/implements.rs) |
 
-- FileClient.get is always used by State to read manifest YAMLs.
-- It's not essential to implement all *Client.
-
-3. Initialize State with your adapters and use it.
+3. Initialize Manifest, Store Clients and State.
 
 ```rust
+use state_engine::Manifest;
 use state_engine::State;
 use std::sync::Arc;
 
-// Create adapter instances
-let in_memory = Arc::new(InMemoryAdapter::new());
-let kvs = Arc::new(KVSAdapter::new()?);
-let db = Arc::new(DbAdapter::new()?);
+let memory = Arc::new(MemoryImpl::new());
+let db     = Arc::new(DbImpl::new()?);
 
-// Build State with adapters
-let mut state = State::new("./manifest")
-    .with_in_memory(in_memory)
-    .with_kvs(kvs)
+let manifest = Manifest::new()
+
+let mut state = State::new()
+    .with_memory(memory)
     .with_db(db);
 
 // Use state-engine
-let user = state.get("example.user.name")?;
+let user_name = state.get("session.user.name")?;
 ```
-
-Full working example: [examples/app/src/main.rs](./examples/app/src/main.rs)
 
 ## Architecture
 
 ```
-  manifestDir/*.yml
-         │ read via FileClient
-         ▼
-┌─────────────────────────────────────┐
-│           State (Public API)        │
-└───────┬─────────────────────────────┘
-        │ depends on
-        ▼
-┌─────────────────────────────────────┐
-│    Required Ports (App Adapters)    │
-├─────────────────────────────────────┤
-│  InMemory / File / KVS / DB / HTTP  │
-└─────────────────────────────────────┘
-        ▲
-        │ implement
-  Application
+┌─────────────┐       ┌────────────────────────────────┐
+│ DSL YAMLs   │------>│ Manifest (app global instance) │
+└─────────────┘compile└───────────┬────────────────────┘
+                                  │
+                                  ▼
+┌─────────────┐       ┌────────────────────────────────┐
+│ Application │<------│ State (request scope instance) │
+└─────────────┘provide└────────────────────────────────┘
+                                  ▲
+                                  │
+┌─────────────┐       ┌───────────┴────────────────────┐
+│ Implements  │------>│ Store Clients (Required Ports) │
+└─────────────┘ impl  └────────────────────────────────┘
 ```
 
 see for details [Architecture.md](./docs/en/Architecture.md)
@@ -148,39 +117,26 @@ see for details [Architecture.md](./docs/en/Architecture.md)
 state-egnine/
   README.md           # this
   Cargo.toml
-  docs/               # guides
-    en/
-      Architecture.md
-      YAML-guide.md
-    ja/
-      README.md
-      Architecture.md
-      YAML-guide.md
+  docs/
+    DSL_guide.md
+    Architecture.md
+
   src/
+    ports/
+
   examples/
-    manifest/         # manifest YAML examples
-      connection.yml
-      cache.yml
-      session.yml
-    adapters/
+    manifest.yml
+    implements.rs
     app/
-      docker-compose.yml
-      Cargo.toml
-      Dockerfile
-      db/
-      src/
 ```
 
-## test
+## Test
 
-Unit tests and integration tests on docker compose
+Passed unit and integration tests
 
 ```bash
 # unit test
 cargo test --features=logging -- --nocapture
-
-# integration tests
-cd examples/app && ./run.sh
 ```
 
 ## Background
@@ -201,3 +157,24 @@ computer:       "Network-capable nodes in the system."
 ## License
 
 Apache-2.0
+
+---
+
+## Original Text (ja)
+
+webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。state-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このOSSは、[## background](#background)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
+
+### 背景
+
+**webシステムの構成再定義**
+
+人々の営みの動作の一部を、ネットワーク機能を持ったコンピューターのデータ処理で代替えすることで、その間の検証可能性の保証と、物理的制約の緩和などの恩恵を受けることができる。これを実現する、ハードウェアを通して電気信号として入力を受け取り、処理後、所定のハードウェア群に出力する仕組みのことを、webシステムと呼ぶ。webシステムの実現には、第一に、システムに必要な概念体系を、人間言語とコンピューターのビット列それぞれで定義することが必要である。
+
+```yaml
+# computers structure of web system
+computer:       "(ネットワーク通信機能を要する)コンピューター"
+  server:       "人間(ユーザー・開発者)に処理能力を提供する"
+    fixture:    "継続的な待機により、ネットワーク機能を提供する"
+    terminal:   "人間とのインターフェースを提供する。端末。"
+  orchestrator: "サーバー群の維持を管理する(optional)"
+```

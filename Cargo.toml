@@ -14,8 +14,8 @@ categories = ["caching", "data-structures", "web-programming"]
 exclude = ["examples/*"]
 
 [dependencies]
-serde_yaml_ng = "0.10"
 log = { version = "0.4", optional = true }
+serde_yaml_ng = { version = "0.10", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11"
@@ -24,3 +24,4 @@ ctor = "0.2"
 [features]
 default = []
 logging = ["log"]
+builder   = ["serde_yaml_ng"]
