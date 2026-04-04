@@ -10,7 +10,7 @@ Data labels used by a web system's runtime within a single processing cycle shou
 |---------|-----------|-----------|-------------|
 | 0.1     | Released  | 2026-2-12 | initial |
 | 0.1.5   | Current   | 2026-3-21 | improve #43 |
-| 0.1.6   | Scheduled | 2026-4    | rename crate |
+| 0.1.6-alpha.1 | Alpha Release | 2026-4-5  | rename crate |
 
 ## Provided Functions
 
