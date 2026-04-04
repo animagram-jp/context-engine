@@ -9,8 +9,8 @@ license = "MIT"
 repository = "https://github.com/animagram-jp/context-engine"
 homepage = "https://github.com/animagram-jp/"
 readme = "README.md"
-keywords = ["web", "addressing-management", "declarative", "dsl"]
-categories = ["web-system", "core-library", "addressing"]
+keywords = ["context", "namespace", "yaml", "addressing"]
+categories = ["config", "data-structures", "template-engine", "parser-implementations", "web-programming"]
 exclude = ["examples/*"]
 
 [dependencies]
