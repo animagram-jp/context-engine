@@ -65,27 +65,21 @@ session:
 |-------------------|--------|
 | multi-tenant app  | [tenant.yml](./examples/manifest.yml) |
 
-2. Implement some required ports for your stores.
+2. Implement `StoreClient` and `StoreRegistry` for your stores.
 
-| Trait         | fn                         | example |
-|---------------|----------------------------|---------|
-| `StoreClient` | `get()` `set()` `delete()` | [implements.rs](./examples/implements.rs) |
+| Trait           | description                              | example |
+|-----------------|------------------------------------------|---------|
+| `StoreClient`   | `get()` `set()` `delete()` per store     | [implements.rs](./examples/implements.rs) |
+| `StoreRegistry` | maps YAML client names to `StoreClient`s | [implements.rs](./examples/implements.rs) |
 
-3. Initialize Manifest, Store Clients and State.
+3. Initialize State with your registry.
 
 ```rust
-use context_engine::Manifest;
 use context_engine::State;
-use std::sync::Arc;
 
-let memory = Arc::new(MemoryImpl::new());
-let db     = Arc::new(DbImpl::new()?);
+let stores = MyStores::new()?;
 
-let manifest = Manifest::new()
-
-let mut state = State::new()
-    .with_memory(memory)
-    .with_db(db);
+let mut state = State::new(stores);
 
 // Use context-engine
 let user_name = state.get("session.user.name")?;
@@ -105,11 +99,11 @@ let user_name = state.get("session.user.name")?;
                                   ▲
                                   │
 ┌─────────────┐       ┌───────────┴────────────────────┐
-│ Implements  │------>│ Store Clients (Required Ports) │
+│ Implements  │------>│ StoreRegistry (Required Port)  │
 └─────────────┘ impl  └────────────────────────────────┘
 ```
 
-see for details [Architecture.md](./docs/en/Architecture.md)
+see for details [Architecture.md](./docs/Architecture.md)
 
 ## tree
 
