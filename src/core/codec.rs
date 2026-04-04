@@ -13,7 +13,6 @@ pub fn root_encode(s: &[u8]) -> u64 {
         .unwrap_or(fixed_bits::ROOT_NULL)
 }
 
-
 pub const CLIENT_NAMES: &[(&[u8], u64)] = &[
     (b"State",    fixed_bits::CLIENT_STATE),
     (b"InMemory", fixed_bits::CLIENT_IN_MEMORY),
@@ -30,7 +29,6 @@ pub fn client_encode(s: &[u8]) -> u64 {
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::CLIENT_NULL)
 }
-
 
 pub const PROP_NAMES: &[(&[u8], u64)] = &[
     (b"type",       fixed_bits::PROP_TYPE),
@@ -51,7 +49,6 @@ pub fn prop_encode(s: &[u8]) -> u64 {
         .unwrap_or(fixed_bits::PROP_NULL)
 }
 
-
 pub const TYPE_NAMES: &[(&[u8], u64)] = &[
     (b"integer",  fixed_bits::TYPE_I64),
     (b"string",   fixed_bits::TYPE_UTF8),
@@ -66,7 +63,6 @@ pub fn type_encode(s: &[u8]) -> u64 {
         .map(|(_, v)| *v)
         .unwrap_or(fixed_bits::TYPE_NULL)
 }
-
 
 #[cfg(test)]
 mod tests {
