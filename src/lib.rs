@@ -12,3 +12,4 @@ pub use ports::provided::{
     Context,
 };
 pub use ports::required::{StoreClient, StoreRegistry, SetOutcome};
+pub use ports::codec::{encode, decode};

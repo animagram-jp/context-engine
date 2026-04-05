@@ -1,13 +1,17 @@
 session:
   user:
+    _store:
+      client: Kvs
+      ttl:    3600 # seconds
+      
     id:
       _load:
         client: Memory
         key:    "request.authorization.user"
 
     _load:
-      client: TenantDb
-      key:    "users.id.${session.user.id}"
+      client:     TenantDb
+      key:        "users.id.${session.user.id}"
       connection: ${connection.tenant_db}
       map:
         password_hash:         "password_hash"
@@ -22,6 +26,7 @@ session:
     is_manager:
     preference:
       color_mode:
+    name_copy: ${session.user.name}
 
     tenant:
       id:
@@ -29,9 +34,9 @@ session:
           client: Memory
           key:    "request.authorization.tenant"
       _load:
-        client: CommonDb
-        connection: ${connection.common_db}
-        key:    "tenants.id.${session.user.tenant.id}"
+        client:       CommonDb
+        connection:   ${connection.common_db}
+        key:          "tenants.id.${session.user.tenant.id}"
         map:
           code:        "code"
           name:        "name"
@@ -52,11 +57,13 @@ connection:
       map:
         host:     "COMMON_DB_HOST"
         port:     "COMMON_DB_PORT"
+        database: "COMMON_DB_DATABASE"
         username: "COMMON_DB_USERNAME"
         password: "COMMON_DB_PASSWORD"
 
     host:
     port:
+    database:
     username:
     password:
     driver:  "postgres"
@@ -70,8 +77,12 @@ connection:
       map:
         host:     "host"
         port:     "port"
+        database: "database"
         username: "username"
         password: "password"
+    _store:
+      client: Kvs
+      ttl:    36000 # seconds
         
     host:
     port:

@@ -1,352 +1,113 @@
 # DSL guide
 
-## terms
+## 用語
 
-- `meta keys`: keys prefixed with `_`, along with all keys nested beneath them
-- `field keys`: keys that are not meta keys
-- `leaf keys`: keys that hold a value instead of child keys
-- `value`: a leaf key's value; equals null when omitted in YAML
-- `path`: dot-separated key names leading from a start key to the target key
-- `qualified path`: a path starting with `filename.`, uniquely identifying a key across all files
-- `placeholder`: notation in the form `${path}` that references the result of `State::get()` for the specified key
-- `template`: notation that embeds one or more placeholders into a string, such as `"user:${user_id}"`
+```
+key:            n層マップDSLの最末端value以外の要素
+keyword:        keyの名前文字列
+field_key:      自身と親祖先のkeywordが'_'で始まらないkey
+meta_key:       keywordが'_'始まりのkeyと、その子孫key
+leaf_key:       子にkeyを持たず値を持つkey
+value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
+path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
+qualified_path: DSL内で一意な完全修飾パス
+placeholder:    key参照記述("${path}")。valueのみに適用。
+                単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
+template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。
+                is_template=trueとして扱い、解決時にstring化する
+called_path:    Context.get()等に渡されるパス文字列
+```
 
-## rules
+## Rules
 
 - YAML document separators (`---`) are not supported
-- `placeholder` and `template` are only valid inside values
+- `${}` (placeholder / template) are only valid inside values
 
 ## Basic Structure
 
 ```yaml
 field_key:
-  _state: # Data type definition (optional)
-  _store: # Where to save (required at root, inherited by children)
+  _store: # Where to save (inherited by descendants, overridable)
   _load:  # Where to load from (optional)
+  child_key:
+    # inherits _store from parent
 ```
 
 ## Core Concepts
 
-### 1. meta key inheritance
+### 1. meta_key Inheritance
 
-Each field key inherits parent's meta keys, and can override:
+Each field_key inherits parent meta_keys and can override individual fields:
 
 ```yaml
 _store:
-  client: KVS
+  client: Kvs
   key: "root:${id}"
 
 user:
   _store:
-    key: "user:${sso_user_id}"  # Override only key, inherit client: KVS
+    key: "user:${user_id}"  # overrides key only; client: Kvs inherited
 
-  tenant_id:
-    # Inherits _store from parent (client: KVS, key: user:${sso_user_id})
+  name:
+    # inherits _store: { client: Kvs, key: "user:${user_id}" }
 ```
 
-### 2. Placeholder Resolution
+`_store` inheritance rule: child's `_store` fields overwrite matching keys; unspecified fields are inherited as-is.
 
-State engine resolves `${...}` by calling `State::get()`:
+### 2. Placeholder / Template
+
+`${}` paths are qualified to absolute paths at parse time.
+
+**Qualify rule (`qualify_path()`):**
+- No `.` → relative; converted to `filename.ancestors.keyword` at parse time
+- Contains `.` → treated as absolute, used as-is
 
 ```yaml
-tenant:
-  _load:
-    table: "tenants"
-    where: "id=${user.tenant_id}"  # → State::get("user.tenant_id")
+# Inside tenant.yml under session.user._load
+key: "${session.user.id}"     # absolute — used as-is
+key: "${id}"                  # relative → tenant.session.user.id
 ```
 
-**Placeholder shorthand:**
+**is_template:**
+- `${path}` alone → `is_template=false`。値をそのままコピー（string化しない）
+- `"prefix:${path}"` etc. → `is_template=true`。全placeholderをContext.get()で解決しstring結合
 
-Whether a path is absolute or relative is determined by whether it contains `.`:
+### 3. _store / _load args
 
-- No `.` → relative path, automatically qualified to `filename.ancestors.path` at parse time
-- Contains `.` → treated as absolute path, used as-is
-
-```yaml
-# Inside user.tenant_id in cache.yml
-key: "${org_id}"            # → cache.user.org_id (relative)
-key: "${cache.user.org_id}" # → cache.user.org_id (absolute, same result)
-key: "${session.sso_user_id}" # → session.sso_user_id (cross-file reference)
-```
-
-**Limitation:** The shorthand (relative path) cannot contain `.`, so to reference a child of a sibling node, use a fully qualified path:
-
-```yaml
-# NG: treated as absolute path, KeyNotFound (no filename prefix)
-key: "${user.id}"       # → State::get("user.id")
-
-# OK: use fully qualified path
-key: "${cache.user.id}" # → State::get("cache.user.id")
-```
-
-### 3. Client Types
-
-**For _store** (where to save):
-```yaml
-_store:
-  client: InMemory  # Process memory
-  client: KVS       # Redis, Memcached
-  client: HTTP      # HTTP endpoint
-```
-
-**For _load** (where to load from):
-```yaml
-_load:
-  client: State     # Reference another State key
-  client: InMemory  # Process memory
-  client: Env       # Environment variables
-  client: KVS       # Redis, Memcached
-  client: Db        # Database
-  client: HTTP      # HTTP endpoint
-```
-
-You must implement an adapter for each client you use (see Required Ports).
-
-#### Client-Specific Parameters
-
-**_store.client: InMemory**
-```yaml
-_store:
-  client: InMemory
-  key: "session:${token}"            # (string) Storage key (placeholders allowed)
-```
-
-**_load.client: Env**
-```yaml
-_load:
-  client: Env
-  map:                               # (object, required) Environment variable mapping
-    yaml_key: "ENV_VAR_NAME"
-```
-
-**_load.client: State**
-```yaml
-_load:
-  client: State
-  key: "${org_id}"                   # (string) Reference to another state key
-```
-
-**_store.client: KVS**
-```yaml
-_store:
-  client: KVS
-  key: "user:${id}"                  # (string) Storage key (placeholders allowed)
-  ttl: 3600                          # (integer, optional) TTL in seconds
-```
-
-**_load.client: Db**
-```yaml
-_load:
-  client: Db
-  connection: ${connection.tenant}  # (Value) Connection config object or reference
-  table: "users"                    # (string) Table name
-  where: "id=${user.id}"            # (string, optional) WHERE clause
-  map:                               # (object, required) Column mapping
-    yaml_key: "db_column"
-```
-
-**_store.client: HTTP / _load.client: HTTP**
-```yaml
-_store:
-  client: HTTP
-  url: "https://api.example.com/state/${id}"  # (string) Endpoint URL (placeholders allowed)
-  headers:                                     # (object, optional) Request headers
-    Authorization: "Bearer ${token}"
-
-_load:
-  client: HTTP
-  url: "https://api.example.com/data/${id}"   # (string) Endpoint URL (placeholders allowed)
-  headers:                                     # (object, optional) Request headers
-    Authorization: "Bearer ${token}"
-  map:                                         # (object, optional) Field extraction from response
-    yaml_key: "response_field"
-```
-
-## State Methods
-
-**State::get(key)** -> `Result<Option<Value>, StateError>`
-- Retrieves value from instance cache / store
-- Triggers auto-load on miss if `_load` is defined
-- Returns `Ok(Some(value))` on hit, `Ok(None)` on miss with no load, `Err` on error
-
-**State::set(key, value, ttl)** -> `Result<bool, StateError>`
-- Saves value to persistent store and instance cache
-- Does NOT trigger auto-load
-- TTL parameter is optional (KVS only)
-
-**State::delete(key)** -> `Result<bool, StateError>`
-- Removes key from both persistent store and instance cache
-- Key will show as miss after deletion
-
-**State::exists(key)** -> `Result<bool, StateError>`
-- Checks if key exists without triggering auto-load
-- Returns `Ok(true/false)`
-- Lightweight existence check for conditional logic
-
----
-
-## Original Text (ja)
-
-### 用語
-
-- `meta keys`: `_`で始まるkey及び、それ以下のkey群
-- `field keys`: `meta keys`では無いkey群
-- `leaf keys`: 子keyを持たず値を持つkey群
-- `value`: leaf keysの値。YAML内で省略された場合はnullが入る
-- `path`: 出発keyから対象keyまで、`.`区切りでkey名を並べたパス表現
-- `qualified path`: 出発keyを対象keyの記述された`filename.`とした、一意な完全修飾パス
-- `placeholder`: ${path}の形で、指定keyのState.get()の結果を参照する記述形式
-- `template`: "user${user_id}"の様に、placeholderを文字列に埋め込む記述形式
-
-### rule
-
-- `---`によるYAML区切りは使用不可
-- `placeholder`, `template`はvalue内のみで使用可能
-
-### 基本構造
-
-```yaml
-field_key:
-  _state: # ステートのメタデータ(オプション)
-  _store: # 保存先メタデータ (ファイルルートキーで必須, 子孫キーへ継承)
-  _load:  # 自動ロード元メタデータ (オプション)
-```
-
-### コアコンセプト
-
-### 1. meta key 継承
-
-Each field key inherit parent's meta keys, and can override:
+`client:` 以外の全フィールドはimplementor定義の任意args。ライブラリは関知しない。
 
 ```yaml
 _store:
-  client: KVS
-  key: "root:${id}"
-
-user:
-  _store:
-    key: "user:${sso_user_id}"  # キーが上書きされる, client: KVSは継承
-
-  tenant_id:
-    # client: KVS, key: user:${sso_user_id}を継承
-```
-
-#### 2. placeholder 解決
-
-State engineは`${...}`を`State::get()`呼び出しで解決します:
-
-```yaml
-tenant:
-  _load:
-    table: "tenants"
-    where: "id=${user.tenant_id}"  # → State::get("user.tenant_id")
-```
-
-**placeholderの省略記法:**
-
-Manifestは`${tenant_id}`を`${cache.user.tenant_id}`（絶対パス）に変換します。
-
-`${path}` のパスは、`.` を含むかどうかで絶対/相対が決まります:
-
-- `.` を含まない → 相対パス。parse時に `filename.ancestors.path` へ自動修飾
-- `.` を含む → 絶対パスとみなし、そのまま使用
-
-```yaml
-# cache.yml の user.tenant_id 内
-key: "${org_id}"           # → cache.user.org_id（相対）
-key: "${cache.user.org_id}" # → cache.user.org_id（絶対、同じ結果）
-key: "${session.sso_user_id}" # → session.sso_user_id（別ファイル参照）
-```
-
-**制約:** 省略記法（相対パス）では `.` を使えないため、兄弟ノードの子を参照する場合は完全修飾パスで記述してください。
-
-```yaml
-# NG: user.id と書くと絶対パスとみなされ、意図しない参照になる
-key: "${user.id}"       # → State::get("user.id") ← ファイル名なし、KeyNotFound
-
-# OK: 完全修飾パスで記述する
-key: "${cache.user.id}" # → State::get("cache.user.id")
-```
-
-#### 3. クライアント種別
-
-**_store用（保存先）:**
-```yaml
-_store:
-  client: InMemory  # プロセスメモリ
-  client: KVS       # Redis, Memcached等
-  client: HTTP      # HTTPエンドポイント
-```
-
-**_load用（読込元）:**
-```yaml
-_load:
-  client: State     # 別のStateキーを参照
-  client: InMemory  # プロセスメモリ
-  client: Env       # 環境変数
-  client: KVS       # Redis, Memcached等
-  client: Db        # データベース
-  client: HTTP      # HTTPエンドポイント
-```
-
-使用する各クライアントのアダプターを実装する必要があります（Required Ports参照）。
-
-##### クライアント固有のパラメータ
-
-**_store.client: InMemory**
-```yaml
-_store:
-  client: InMemory
-  key: "session:${token}"            # (string) ストレージキー（プレースホルダー可）
-```
-
-**_load.client: Env**
-```yaml
-_load:
-  client: Env
-  map:                               # (object, required) 環境変数マッピング
-    yaml_key: "ENV_VAR_NAME"
-```
-
-**_load.client: State**
-```yaml
-_load:
-  client: State
-  key: "${org_id}"                   # (string) 別のStateキーへの参照
-```
-
-**_store.client: KVS**
-```yaml
-_store:
-  client: KVS
-  key: "user:${id}"                  # (string) ストレージキー（プレースホルダー可）
-  ttl: 3600                          # (integer, optional) TTL（秒）
-```
-
-**_load.client: Db**
-```yaml
-_load:
-  client: Db
-  connection: ${connection.tenant}  # (Value) 接続設定オブジェクトまたは参照
-  table: "users"                    # (string) テーブル名
-  where: "id=${user.id}"            # (string, optional) WHERE句
-  map:                               # (object, required) カラムマッピング
-    yaml_key: "db_column"
-```
-
-**_store.client: HTTP / _load.client: HTTP**
-```yaml
-_store:
-  client: HTTP
-  url: "https://api.example.com/state/${id}"  # (string) エンドポイントURL
-  headers:                                     # (object, optional) リクエストヘッダー
-    Authorization: "Bearer ${token}"
+  client: Kvs
+  key:    "user:${user.id}"  # reserved
+  ttl:    3600               # implementor-defined
 
 _load:
-  client: HTTP
-  url: "https://api.example.com/data/${id}"   # (string) エンドポイントURL
-  headers:                                     # (object, optional) リクエストヘッダー
-    Authorization: "Bearer ${token}"
-  map:                                         # (object, optional) レスポンスからのフィールド抽出
-    yaml_key: "response_field"
+  client:     TenantDb
+  key:        "users.id.${session.user.id}"  # reserved
+  connection: ${connection.tenant_db}        # implementor-defined
+  map:
+    name:  "name"
+    email: "email"
 ```
+
+`key:` は予約引数。それ以外はimplementorが`args: &HashMap<&str, Tree>`から取り出して使う。
+
+### 4. map
+
+`_load.map:` でparent field_keyの子fieldにDB列等をマッピングする。
+
+```yaml
+session:
+  user:
+    _load:
+      client: TenantDb
+      key:    "users.id.${session.user.id}"
+      map:
+        name:  "name"
+        email: "email"
+    name:
+    email:
+```
+
+map対象のfield_keyは別途leaf宣言が必要。

@@ -109,19 +109,27 @@ see for details [Architecture.md](./docs/Architecture.md)
 
 ```
 ./
-  README.md           # this
+  README.md
   Cargo.toml
   docs/
-    Dsl_guide.md
     Architecture.md
-
+    Dsl_guide.md
   src/
+    lib.rs
+    context.rs
+    dsl.rs
+    index.rs
+    tree.rs
+    log_format.rs
+    codec.rs
+    ports.rs
     ports/
-
+      provided.rs
+      required.rs
+    unused/            # reference: old implementation
   examples/
-    manifest.yml
+    tenant.yml
     implements.rs
-    app/
 ```
 
 ## Test

@@ -56,8 +56,8 @@ leaf_key: 子にkeyを持たず値を持つkey
 value: leaf keysの値。DSL内で省略された場合はnullが充てられる
 path: 単一のfield_keyを表す、'.'区切りkeywordのチェーン
 qualified_path: DSL内で一意な完全修飾パス
-placeholder: key参照記述("${path}")。valueのみに適用
-template: placeholderと静的な文字列を混合した、動的生成テンプレート。valueのみに適用
+placeholder: key参照記述("${path}")。valueのみに適用。単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
+template: placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。is_template=trueとして扱い、解決時にstring化する
 called_path: Stateに渡されるパス文字列
 ```
 
@@ -114,7 +114,7 @@ impl StoreRegistry for MyStores {
 
 ---
 
-## Context Instance Cache
+## Instance Cache
 
 An instance-level cache separate from persistent stores.
 
@@ -144,8 +144,9 @@ qualify_path("tenant_id", "cache", ["user"])
 → "cache.user.tenant_id"
 ```
 
-**Placeholder resolution at State runtime (`resolve_value_to_string()`):**
-- Call `State::get(qualified_path)` to get the value
+**Placeholder resolution at runtime:**
+- `is_template=false`（単独 `${path}`）: `Context.get(qualified_path)` の値をそのままコピー（string化しない）
+- `is_template=true`（文字列混在）: 各placeholderを `Context.get()` で解決しstringとして結合
 
 ## error case
 
@@ -179,21 +180,19 @@ YAMLの`client:`文字列と`StoreClient`の対応を管理するtrait。利用�
 
 ## State
 
-### State::get("filename.node")
+### Context.get()
 
-指定されたノードが表すステートを参照し、値またはcollectionを返却する。
+指定されたノードが表す値群を参照し、値またはcollectionを返却する。
 
 戻り値: `Result<Option<Value>, StateError>`
 
 **動作フロー:**
-1. `called_keys` チェック（再帰・上限検出）
-2. `DefaultFileClient`経由でmanifestファイルをロード（未ロード時のみ）
-3. intern listをパス文字列で検索・トラバース → key位置を特定
-4. **state_values (インスタンスキャッシュ) をチェック** ← 最優先
-5. `core::Manifest::get_meta()` → MetaIndices 取得
-6. `_load.client == State` の場合はストアをスキップ。それ以外: `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
-7. **miss時、`Load::handle()` で自動ロード**
-8. `Ok(Some(value))` / `Ok(None)` / `Err(StateError)` を返却
+1. called チェック（再帰・上限検出）
+2. `Index::traverse()` 
+3. cache (インスタンスキャッシュ) をチェック
+4. `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
+5. **miss時、`Load::handle()` で自動ロード**
+6. `Ok(Some(value))` / `Ok(None)` / `Err(StateError)` を返却
 
 ## error case
 
