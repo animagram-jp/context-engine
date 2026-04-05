@@ -3,6 +3,7 @@ pub mod ports;
 pub mod context;
 pub mod tree;
 pub mod dsl;
+pub mod index;
 
 pub use log_format::LogFormat;
 pub use ports::provided::{
