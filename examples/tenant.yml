@@ -4,22 +4,24 @@ session:
       _load:
         client: Memory
         key:    "request.authorization.user"
+
     _load:
       client: TenantDb
       key:    "users.id.${session.user.id}"
-      config: ${tenant_db_config}
+      connection: ${connection.tenant_db}
       map:
         password_hash:         "password_hash"
         name:                  "name"
         email:                 "email"
         is_manager:            "is_manager"
         preference.color_mode: "color_mode"
+
     password_hash:
     name:
     email:
     is_manager:
     preference:
-      color-mode:  
+      color_mode:
 
     tenant:
       id:
@@ -28,7 +30,7 @@ session:
           key:    "request.authorization.tenant"
       _load:
         client: CommonDb
-        config: ${common_db_config}
+        connection: ${connection.common_db}
         key:    "tenants.id.${session.user.tenant.id}"
         map:
           code:        "code"
@@ -36,39 +38,44 @@ session:
           email:       "email"
           locale:      "locale"
           allowed_ips: "allowed_ips"
+
       code:
       name:
       email:
       locale:
       allowed_ips:
 
-common_db_config:
-  _load:
-    client: Env
-    map:
-      host:     "COMMON_DB_HOST"
-      port:     "COMMON_DB_PORT"
-      username: "COMMON_DB_USERNAME"
-      password: "COMMON_DB_PASSWORD"
-  host:
-  port:
-  username:
-  password:
-  driver:   "postgres"
-  charset:  "UTF8"
+connection:
+  common_db:
+    _load:
+      client: Env
+      map:
+        host:     "COMMON_DB_HOST"
+        port:     "COMMON_DB_PORT"
+        username: "COMMON_DB_USERNAME"
+        password: "COMMON_DB_PASSWORD"
 
-tenant_db_config:
-  _load:
-    client:     CommonDb
-    key:        "tenants.id.${session.user.tenant.id}"
-    map:
-      host:     "host"
-      port:     "port"
-      username: "username"
-      password: "password"
-  host:
-  port:
-  username:
-  password:
-  driver:   "postgres"
-  charset:  "UTF8"
+    host:
+    port:
+    username:
+    password:
+    driver:  "postgres"
+    charset: "UTF8"
+
+  tenant_db:
+    _load:
+      client:     CommonDb
+      connection: ${connection.common_db}
+      key:        "tenants.id.${session.user.tenant.id}"
+      map:
+        host:     "host"
+        port:     "port"
+        username: "username"
+        password: "password"
+        
+    host:
+    port:
+    username:
+    password:
+    driver:  "postgres"
+    charset: "UTF8"
