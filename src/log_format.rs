@@ -1,4 +1,4 @@
-use crate::ports::provided::Value;
+use crate::ports::provided::Tree;
 
 /// # Examples
 /// ```
@@ -15,30 +15,30 @@ impl LogFormat {
         format!("{}::{}({})", class, fn_name, args_str)
     }
 
-    /// Format Value for log output
+    /// Format Tree for log output
     ///
     /// # Examples
     /// ```
-    /// use state_engine::{LogFormat, Value};
+    /// use state_engine::{LogFormat, Tree};
     ///
-    /// assert_eq!(LogFormat::format_arg(&Value::Scalar(b"text".to_vec())), "'text'");
-    /// assert_eq!(LogFormat::format_arg(&Value::Null), "null");
-    /// assert_eq!(LogFormat::format_arg(&Value::Sequence(vec![])), "[]");
-    /// assert_eq!(LogFormat::format_arg(&Value::Mapping(vec![])), "{}");
-    /// assert_eq!(LogFormat::format_arg(&Value::Sequence(vec![Value::Null, Value::Null, Value::Null])), "[3 items]");
-    /// assert_eq!(LogFormat::format_arg(&Value::Mapping(vec![(b"a".to_vec(), Value::Null)])), "{1 fields}");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Scalar(b"text".to_vec())), "'text'");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Null), "null");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Sequence(vec![])), "[]");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Mapping(vec![])), "{}");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Sequence(vec![Tree::Null, Tree::Null, Tree::Null])), "[3 items]");
+    /// assert_eq!(LogFormat::format_arg(&Tree::Mapping(vec![(b"a".to_vec(), Tree::Null)])), "{1 fields}");
     /// ```
-    pub fn format_arg(value: &Value) -> String {
+    pub fn format_arg(value: &Tree) -> String {
         match value {
-            Value::Scalar(b) => {
+            Tree::Scalar(b) => {
                 let s = String::from_utf8_lossy(b);
                 if s.len() > 50 { format!("'{}'...", &s[..47]) } else { format!("'{}'", s) }
             }
-            Value::Sequence(arr) if arr.is_empty() => "[]".to_string(),
-            Value::Sequence(arr) => format!("[{} items]", arr.len()),
-            Value::Mapping(obj) if obj.is_empty() => "{}".to_string(),
-            Value::Mapping(obj) => format!("{{{} fields}}", obj.len()),
-            Value::Null => "null".to_string(),
+            Tree::Sequence(arr) if arr.is_empty() => "[]".to_string(),
+            Tree::Sequence(arr) => format!("[{} items]", arr.len()),
+            Tree::Mapping(obj) if obj.is_empty() => "{}".to_string(),
+            Tree::Mapping(obj) => format!("{{{} fields}}", obj.len()),
+            Tree::Null => "null".to_string(),
         }
     }
 
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_format_arg_long_string() {
         let long_str = "a".repeat(60);
-        let result = LogFormat::format_arg(&Value::Scalar(long_str.into_bytes()));
+        let result = LogFormat::format_arg(&Tree::Scalar(long_str.into_bytes()));
         assert!(result.starts_with("'aaa"));
         assert!(result.ends_with("'..."));
         assert_eq!(result.len(), 52);

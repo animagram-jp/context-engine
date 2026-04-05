@@ -1,66 +1,105 @@
+use crate::ports::provided::Tree;
+
+// ── client_idx constants (4bit, stored in leaves) ─────────────────────────────
+
+pub const CLIENT_NULL:  u8 = 0b0000;
+pub const CLIENT_STATE: u8 = 0b0001;
+
+// ── prop constants ────────────────────────────────────────────────────────────
+
+pub const PROP_NULL: u8 = 0b00;
+pub const PROP_KEY:  u8 = 0b01;
+pub const PROP_MAP:  u8 = 0b10;
+
+// ── path field masks (u64) ────────────────────────────────────────────────────
+//
+// | field   | bits  |
+// |---------|-------|
+// | is_leaf |     1 |
+// | offset  |    32 |
+// | count   |     8 | // is_leaf=0: [3:0]=子path数, [7:4]=unused
+// |         |       | // is_leaf=1: [7:4]=load_args count, [3:0]=store_args count
+// | padding |    23 |
+
+pub const PATH_IS_LEAF_SHIFT: u64 = 63;
+pub const PATH_OFFSET_SHIFT:  u64 = 23;
+pub const PATH_COUNT_SHIFT:   u64 = 15;
+
+pub const PATH_IS_LEAF_MASK: u64 = 0x1  << PATH_IS_LEAF_SHIFT;
+pub const PATH_OFFSET_MASK:  u64 = 0xffff_ffff << PATH_OFFSET_SHIFT;
+pub const PATH_COUNT_MASK:   u64 = 0xff << PATH_COUNT_SHIFT;
+
+// ── Dsl ───────────────────────────────────────────────────────────────────────
+
 pub struct Dsl {
-  paths:         Vec<[u64]> // 固定長pathリスト。[0]がroot
-  children:      Vec<[u32]> // 全pathの子path indexをフラットに連結
-  leaves:        Vec<[u8]>  // leafデータのバイト列（継承解決済み_load/_store情報）
-  interning:     Vec<[u8]>  // 文字列のバイト列をフラットに連結（変動長）予約・client以外のkeyword及び値全部。
-  interning_idx: Vec<[u64]> // offset + len interningのport用list
+    paths:         Box<[u64]>,
+    children:      Box<[u32]>,
+    leaves:        Box<[u8]>,
+    interning:     Box<[u8]>,
+    interning_idx: Box<[u64]>,
 }
 
 impl Dsl {
-  pub fn new(Vec<[u64]>, Vec<[u32]>, Vec<[u8]>, Vec<[u64]>) -> Self{
+    pub fn new(
+        paths:         Box<[u64]>,
+        children:      Box<[u32]>,
+        leaves:        Box<[u8]>,
+        interning:     Box<[u8]>,
+        interning_idx: Box<[u64]>,
+    ) -> Self {
+        Self { paths, children, leaves, interning, interning_idx }
+    }
 
-  };
-  pub fn compile(&Privided::Tree) -> Vec<[u64]>, Vec<[u32]>, Vec<[u8]>, Vec<[u64]>{
-    
-  };
+    pub fn compile(tree: &Tree) -> (
+        Box<[u64]>,
+        Box<[u32]>,
+        Box<[u8]>,
+        Box<[u8]>,
+        Box<[u64]>,
+    ) {
+        let mut compiler = Compiler::new();
+        compiler.walk(tree);
+        compiler.finish()
+    }
 }
-// Dsl::compile(Provided:Value);の出力
-//
-// paths:     Box<[u64]>     // 固定長pathリスト。[0]がroot
-// children:  Box<[u32]>     // 全pathの子path indexをフラットに連結
-// leaves:    Box<[u8]>      // leafデータのバイト列（継承解決済み_load/_store情報）
-// interning: Box<[u8]>      // 文字列のバイト列をフラットに連結（変動長）予約・client以外のkeyword及び値全部。
-// interning_idx: Box<[u64]> // offset + len interningのport用list
 
-// paths ([u64])
-//
-// | field      | bits |
-// |------------|------|
-// | is_leaf    |    1 |
-// | offset     |   32 |
-// | count      |    8 | // is_leaf=0: 下4bit=子path数(1~16), 上4bit unused
-// |            |      | // is_leaf=1: 上4bit=load_args count, 下4bit=store_args count
-// | padding    |   23 |
+// ── Compiler (internal) ───────────────────────────────────────────────────────
 
-// - `is_leaf=0`: path。`children[offset..offset+count[3:0]]` にpath indexが並ぶ
-// - `is_leaf=1`: leaf path。`leaves[offset..]` にleafデータのバイト列が並ぶ。サイズは固定部+load_count×64bit+store_count×64bitで算出
-// - leafデータは継承解決済みの`_load`/`_store`情報
+struct Compiler {
+    paths:         Vec<u64>,
+    children:      Vec<u32>,
+    leaves:        Vec<u8>,
+    interning:     Vec<u8>,
+    interning_idx: Vec<u64>,
+}
 
-// children ([u32])
-//
-// | field    | bits |
-// |----------|------|
-// | path_idx |   32 | // path境界はpath.countで持つ
+impl Compiler {
+    fn new() -> Self {
+        Self {
+            paths:         Vec::new(),
+            children:      Vec::new(),
+            leaves:        Vec::new(),
+            interning:     Vec::new(),
+            interning_idx: Vec::new(),
+        }
+    }
 
-// leaves
-//
-// | category    | field    | bits |
-// |-------------|----------|------|
-// | keyword     | keyword_idx       | 32 | // interning_idx
-// |             | value_idx         | 32 | // dslにハードコードされてる値。interning_idx 
-// | _load       | client_idx        |  4 | // スクリプト内で定数化済み
-// |             | key_idx           | 32 | // interning_idx
-// | _store      | client_idx        |  4 |
-// |             | key_idx           | 32 |
-// |             | padding           | 24 | // ここまでを32の倍数bitに調整
-// | _load.args  | args_key_idx[0]   | 32 | // count分繰り返し。interning_idx
-// |             | args_value_idx[0] | 32 | // interning_idx
-// | _store.args | args_key_idx[0]   | 32 | // 同上
-// |             | args_value_idx[0] | 32 |
+    fn walk(&mut self, _tree: &Tree) {
+        todo!("compile Tree into flat lists")
+    }
 
-pub const CLIENT_NULL:      u64 = 0b00;
-pub const CLIENT_STATE:     u64 = 0b01;
+    /// Intern a byte string, returning its interning_idx index.
+    fn intern(&mut self, _s: &[u8]) -> u32 {
+        todo!()
+    }
 
-pub const PROP_NULL:       u64 = 0b00;
-pub const PROP_KEY:        u64 = 0b01;
-pub const PROP_MAP:        u64 = 0b10;
+    fn finish(self) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>) {
+        (
+            self.paths.into_boxed_slice(),
+            self.children.into_boxed_slice(),
+            self.leaves.into_boxed_slice(),
+            self.interning.into_boxed_slice(),
+            self.interning_idx.into_boxed_slice(),
+        )
+    }
+}
