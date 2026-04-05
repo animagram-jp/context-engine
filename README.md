@@ -16,7 +16,7 @@ Data labels used by a web system's runtime within a single processing cycle shou
 
 | mod | description | fn |
 |-------|------|---------|
-| State | operates state data following manifest YAMLs | `get()`, `set()`, `delete()`, `exists()` |
+| `Context` | operates context | `get`, `set`, `delete`, `exists` |
 
 ## Why context-engine?
 
@@ -25,7 +25,7 @@ Data labels used by a web system's runtime within a single processing cycle shou
 // Manual cache management
 let session_key = format!("user:{}", id);
 let user = redis.get(&session_key).or_else(|| {
-    let user = db.query("SELECT * FROM users WHERE id=?", id)?;
+    let user = db.query("SELECT id, email, name FROM users WHERE id=?", id)?;
     redis.set(&session_key, &user, 3600);
     Some(user)
 })?;
@@ -33,7 +33,7 @@ let user = redis.get(&session_key).or_else(|| {
 
 **After:**
 ```Rust
-let user = state.get("session.user")?;
+let user = state.get("session.user.name")?;
 ```
 
 ## Installation
@@ -61,15 +61,15 @@ session:
         key: "users.${session.user.id}.name"
 ```
 
-| case              | example |
-|-------------------|--------|
-| multi-tenant app  | [tenant.yml](./examples/manifest.yml) |
+| Case              | Example |
+|-------------------|---------|
+| multi-tenant app  | [tenant.yml](./examples/tenant.yml) |
 
 2. Implement `StoreClient` and `StoreRegistry` for your stores.
 
-| Trait           | description                              | example |
+| Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
-| `StoreClient`   | `get()` `set()` `delete()` per store     | [implements.rs](./examples/implements.rs) |
+| `StoreClient`   | `get()` `set()` `delete()`               | [implements.rs](./examples/implements.rs) |
 | `StoreRegistry` | maps YAML client names to `StoreClient`s | [implements.rs](./examples/implements.rs) |
 
 3. Initialize State with your registry.
@@ -133,6 +133,10 @@ Passed unit and integration tests
 cargo test --features=logging -- --nocapture
 ```
 
+## License
+
+Apache-2.0
+
 ## Background
 
 **reimagined web architecture**
@@ -147,10 +151,6 @@ computer:       "Network-capable nodes in the system."
     terminal:   "Servers that provides human interfaces."
   orchestrator: "Computers responsible for maintenance of servers. (optional)"
 ```
-
-## License
-
-Apache-2.0
 
 ---
 

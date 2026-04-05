@@ -1,10 +1,10 @@
 /// The value type used throughout state-engine's public API.
 /// Binding-agnostic — no serde, no std beyond Vec.
 #[derive(Debug, PartialEq, Clone)]
-pub enum Value {
+pub enum Tree {
     Scalar(Vec<u8>),
-    Sequence(Vec<Value>),
-    Mapping(Vec<(Vec<u8>, Value)>),
+    Sequence(Vec<Tree>),
+    Mapping(Vec<(Vec<u8>, Tree)>),
     Null,
 }
 

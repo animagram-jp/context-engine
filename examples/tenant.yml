@@ -1,8 +1,9 @@
 session:
   user:
     _load:
-      client: tenant_db
-      key: users.id.${session.user.id}
+      client: TenantDb
+      key: "users.id.${session.user.id}"
+      config: ${tenant_db_client_config}
     id:
       _load:
         client: http_request
@@ -63,7 +64,7 @@ common_db:
   driver: postgres
   charset: UTF8
 
-tenant_db:
+tenant_db_client_config:
   _load:
     client:common_db
     key: tenants.id.${session.user.tenant.id}

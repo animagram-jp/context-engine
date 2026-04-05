@@ -1,8 +1,10 @@
-# アーキテクチャ
+# Architecture
+
+*warning*: Temporarily, Japanese and English combind in this file.
 
 ## ライブラリ要件
 
-- README 3行目参照
+- README 3行目 参照
 - システムが認識するべき概念を階層構造の名前空間で表現できたとする。この時、名前空間から導かれる全通りの(部分含む)パスが、ランタイムの単一処理スコープで操作する可能性のある値のキーを網羅している。このキー群の値全てを、DSLにて漏れなく取得方法の定義を宣言する。
 
 ## 機能構成
@@ -13,114 +15,53 @@
 
 ## モジュール構成
 
-| mod | description | ports |
+### 実体部
+
+| Mod | Description | Ports | Filename |
+|-----|-------------|-------|----------|
+| Tree | YAMLファイルを読み込んでProvided::Tree型にパースし、Dsl::compileの出力を実行ファイルに書き込む | write | tree.rs |
+| Dsl | Tree型のDSLを読み込み、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する | new, compile | dsl.rs |
+| Index | Dsl:compile(DSL)を呼び出し、アドレスリスト(Box<(u64, u32)>)を保持し、トラバーサルによってメモリ位置群を取得する | new, traverse | index.rs |
+| Context | コンテクストデータの操作を行うリクエスト処理スコープの実行インスタンス | new, get, set, delete, exists | context.rs |
+
+* Portsはpub fnのこと
+* new()であっても、引数はVec等の標準型依存を明示するべき。construct状態は避ける
+* Tree::write()は引数にoptionを取って、「Dsl::compileの出力を」をskipしてValueのまま書き込むオプションを追加予定
+* Context.new()内の各StoreClientは、Arcで記述する。ClientResistoryを新規導入したので、検討余地あるかも
+* context.rsが煩雑になるようなら、内部modとしてLoadとStoreを切り出す必要があるかも。係数明示不足による所有複雑化に注意
+
+### Portモジュール
+
+| Mod | Description | Ports | Filename |
+|-----|-------------|------|----------|
+| Context         | Contextのtrait  | - | provided.rs |
+| StoreClient     | *Clientの基底    | - | required.rs |
+| ClientResistory | *Clientの登録用  | - | provided.rs |
+
+### 開発用モジュール
+
+| Mod | Description | Port | Filename |
 |-------|------|---------|
-| Dsl | DSLを読み込み、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する | new(Vec<(u64, u32)>),compile(&[&Path]) |
-| Index | Dsl:compile(DSL)を呼び出し、アドレスリスト(Box<(u64, u32)>)を保持し、トラバーサルによってメモリ位置群を取得する | `traverse()` |
-| Context  | operates state data following manifest YAMLs | `traverse()` |
+| Error | Provided Port | - | provided.rs |
+| Log | feature=logging限定のマクロ | fn_log! | provided.rs |
 
-- provided modules (library provided)
-  1. State
+## 用語
 
-- required modules (library required*)
-  1. StoreClient
-  2. StoreRegistry
-
-- internal modules
-  1. core::Manifest
-  2. Store
-  3. Load
-  4. u64(fixed_bits.rs)
-  5. Pools & Maps(pool.rs)
-  6. parser.rs
-  7. LogFormat
-
-*: optional。FileClientのデフォルト実装のみ内蔵。
-
----
-
-## provided modules
-
-**State** is the sole public API of the library.
-
-A module performing `get()`/`set()`/`delete()`/`exists()` operations on state data following the `_store`/`_load` blocks defined in manifest YAMLs. `get()` automatically attempts loading on key miss. `set()` does not trigger loading. `delete()` removes the specified key from both store and cache. `exists()` checks key existence without triggering auto-load. It maintains an instance-level cache (`state_values`) separate from persistent stores.
-
-State owns YAML I/O: it reads manifest files via the built-in `DefaultFileClient` and parses them into `core::Manifest` on first access. `core::Manifest` is an internal no_std struct that owns all bit-record data and provides decode/find/build_config queries. Relative placeholders in values are qualified to absolute paths at parse time. Metadata (`_store`/`_load`/`_state`) is inherited from parent nodes; child overrides parent.
-
-## State
-
-### State::get("filename.node")
-
-Reference the state represented by the specified node, returning value or collections.
-
-Returns: `Result<Option<Value>, StateError>`
-
-**Operation flow:**
-1. Check `called_keys` (recursion / limit detection)
-2. Load manifest file via `DefaultFileClient` (first access only)
-3. Traverse intern list with path string → locate key
-4. **Check `state_values` (by path)** ← Highest priority
-5. `core::Manifest::get_meta()` → get MetaIndices
-6. If `_load.client == State`: skip store. Otherwise: `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
-7. On miss, auto-load via `Load::handle()`
-8. Return `Ok(Some(value))` / `Ok(None)` / `Err(StateError)`
-
-**Auto-load:**
-- If the state key misses, attempt auto-retrieval via `Load::handle()`
-- On error, return `Err(StateError::LoadFailed(LoadError))`
-
-**Note on _state.type:**
 ```yaml
-tenant_id:
-  _state:
-    type: integer  # Metadata only - validation/casting not yet implemented
+key: n層マップDSLの最末端value以外の要素
+keyword: keyの名前文字列
+field_key: 自身と親祖先がkeywordが'_'で始まらないkey
+meta_key: keywordが'_'始まりのkeyと、その子孫key
+leaf_key: 子にkeyを持たず値を持つkey
+value: leaf keysの値。DSL内で省略された場合はnullが充てられる
+path: 単一のfield_keyを表す、'.'区切りkeywordのチェーン
+qualified_path: DSL内で一意な完全修飾パス
+placeholder: key参照記述("${path}")。valueのみに適用
+template: placeholderと静的な文字列を混合した、動的生成テンプレート。valueのみに適用
+called_path: Stateに渡されるパス文字列
 ```
 
-The `_state.type` field is currently metadata-only and not enforced by State operations.
-
----
-
-### State::set("filename.node", value, ttl)
-
-Set a value to the state represented by the specified node.
-
-Returns: `Result<bool, StateError>`
-
-**Behavior:**
-- Save via `StoreRegistry::client_for(yaml_name)` → `StoreClient::set()`
-- Also save to `state_values` (instance cache)
-- TTL and other store-specific args are handled by the `StoreClient` impl
-
----
-
-### State::delete("filename.node")
-
-Delete the {key:value} record represented by the specified node.
-
-Returns: `Result<bool, StateError>`
-
-**Behavior:**
-- Delete via `StoreRegistry::client_for(yaml_name)` → `StoreClient::delete()`
-- Also delete from `state_values` (instance cache)
-- After deletion, the node shows miss
-
----
-
-### State::exists("filename.node")
-
-Check if a key exists without triggering auto-load.
-
-Returns: `Result<bool, StateError>`
-
-**Behavior:**
-- Check `state_values` (instance cache) first
-- Then check via `StoreClient::get()`
-- **Does NOT trigger auto-load** (unlike `get()`)
-- Returns `Ok(true)` if exists, `Ok(false)` otherwise
-
----
-
-## required modules
+## mod:fn詳細仕様
 
 ### StoreClient
 
@@ -173,43 +114,14 @@ impl StoreRegistry for MyStores {
 
 ---
 
-## Load::handle()
+## Context Instance Cache
 
-When `State::get()` misses a value, retrieve data according to `_load` settings.
-
-`_load.client` の値を `StoreRegistry::client_for()` に渡し、対応する `StoreClient::get()` を呼ぶ。
-
-**Special behavior for State client:**
-```yaml
-tenant_id:
-  _load:
-    client: State
-    key: ${org_id}  # Directly returns State::get("cache.user.org_id")
-```
-
-When `_load.client: State`, `Load::handle()` is not called; the value of `_load.key` (placeholder already resolved) is returned directly.
-
-**Design rules:**
-- No `_load` → No auto-load, return `Ok(None)`
-- No `_load.client` → No auto-load, return `Ok(None)`
-- `_load.client: State` → Use `_load.key` value directly
-- Other clients → `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
-
-**Recursion depth limit:**
-- `max_recursion = 20`
-- `called_keys: HashSet<String>` tracks keys currently being processed
-- On limit exceeded or circular key detected: `Err(StateError::RecursionLimitExceeded)`
-
----
-
-## state_values (Instance Memory Cache)
-
-The State struct maintains an instance-level cache (`state_values`) separate from persistent stores.
+An instance-level cache separate from persistent stores.
 
 **Important:** This is NOT a StoreClient. It is a variable of the State instance itself.
 
 **Purpose:**
-1. Speed up duplicate `State::get()` calls within the same request
+1. Speed up duplicate `Context.get()` calls within the same request
 2. Reduce access count to stores
 3. Avoid duplicate loads
 
@@ -217,8 +129,6 @@ The State struct maintains an instance-level cache (`state_values`) separate fro
 - State instance created: empty
 - During State lifetime: accumulates
 - State instance dropped: destroyed (memory released)
-
----
 
 ## Placeholder Resolution Rules
 
@@ -236,8 +146,6 @@ qualify_path("tenant_id", "cache", ["user"])
 
 **Placeholder resolution at State runtime (`resolve_value_to_string()`):**
 - Call `State::get(qualified_path)` to get the value
-
----
 
 ## error case
 
@@ -260,42 +168,6 @@ qualify_path("tenant_id", "cache", ["user"])
 ---
 
 ## Original Text (ja)
-
-### index
-
-- provided modules (ライブラリ提供モジュール)
-  1. State
-
-- required modules (ライブラリ要求モジュール*)
-  1. StoreClient
-  2. StoreRegistry
-
-- internal modules (内部モジュール)
-  1. core::Manifest
-  2. Store
-  3. Load
-  4. u64(fixed_bits.rs)
-  5. Pools & Maps(pool.rs)
-  6. parser.rs
-  7. LogFormat
-
-*: いずれもoptional(必須ではない)。FileClientのデフォルト実装のみ内蔵。
-
----
-
-## Ports
-
-ライブラリの外部向けインターフェース定義modules
-
-1. Provided Port
-
-**State** がライブラリ唯一の公開APIです。
-
-manifest YAMLの`_store`/`_load`定義に従い、`get()` / `set()` / `delete()` / `exists()`操作を提供するmoduleです。`get()`はkey missをトリガーに`_load`定義に基づいて自動ロードを試みます。`set()`は自動ロードを引き起こしません。`delete()`はストアとインスタンスキャッシュ両方から削除します。`exists()`は自動ロードを引き起こさずにkey存在確認を行います。
-
-2. Required Ports
-
-ライブラリ動作時にimpl実装が必要なtraits
 
 **StoreClient**
 
@@ -322,55 +194,6 @@ YAMLの`client:`文字列と`StoreClient`の対応を管理するtrait。利用�
 6. `_load.client == State` の場合はストアをスキップ。それ以外: `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
 7. **miss時、`Load::handle()` で自動ロード**
 8. `Ok(Some(value))` / `Ok(None)` / `Err(StateError)` を返却
-
----
-
-### State::set("filename.node", value, ttl)
-
-指定されたノードが表すステートに値をセットする。
-
-戻り値: `Result<bool, StateError>`
-
-**動作:**
-- `StoreRegistry::client_for(yaml_name)` → `StoreClient::set()` で保存
-- state_values (インスタンスキャッシュ) にも保存
-- ttl等のストア固有引数はStoreClient impl側で管理
-
----
-
-### State::delete("filename.node")
-
-指定されたノードが表す {key:value} レコードを削除する。
-
-戻り値: `Result<bool, StateError>`
-
----
-
-### State::exists("filename.node")
-
-自動ロードをトリガーせずに、キーの存在確認を行う。
-
-戻り値: `Result<bool, StateError>`
-
----
-
-## Load::handle()
-
-`State::get()` が値をmissした際、`_load` 設定に従ってデータを取得する。
-
-`_load.client` の値を `StoreRegistry::client_for()` に渡し、対応する `StoreClient::get()` を呼ぶ。
-
-**設計ルール:**
-- `_load` なし → 自動ロードなし、`Ok(None)` を返す
-- `_load.client` なし → 自動ロードなし、`Ok(None)` を返す
-- `_load.client: State` → `_load.key` の値を直接使用
-- その他のclient → `StoreRegistry::client_for(yaml_name)` → `StoreClient::get()`
-
-**再帰深度制限:**
-- `max_recursion = 20`
-- 上限超過または同一キーの再帰検出時に `Err(StateError::RecursionLimitExceeded)` を返す
-
----
 
 ## error case
 
