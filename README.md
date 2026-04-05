@@ -1,4 +1,6 @@
-# state-engine
+# context-engine
+
+* renamed from state-engine
 
 Declarative state data management system for a process. 
 Structures state data on process and keeps it syncable using your store clients.
