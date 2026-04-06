@@ -69,10 +69,10 @@ macro_rules! debug_log {
         #[cfg(feature = "logging")]
         {
             let formatted: alloc::vec::Vec<alloc::string::String> = alloc::vec![
-                $( $crate::error::format_str_arg($arg), )*
+                $( $crate::debug_log::format_str_arg($arg), )*
             ];
             let refs: alloc::vec::Vec<&str> = formatted.iter().map(|s| s.as_str()).collect();
-            log::debug!("{}", $crate::error::message($class, $fun, &refs));
+            log::debug!("{}", $crate::debug_log::message($class, $fun, &refs));
         }
     }};
 }
@@ -80,6 +80,7 @@ macro_rules! debug_log {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_message_multiple_args() {

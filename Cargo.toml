@@ -1,8 +1,8 @@
 [package]
 name = "context-engine"
-version = "0.1.6-alpha.1"
+version = "0.1.6"
 authors = ["Andyou <andyou@animagram.jp>"]
-description = "Declarative state data management system for process"
+description = "Declarative context management for request handlers"
 edition = "2024"
 license = "MIT"
 
@@ -16,10 +16,6 @@ exclude = ["examples/*"]
 [dependencies]
 log              = { version = "0.4", default-features = false, optional = true }
 serde_yaml_ng    = { version = "0.10", optional = true }
-
-[dev-dependencies]
-env_logger = "0.11"
-ctor       = "0.2"
 
 [features]
 default    = []

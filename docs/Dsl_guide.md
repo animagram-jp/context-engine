@@ -6,7 +6,7 @@
 key:            n層マップDSLの最末端value以外の要素
 keyword:        keyの名前文字列
 field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-meta_key:       keywordが'_'始まりのkeyと、その子孫key
+meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
 leaf_key:       子にkeyを持たず値を持つkey
 value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
 path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
@@ -22,6 +22,7 @@ called_path:    Context.get()等に渡されるパス文字列
 
 - YAML document separators (`---`) are not supported
 - `${}` (placeholder / template) are only valid inside values
+- `${}` paths are always treated as absolute paths
 
 ## Basic Structure
 
@@ -52,29 +53,28 @@ user:
     # inherits _store: { client: Kvs, key: "user:${user_id}" }
 ```
 
-`_store` inheritance rule: child's `_store` fields overwrite matching keys; unspecified fields are inherited as-is.
+`_store` / `_load` inheritance rule: child's fields overwrite matching keys; unspecified fields are inherited as-is. Inheritance is resolved at compile time — runtime traversal carries no parent state.
 
 ### 2. Placeholder / Template
-
-`${}` paths are qualified to absolute paths at parse time.
-
-**Qualify rule (`qualify_path()`):**
-- No `.` → relative; converted to `filename.ancestors.keyword` at parse time
-- Contains `.` → treated as absolute, used as-is
-
-```yaml
-# Inside tenant.yml under session.user._load
-key: "${session.user.id}"     # absolute — used as-is
-key: "${id}"                  # relative → tenant.session.user.id
-```
 
 **is_template:**
 - `${path}` alone → `is_template=false`。値をそのままコピー（string化しない）
 - `"prefix:${path}"` etc. → `is_template=true`。全placeholderをContext.get()で解決しstring結合
 
-### 3. _store / _load args
+### 3. Reserved keywords
 
-`client:` 以外の全フィールドはimplementor定義の任意args。ライブラリは関知しない。
+| keyword  | scope         | description |
+|----------|---------------|-------------|
+| `_load`  | meta_key      | load source definition |
+| `_store` | meta_key      | store destination definition |
+| `_state` | meta_key      | reserved |
+| `client` | _load / _store prop | StoreRegistry yaml_name |
+| `key`    | _load / _store prop | reserved arg passed to StoreClient |
+| `map`    | _load / _store prop | field mapping definition |
+
+### 4. _store / _load args
+
+`client:` と `key:` 以外の全フィールドはimplementor定義の任意args。ライブラリは関知しない。
 
 ```yaml
 _store:
@@ -91,11 +91,11 @@ _load:
     email: "email"
 ```
 
-`key:` は予約引数。それ以外はimplementorが`args: &HashMap<&str, Tree>`から取り出して使う。
+implementorは `args: &BTreeMap<&str, Tree>` から任意キーを取り出して使う。
 
-### 4. map
+### 5. map
 
-`_load.map:` でparent field_keyの子fieldにDB列等をマッピングする。
+`_load.map:` / `_store.map:` でparent field_keyの子fieldにストア列等をマッピングする。
 
 ```yaml
 session:
@@ -110,4 +110,6 @@ session:
     email:
 ```
 
-map対象のfield_keyは別途leaf宣言が必要。
+- `map` のvalue（`"name"`, `"email"` 等）がargs経由でclientに渡される
+- clientはその順序通りに値を取得して返す責務を持つ
+- map対象のfield_keyは別途leaf宣言が必要

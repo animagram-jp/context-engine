@@ -8,9 +8,9 @@ Data labels used by a web system's runtime within a single processing cycle shou
 
 | Version | Status    | Date      | Description |
 |---------|-----------|-----------|-------------|
-| 0.1     | Released  | 2026-2-12 | initial |
+| 0.1     | Released  | 2026-2-12 | -           |
 | 0.1.5   | Current   | 2026-3-21 | improve #43 |
-| 0.1.6-alpha.1 | Alpha Release | 2026-4-5  | rename crate |
+| 0.1.6   | Scheduled | 2026-4-19 | improve #38 |
 
 ## Provided Functions
 
@@ -105,28 +105,29 @@ let user_name = state.get("session.user.name")?;
 
 see for details [Architecture.md](./docs/Architecture.md)
 
-## tree
+## Tree
 
 ```
 ./
   README.md
   Cargo.toml
+
   docs/
     Architecture.md
     Dsl_guide.md
+
   src/
     lib.rs
-    context.rs
-    dsl.rs
-    index.rs
-    tree.rs
-    log_format.rs
-    codec.rs
     ports.rs
     ports/
       provided.rs
       required.rs
-    unused/            # reference: old implementation
+    debug_log.rs
+    tree.rs
+    dsl.rs
+    index.rs
+    context.rs
+
   examples/
     tenant.yml
     implements.rs

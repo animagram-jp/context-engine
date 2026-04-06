@@ -6,7 +6,7 @@ extern crate alloc;
 #[cfg(feature = "precompile")]
 extern crate std;
 
-pub(crate) mod error;
+pub(crate) mod debug_log;
 pub mod ports;
 pub mod context;
 pub mod tree;
