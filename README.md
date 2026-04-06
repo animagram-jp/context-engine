@@ -99,7 +99,7 @@ let user_name = state.get("session.user.name")?;
                                   ▲
                                   │
 ┌─────────────┐       ┌───────────┴────────────────────┐
-│ Implements  │------>│ StoreRegistry (Required Port)  │
+│ ClientImpl  │------>│ StoreRegistry (Required Port)  │
 └─────────────┘ impl  └────────────────────────────────┘
 ```
 
