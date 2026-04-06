@@ -14,7 +14,7 @@ categories = ["config", "data-structures", "template-engine", "parser-implementa
 exclude = ["examples/*"]
 
 [dependencies]
-log              = { version = "0.4", optional = true }
+log              = { version = "0.4", default-features = false, optional = true }
 serde_yaml_ng    = { version = "0.10", optional = true }
 
 [dev-dependencies]
@@ -23,5 +23,5 @@ ctor       = "0.2"
 
 [features]
 default    = []
-logging    = ["log"]
-precompile = ["serde_yaml_ng"]
+logging    = ["dep:log"]
+precompile = ["dep:serde_yaml_ng"]

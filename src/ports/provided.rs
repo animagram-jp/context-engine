@@ -1,3 +1,7 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
+
 // Request-scoped context handle. Manages state per DSL definition.
 pub trait Context {
     /// Returns value from instance cache → _store, triggers _load on miss.
@@ -31,8 +35,8 @@ pub enum ParseError {
     ParseError(String),
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
             ParseError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
@@ -53,8 +57,8 @@ pub enum LoadError {
     ParseError(String),
 }
 
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoadError::ClientNotFound(msg) => write!(f, "ClientNotFound: {}", msg),
             LoadError::ConfigMissing(msg)  => write!(f, "ConfigMissing: {}", msg),
@@ -74,8 +78,8 @@ pub enum StoreError {
     SerializeError(String),
 }
 
-impl std::fmt::Display for StoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for StoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StoreError::ClientNotFound(msg) => write!(f, "ClientNotFound: {}", msg),
             StoreError::ConfigMissing(msg)  => write!(f, "ConfigMissing: {}", msg),
@@ -93,8 +97,8 @@ pub enum ContextError {
     LoadFailed(LoadError),
 }
 
-impl std::fmt::Display for ContextError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ContextError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ContextError::ParseFailed(msg)       => write!(f, "ParseFailed: {}", msg),
             ContextError::KeyNotFound(msg)       => write!(f, "KeyNotFound: {}", msg),

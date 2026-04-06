@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::ports::provided::Tree as Value;
 
 // Wire format:

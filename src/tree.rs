@@ -1,5 +1,7 @@
 #[cfg(feature = "precompile")]
 mod inner {
+    // precompile requires std: file I/O (std::fs::write) and UTF-8 parsing
+    extern crate std;
     use crate::ports::provided::Tree as Value;
 
     pub struct Tree {

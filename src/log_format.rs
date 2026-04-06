@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::ports::provided::Tree;
 
 /// # Examples

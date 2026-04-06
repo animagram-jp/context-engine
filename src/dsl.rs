@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
 use crate::ports::provided::Tree;
 
 // ── client_idx constants (4bit, stored in leaves) ─────────────────────────────

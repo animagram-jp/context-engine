@@ -1,6 +1,11 @@
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::dsl::{
     PATH_IS_LEAF_MASK, PATH_OFFSET_SHIFT, PATH_OFFSET_MASK, PATH_COUNT_SHIFT, PATH_COUNT_MASK,
 };
+use crate::ports::provided::Tree;
 
 // ── LeafRef ───────────────────────────────────────────────────────────────────
 
@@ -87,13 +92,13 @@ impl Index {
 
     /// Extract _load client yaml_name and args from leaves at `leaf_offset`.
     /// Returns ("", empty) if no _load is configured.
-    pub fn load_args(&self, leaf_offset: u32) -> (&str, std::collections::HashMap<String, crate::ports::provided::Tree>) {
+    pub fn load_args(&self, leaf_offset: u32) -> (&str, BTreeMap<String, Tree>) {
         todo!("decode _load from leaves[leaf_offset..]")
     }
 
     /// Extract _store client yaml_name and args from leaves at `leaf_offset`.
     /// Returns ("", empty) if no _store is configured.
-    pub fn store_args(&self, leaf_offset: u32) -> (&str, std::collections::HashMap<String, crate::ports::provided::Tree>) {
+    pub fn store_args(&self, leaf_offset: u32) -> (&str, BTreeMap<String, Tree>) {
         todo!("decode _store from leaves[leaf_offset..]")
     }
 }

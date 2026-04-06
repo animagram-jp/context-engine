@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
 use crate::ports::provided::Tree;
 
 // Outcome of a StoreClient::set call.
@@ -14,9 +14,9 @@ pub enum SetOutcome {
 //           The implementor defines and reads whatever keys it needs.
 // - Thread-safety and internal mutability are the implementor's responsibility.
 pub trait StoreClient: Send + Sync {
-    fn get(&self, key: &str, args: &HashMap<&str, Tree>) -> Option<Tree>;
-    fn set(&self, key: &str, args: &HashMap<&str, Tree>) -> Option<SetOutcome>;
-    fn delete(&self, key: &str, args: &HashMap<&str, Tree>) -> bool;
+    fn get(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<Tree>;
+    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome>;
+    fn delete(&self, key: &str, args: &BTreeMap<&str, Tree>) -> bool;
 }
 
 /// Dispatches yaml_name → StoreClient. Implemented by the library user.

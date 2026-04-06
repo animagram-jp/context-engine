@@ -1,3 +1,11 @@
+#![no_std]
+extern crate core;
+extern crate alloc;
+
+// precompile feature requires std (file I/O, serde)
+#[cfg(feature = "precompile")]
+extern crate std;
+
 pub mod log_format;
 pub mod ports;
 pub mod context;

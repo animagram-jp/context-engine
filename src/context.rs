@@ -1,5 +1,7 @@
-use std::collections::HashSet;
-use std::sync::Arc;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::str::from_utf8;
 
 use crate::index::Index;
 use crate::ports::provided::{Context as ContextTrait, ContextError, StoreError, LoadError, Tree};
@@ -10,9 +12,9 @@ use crate::ports::required::{StoreRegistry, SetOutcome};
 pub struct Context<'r> {
     index:          Arc<Index>,
     registry:       &'r dyn StoreRegistry,
-    cache_keys:     Vec<u32>,   // path_idx
-    cache_vals:     Vec<Tree>,  // parallel to cache_keys
-    called_keys:    HashSet<u32>,
+    cache_keys:     Vec<u32>,       // path_idx
+    cache_vals:     Vec<Tree>,      // parallel to cache_keys
+    called_keys:    BTreeSet<u32>,
     max_recursion:  usize,
 }
 
@@ -23,7 +25,7 @@ impl<'r> Context<'r> {
             registry,
             cache_keys:    Vec::new(),
             cache_vals:    Vec::new(),
-            called_keys:   HashSet::new(),
+            called_keys:   BTreeSet::new(),
             max_recursion: 20,
         }
     }
@@ -110,12 +112,12 @@ impl<'r> ContextTrait for Context<'r> {
             ))?;
 
         let store_key = args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
         }).ok_or_else(|| ContextError::StoreFailed(
             StoreError::ConfigMissing("key".to_string())
         ))?;
 
-        let args_ref: std::collections::HashMap<&str, Tree> = args.iter()
+        let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
@@ -142,12 +144,12 @@ impl<'r> ContextTrait for Context<'r> {
             ))?;
 
         let store_key = args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
         }).ok_or_else(|| ContextError::StoreFailed(
             StoreError::ConfigMissing("key".to_string())
         ))?;
 
-        let args_ref: std::collections::HashMap<&str, Tree> = args.iter()
+        let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
@@ -175,13 +177,13 @@ impl<'r> ContextTrait for Context<'r> {
         };
 
         let store_key = match args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
         }) {
             Some(k) => k,
             None => return Ok(false),
         };
 
-        let args_ref: std::collections::HashMap<&str, Tree> = args.iter()
+        let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
@@ -203,11 +205,11 @@ impl<'r> Context<'r> {
         if !store_name.is_empty() {
             if let Some(client) = self.registry.client_for(store_name) {
                 let key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+                    if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
                 }).ok_or_else(|| ContextError::StoreFailed(
                     StoreError::ConfigMissing("key".to_string())
                 ))?;
-                let args_ref: std::collections::HashMap<&str, Tree> = store_args.iter()
+                let args_ref: BTreeMap<&str, Tree> = store_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 if let Some(value) = client.get(key, &args_ref) {
@@ -227,11 +229,11 @@ impl<'r> Context<'r> {
                 LoadError::ClientNotFound(load_name.to_string())
             ))?;
         let key = load_args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
         }).ok_or_else(|| ContextError::LoadFailed(
             LoadError::ConfigMissing("key".to_string())
         ))?;
-        let args_ref: std::collections::HashMap<&str, Tree> = load_args.iter()
+        let args_ref: BTreeMap<&str, Tree> = load_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
         let value = client.get(key, &args_ref)
@@ -243,10 +245,10 @@ impl<'r> Context<'r> {
         if !store_name.is_empty() {
             if let Some(store_client) = self.registry.client_for(store_name) {
                 let store_key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { std::str::from_utf8(b).ok() } else { None }
+                    if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
                 });
                 if let Some(sk) = store_key {
-                    let sargs: std::collections::HashMap<&str, Tree> = store_args.iter()
+                    let sargs: BTreeMap<&str, Tree> = store_args.iter()
                         .map(|(k, v)| (k.as_str(), v.clone()))
                         .collect();
                     store_client.set(sk, &sargs);
