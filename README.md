@@ -72,7 +72,7 @@ session:
 | `StoreClient`   | `get()` `set()` `delete()`               | [implements.rs](./examples/implements.rs) |
 | `StoreRegistry` | maps YAML client names to `StoreClient`s | [implements.rs](./examples/implements.rs) |
 
-3. Initialize State with your registry.
+3. Initialize Context with your registry.
 
 ```rust
 use context_engine::State;
@@ -94,12 +94,12 @@ let user_name = state.get("session.user.name")?;
                                   │
                                   ▼
 ┌─────────────┐       ┌────────────────────────────────┐
-│ Application │<------│ State (request scope instance) │
+│ Application │<------│ Context(request scope instance)│
 └─────────────┘provide└────────────────────────────────┘
                                   ▲
                                   │
 ┌─────────────┐       ┌───────────┴────────────────────┐
-│ ClientImpl  │------>│ StoreRegistry (Required Port)  │
+│ ClientImpl  │------>│ StoreRegistry (required port)  │
 └─────────────┘ impl  └────────────────────────────────┘
 ```
 
