@@ -1,4 +1,5 @@
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::str::from_utf8;
