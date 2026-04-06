@@ -6,14 +6,13 @@ extern crate alloc;
 #[cfg(feature = "precompile")]
 extern crate std;
 
-pub mod log_format;
+pub(crate) mod error;
 pub mod ports;
 pub mod context;
 pub mod tree;
 pub mod dsl;
 pub mod index;
 
-pub use log_format::LogFormat;
 pub use ports::provided::{
     Tree,
     ParseError, LoadError, StoreError, ContextError,
