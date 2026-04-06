@@ -178,7 +178,7 @@ mod tests {
 mod inner {
     // precompile requires std: file I/O (std::fs::write) and UTF-8 parsing
     extern crate std;
-    use crate::ports::provided::Tree as TreeData;
+    use crate::ports::provided::Tree as Data;
 
     pub struct Tree {
         paths:         Box<[u64]>,
@@ -211,7 +211,7 @@ mod inner {
         }
 
         /// Parse a YAML byte slice into a `Tree` tree.
-        pub fn parse(src: &[u8]) -> Result<TreeData, String> {
+        pub fn parse(src: &[u8]) -> Result<Data, String> {
             let s = std::str::from_utf8(src)
                 .map_err(|e| format!("UTF-8 error: {e}"))?;
             let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(s)
@@ -236,11 +236,11 @@ mod inner {
             serde_yaml_ng::Value::Sequence(s) => {
                 Tree::Sequence(s.into_iter().map(yaml_to_tree).collect())
             }
-            serde_yaml_ng::Value::String(s)  => TreeData::Scalar(s.into_bytes()),
-            serde_yaml_ng::Value::Number(n)  => TreeData::Scalar(n.to_string().into_bytes()),
+            serde_yaml_ng::Value::String(s)  => Data::Scalar(s.into_bytes()),
+            serde_yaml_ng::Value::Number(n)  => Data::Scalar(n.to_string().into_bytes()),
             serde_yaml_ng::Value::Bool(b)    => Tree::Scalar(b.to_string().into_bytes()),
-            serde_yaml_ng::Value::Null       => TreeData::Null,
-            _                                => TreeData::Null,
+            serde_yaml_ng::Value::Null       => Data::Null,
+            _                                => Data::Null,
         }
     }
 
