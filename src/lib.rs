@@ -19,5 +19,8 @@ pub use ports::provided::{
     ParseError, LoadError, StoreError, ContextError,
     Context,
 };
-pub use ports::required::{StoreClient, StoreRegistry, SetOutcome};
-pub use ports::codec::{encode, decode};
+pub use ports::required::{
+    StoreClient,
+    StoreRegistry,
+    SetOutcome
+};
