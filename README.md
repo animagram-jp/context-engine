@@ -49,6 +49,7 @@ context-engine = "0.1"
 1. Write a yaml file.
 
 ```yaml
+# mine.yml
 session:
   user:
     id:
@@ -69,20 +70,36 @@ session:
 
 | Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
-| `StoreClient`   | `get()` `set()` `delete()`               | [implements.rs](./examples/implements.rs) |
-| `StoreRegistry` | maps YAML client names to `StoreClient`s | [implements.rs](./examples/implements.rs) |
+| `StoreClient`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
+| `StoreRegistry` | maps YAML client names to `StoreClient`s | [MyRegistry](./examples/implements.rs) |
 
-3. Initialize Context with your registry.
+3. Precompile your yaml to a rs file.
+
+```bash
+cargo run --example precompile --features precompile -- examples/mine.yml src/generated.rs
+```
+
+4. Initialize Context with your registry.
 
 ```rust
-use context_engine::State;
+use context_engine::{Context, Index};
+use std::sync::Arc;
 
-let stores = MyStores::new()?;
+// Include the precompiled static data
+include!("generated.rs");
 
-let mut state = State::new(stores);
+let index = Arc::new(Index::new(
+    Box::from(PATHS),
+    Box::from(CHILDREN),
+    Box::from(LEAVES),
+    Box::from(INTERNING),
+    Box::from(INTERNING_IDX),
+));
 
-// Use context-engine
-let user_name = state.get("session.user.name")?;
+let registry = MyRegistry::new();
+let mut context = Context::new(index, &registry);
+
+let user_name = context.get("session.user.name")?;
 ```
 
 ## Architecture

@@ -21,5 +21,6 @@ pub use ports::provided::{
 pub use ports::required::{
     StoreClient,
     StoreRegistry,
-    SetOutcome
+    SetOutcome,
 };
+pub use index::Index;
