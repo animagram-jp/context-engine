@@ -161,7 +161,8 @@ cargo test --features=logging -- --nocapture
 
 ## License
 
-Apache-2.0
+SPDX-License-Identifier: Apache-2.0
+Copyright (c) 2026 Andyou <andyou@animagram.jp>
 
 ## Background
 
