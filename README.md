@@ -200,7 +200,7 @@ computer:       "Network-capable nodes in the system."
 
 ## Original Text (ja)
 
-### context-engine
+### 概要
 
 webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。context-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このライブラリは、[背景](#背景)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
 
