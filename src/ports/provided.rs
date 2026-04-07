@@ -29,18 +29,18 @@ pub enum Tree {
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, PartialEq)]
-pub enum ParseError {
+pub enum DslError {
     FileNotFound(String),
     AmbiguousFile(String),
     ParseError(String),
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for DslError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
-            ParseError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
-            ParseError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
+            DslError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
+            DslError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
+            DslError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
         }
     }
 }

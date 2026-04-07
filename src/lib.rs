@@ -14,7 +14,7 @@ pub mod index;
 
 pub use ports::provided::{
     Tree,
-    ParseError, LoadError, StoreError, ContextError,
+    DslError, LoadError, StoreError, ContextError,
     Context,
 };
 pub use ports::required::{
