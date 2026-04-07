@@ -1,6 +1,6 @@
 # context-engine
 
-Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). context-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture(see [## background](#background)).
+Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., `system_context["session.user"]` rather than `users[session[user_id]]`). context-engine processes the data retrieval methods that application developers define as a DSL in YAML files, for each label. This allows server/client differences in `system_context["session.user.preference"]` and multi-tenant differences in `context["session.user.tenant"]` to be resolved appropriately through the methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture (see [Background](#background)).
 
 - [See original text(ja)](#original-text-ja)
 
@@ -200,13 +200,13 @@ computer:       "Network-capable nodes in the system."
 
 ## Original Text (ja)
 
-webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。context-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このライブラリは、[### 背景](#背景)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
+webシステムのランタイムが1回の処理の中で使用するデータのラベルは、セッションコンテクストによる変動を、コード外で処理するべきです(例: users[session[user-id]]では無く、system_context["session.user"]で呼び出せるべき)。context-engineは、アプリ開発者がYAMLファイルにDSLとして定義したデータの取得方法を、ラベルごとに処理します。これにより、例えばsystem_context["session.user.preference"]のサーバー/クライアント差異が、context[session.user.tenant]のマルチテナント差異が、YAML内のデータ取得方法によって、適切に解決されます。このライブラリは、[背景](#背景)記載の、再構成されたwebシステムアーキテクチャの基盤技術に位置付けられています。
 
 ### 背景
 
 **webシステムの構成再定義**
 
-人々の営みの動作の一部を、ネットワーク機能を持ったコンピューターのデータ処理で代替えすることで、その間の検証可能性の保証と、物理的制約の緩和などの恩恵を受けることができる。これを実現する、ハードウェアを通して電気信号として入力を受け取り、処理後、所定のハードウェア群に出力する仕組みのことを、webシステムと呼ぶ。webシステムの実現には、第一に、システムに必要な概念体系を、人間言語とコンピューターのビット列それぞれで定義することが必要である。
+人々の営みの一部を、ネットワーク機能を持ったコンピューターのデータ処理で代替することで、検証可能性の保証や物理的制約の緩和といった恩恵を受けます。これを実現する、ハードウェアを通して電気信号として入力を受け取り、処理後、所定のハードウェア群に出力する仕組みのことをwebシステムと呼びます。webシステムの実現には、まず、システムに必要な概念体系を、人間言語とコンピューターのビット列それぞれで定義する必要があります。
 
 ```yaml
 # computers structure of web system
