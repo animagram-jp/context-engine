@@ -176,8 +176,8 @@ impl MyRegistry {
 }
 
 impl StoreRegistry for MyRegistry {
-    fn client_for(&self, yaml_name: &str) -> Option<&dyn StoreClient> {
-        match yaml_name {
+    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient> {
+        match keyword {
             "Memory"   => Some(self.memory.as_ref()),
             "Kvs"      => Some(self.kvs.as_ref()),
             "Env"      => Some(self.env.as_ref()),

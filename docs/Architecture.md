@@ -15,29 +15,33 @@
 
 | Port | Module | Signature | Description | Filename |
 |------|--------|-----------|-------------|----------|
-| `debug_log!` | debug_log | `(class, fn $(, arg)*)` | `feature=logging` ログマクロ | debug_log.rs |
-| `Tree` | provided | — | n次元scalar map型 | provided.rs |
+| `debug_log!` | - | `(class, fn $(, arg)*)` | `feature=logging` ログマクロ | debug_log.rs |
+| `Tree` | - | - | n次元scalar map型 | provided.rs |
 | `wire` | Tree | `(&self) -> Vec<u8>` | Treeをワイヤフォーマットに変換 | tree.rs |
 | `dewire` | Tree | `(bytes: &[u8]) -> Option<Tree>` | ワイヤフォーマットからTreeへ変換 | tree.rs |
-| `compile` | Dsl | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから静的list(paths/children/leaves/interning/interning_idx) を生成 | dsl.rs |
+| `compile` | Dsl | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから静的list(paths/children/leaves/interning/interning_idx) を返す | dsl.rs |
 | `write` | Dsl | `(src: &[u8], out_path: &str) -> Result<(), String>` | YAML→.rs出力[precompile] | dsl.rs |
-| `Index::new` | Index | `(paths, children, leaves, interning, interning_idx) -> Index` | `Dsl::compile` 出力を保持するIndexを構築 | index.rs |
-| `Index::traverse` | Index | `(&self, path: &str) -> Box<[LeafRef]>` | ドット区切りパスを辿り、leaf参照リストを返す | index.rs |
-| `Index::keyword_of` | Index | `(&self, path_idx: u32) -> &[u8]` | path_idxに対応するkeywordバイト列を返す | index.rs |
-| `Index::load_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_load` client名とargsを返す | index.rs |
-| `Index::store_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_store` client名とargsを返す | index.rs |
-| `Context::new` | Context | `(index: Arc<Index>, registry: &'r dyn StoreRegistry) -> Context` | リクエストスコープのContextインスタンスを構築 | context.rs |
-| `Context::get` | Context | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | cache→_store→_load の順で値を解決 | context.rs |
-| `Context::set` | Context | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | _storeに値を書き込み、cacheを更新 | context.rs |
-| `Context::delete` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | _storeから値を削除し、cacheを無効化 | context.rs |
-| `Context::exists` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | cache or _storeに値が存在するか確認（_loadは起動しない） | context.rs |
-| `ParseError` | provided | — | DSL解析エラー | provided.rs |
-| `LoadError` | provided | — | _loadクライアント呼び出しエラー | provided.rs |
-| `StoreError` | provided | — | _storeクライアント呼び出しエラー | provided.rs |
-| `ContextError` | provided | — | Context操作の最上位エラー | provided.rs |
-| `StoreClient` | required | `get / set / delete` | 単一ストアのadapter trait。利用者がimplする | required.rs |
-| `StoreRegistry` | required | `client_for(&str) -> Option<&dyn StoreClient>` | yaml_name→StoreClientのdispatch trait。利用者がimplする | required.rs |
-| `SetOutcome` | required | — | `StoreClient::set` の戻り値 | required.rs |
+| `new` | Index | `(paths, children, leaves, interning, interning_idx) -> Index` | compile済みdslからIndex構築 | index.rs |
+| `traverse` | Index | `(&self, path: &str) -> Box<[LeafRef]>` | パス文字列からleaf参照リストを返す | index.rs |
+| `keyword_of` | Index | `(&self, path_idx: u32) -> &[u8]` | path_idxからkeywordバイト列を返す | index.rs |
+| `load_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_load` client名とargsを返す | index.rs |
+| `store_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_store` client名とargsを返す | index.rs |
+| `new` | Context | `(index: Arc<Index>, registry: &'r dyn StoreRegistry) -> Context` | IndexとStoreRegistoryからContextを構築 | context.rs |
+| `get` | Context | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | パス文字列から値(cache→_store→_load)を取得して返す | context.rs |
+| `set` | Context | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | 値から_storeに書き込み、cacheも更新 | context.rs |
+| `delete` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスから_storeの値を削除し、cacheもnullで更新 | context.rs |
+| `exists` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスからcacheか_storeに値が存在するか確認し、cacheを更新 | context.rs |
+| `ParseError` | - | - | ※エラー | provided.rs |
+| `LoadError` | - | - | _loadクライアント呼び出しエラー | provided.rs |
+| `StoreError` | - | - | _storeクライアント呼び出しエラー | provided.rs |
+| `ContextError` | - | - | Contextの出力するエラー | provided.rs |
+| `SetOutcome` | - | - | `StoreClient::set`が返すCreatedとUpdated | required.rs |
+| `get` | StoreClient | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<Tree>` | keyとdsl記載のmapから値をlistで返す | required.rs |
+| `set` | StoreClient | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<SetOutcome>` | keyとdsl記載のマップから値を保存しSetOutcomeを返す | required.rs |
+| `delete` | StoreClient | `&self, key: &str, args: &BTreeMap<&str, Tree> -> bool` | keyとdsl記載のマップから値を削除し成否を返す | required.rs |
+| `client_for` | StoreRegistry | `&self, keyword: &str -> Option<&dyn StoreClient>` | StoreClientのkeywordからStoreClientを返す | required.rs |
+
+※ dslコンパイル時検出エラーとしたいがTreeパースエラーが混在
 
 ## 用語
 
@@ -57,7 +61,7 @@ template:       placeholderと静的な文字列を混合した動的生成文�
 called_path:    Context.get()等に渡されるパス文字列
 ```
 
-## mod:fn詳細仕様
+## モジュール仕様
 
 ### StoreClient
 
@@ -81,7 +85,7 @@ YAMLの`client:`名称とStoreClientの対応を管理するtrait。利用者が
 
 ```rust
 pub trait StoreRegistry {
-    fn client_for(&self, yaml_name: &str) -> Option<&dyn StoreClient>;
+    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient>;
 }
 ```
 

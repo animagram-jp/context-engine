@@ -19,7 +19,7 @@ pub trait StoreClient: Send + Sync {
     fn delete(&self, key: &str, args: &BTreeMap<&str, Tree>) -> bool;
 }
 
-/// Dispatches yaml_name → StoreClient. Implemented by the library user.
+/// Dispatches keyword → StoreClient. Implemented by the library user.
 pub trait StoreRegistry {
-    fn client_for(&self, yaml_name: &str) -> Option<&dyn StoreClient>;
+    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient>;
 }

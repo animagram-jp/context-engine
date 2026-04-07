@@ -118,7 +118,7 @@ impl Dsl {
 
 #[derive(Clone)]
 struct MetaBlock {
-    client_idx: u32,              // interning_idx of client yaml_name
+    client_idx: u32,              // interning_idx of client keyword
     key_idx:    u32,              // interning_idx of key value
     args:       Vec<(u32, u32)>,  // (key_interning_idx, value_interning_idx)
 }

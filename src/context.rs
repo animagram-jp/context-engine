@@ -106,10 +106,10 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (yaml_name, args) = self.index.store_args(leaf);
-        let client = self.registry.client_for(yaml_name)
+        let (keyword, args) = self.index.store_args(leaf);
+        let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
-                StoreError::ClientNotFound(yaml_name.to_string())
+                StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
         let store_key = args.get("key").and_then(|v| {
@@ -138,10 +138,10 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (yaml_name, args) = self.index.store_args(leaf);
-        let client = self.registry.client_for(yaml_name)
+        let (keyword, args) = self.index.store_args(leaf);
+        let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
-                StoreError::ClientNotFound(yaml_name.to_string())
+                StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
         let store_key = args.get("key").and_then(|v| {
@@ -172,8 +172,8 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(!matches!(v, Tree::Null));
         }
 
-        let (yaml_name, args) = self.index.store_args(leaf);
-        let Some(client) = self.registry.client_for(yaml_name) else {
+        let (keyword, args) = self.index.store_args(leaf);
+        let Some(client) = self.registry.client_for(keyword) else {
             return Ok(false);
         };
 

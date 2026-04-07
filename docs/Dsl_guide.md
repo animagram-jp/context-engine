@@ -68,7 +68,7 @@ user:
 | `_load`  | meta_key      | load source definition |
 | `_store` | meta_key      | store destination definition |
 | `_state` | meta_key      | reserved |
-| `client` | _load / _store prop | StoreRegistry yaml_name |
+| `client` | _load / _store prop | StoreRegistry keyword |
 | `key`    | _load / _store prop | reserved arg passed to StoreClient |
 | `map`    | _load / _store prop | field mapping definition |
 

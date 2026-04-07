@@ -58,13 +58,13 @@ impl Index {
         self.interning_str(interning_idx)
     }
 
-    /// Extract _load client yaml_name and args for the given leaf.
+    /// Extract _load client keyword and args for the given leaf.
     /// Returns ("", empty) if no _load is configured.
     pub fn load_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
         self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Load)
     }
 
-    /// Extract _store client yaml_name and args for the given leaf.
+    /// Extract _store client keyword and args for the given leaf.
     /// Returns ("", empty) if no _store is configured.
     pub fn store_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
         self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)

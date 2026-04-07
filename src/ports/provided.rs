@@ -47,7 +47,7 @@ impl fmt::Display for ParseError {
 
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
-    /// StoreRegistry::client_for() returned None for the given yaml_name.
+    /// StoreRegistry::client_for() returned None for the given keyword.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
@@ -70,7 +70,7 @@ impl fmt::Display for LoadError {
 
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
-    /// StoreRegistry::client_for() returned None for the given yaml_name.
+    /// StoreRegistry::client_for() returned None for the given keyword.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
