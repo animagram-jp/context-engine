@@ -11,33 +11,33 @@
 - traversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
 - addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンス。
 
-## モジュール構成
+## ポート構成
 
-### 実体部
-
-| Mod | Description | Ports | Filename |
-|-----|-------------|-------|----------|
-| tree | `enum Tree` の wire format serialize / deserialize | serialize, deserialize | tree.rs |
-| Dsl | `Tree` のDSLを読み込み、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する。`feature=precompile` 時は `Dsl::write()` でYAML→静的Rustファイル出力 | compile, write(precompile) | dsl.rs |
-| Index | `Dsl::compile` の出力を保持し、トラバーサルによってleaf参照群を取得する | new, traverse | index.rs |
-| Context | コンテクストデータの操作を行うリクエスト処理スコープの実行インスタンス | new, get, set, delete, exists | context.rs |
-
-* Portsはpub fnのこと
-* new()であっても、引数はVec等の標準型依存を明示するべき。construct状態は避ける
-
-### Portモジュール
-
-| Mod | Description | Filename |
-|-----|-------------|----------|
-| Context | Contextのtrait、Tree型、各Error型 | ports/provided.rs |
-| StoreClient | 単一ストアのadapter trait | ports/required.rs |
-| StoreRegistry | client名称→StoreClientのdispatch trait | ports/required.rs |
-
-### 開発用モジュール
-
-| Mod | Description | Filename |
-|-----|-------------|----------|
-| debug_log | `feature=logging` 限定のデバッグログマクロ・ユーティリティ | debug_log.rs |
+| Port | Module | Signature | Description | Filename |
+|------|--------|-----------|-------------|----------|
+| `debug_log!` | debug_log | `(class, fn $(, arg)*)` | `feature=logging` ログマクロ | debug_log.rs |
+| `Tree` | provided | — | n次元scalar map型 | provided.rs |
+| `wire` | Tree | `(&self) -> Vec<u8>` | Treeをワイヤフォーマットに変換 | tree.rs |
+| `dewire` | Tree | `(bytes: &[u8]) -> Option<Tree>` | ワイヤフォーマットからTreeへ変換 | tree.rs |
+| `compile` | Dsl | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから静的list(paths/children/leaves/interning/interning_idx) を生成 | dsl.rs |
+| `write` | Dsl | `(src: &[u8], out_path: &str) -> Result<(), String>` | YAML→.rs出力[precompile] | dsl.rs |
+| `Index::new` | Index | `(paths, children, leaves, interning, interning_idx) -> Index` | `Dsl::compile` 出力を保持するIndexを構築 | index.rs |
+| `Index::traverse` | Index | `(&self, path: &str) -> Box<[LeafRef]>` | ドット区切りパスを辿り、leaf参照リストを返す | index.rs |
+| `Index::keyword_of` | Index | `(&self, path_idx: u32) -> &[u8]` | path_idxに対応するkeywordバイト列を返す | index.rs |
+| `Index::load_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_load` client名とargsを返す | index.rs |
+| `Index::store_args` | Index | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_store` client名とargsを返す | index.rs |
+| `Context::new` | Context | `(index: Arc<Index>, registry: &'r dyn StoreRegistry) -> Context` | リクエストスコープのContextインスタンスを構築 | context.rs |
+| `Context::get` | Context | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | cache→_store→_load の順で値を解決 | context.rs |
+| `Context::set` | Context | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | _storeに値を書き込み、cacheを更新 | context.rs |
+| `Context::delete` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | _storeから値を削除し、cacheを無効化 | context.rs |
+| `Context::exists` | Context | `(&mut self, key: &str) -> Result<bool, ContextError>` | cache or _storeに値が存在するか確認（_loadは起動しない） | context.rs |
+| `ParseError` | provided | — | DSL解析エラー | provided.rs |
+| `LoadError` | provided | — | _loadクライアント呼び出しエラー | provided.rs |
+| `StoreError` | provided | — | _storeクライアント呼び出しエラー | provided.rs |
+| `ContextError` | provided | — | Context操作の最上位エラー | provided.rs |
+| `StoreClient` | required | `get / set / delete` | 単一ストアのadapter trait。利用者がimplする | required.rs |
+| `StoreRegistry` | required | `client_for(&str) -> Option<&dyn StoreClient>` | yaml_name→StoreClientのdispatch trait。利用者がimplする | required.rs |
+| `SetOutcome` | required | — | `StoreClient::set` の戻り値 | required.rs |
 
 ## 用語
 

@@ -76,7 +76,8 @@ session:
 3. Precompile your yaml to a rs file.
 
 ```bash
-cargo run --example precompile --features precompile -- examples/mine.yml src/generated.rs
+cargo run --example precompile --features precompile -- examples/mine.yml src/dsl_compiled.rs
+# -- <input.yml: required> <output.rs: optional>
 ```
 
 4. Initialize Context with your registry.

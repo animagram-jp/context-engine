@@ -15,13 +15,13 @@ const TAG_SEQUENCE: u8 = 0x02;
 const TAG_MAPPING:  u8 = 0x03;
 
 impl Tree {
-    pub fn serialize(&self) -> Vec<u8> {
+    pub fn wire(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         write_value(self, &mut buf);
         buf
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Option<Self> {
+    pub fn unwire(bytes: &[u8]) -> Option<Self> {
         let (value, _) = read_value(bytes)?;
         Some(value)
     }
@@ -107,7 +107,7 @@ mod tests {
     use alloc::vec;
 
     fn rt(v: &Tree) -> Tree {
-        Tree::deserialize(&v.serialize()).unwrap()
+        Tree::unwire(&v.wire()).unwrap()
     }
 
     #[test]
@@ -160,9 +160,9 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_returns_none() {
-        assert_eq!(Tree::deserialize(&[0xFF]), None);
-        assert_eq!(Tree::deserialize(&[TAG_SCALAR, 0x05, 0x00, 0x00, 0x00]), None);
+    fn test_unwire_invalid_returns_none() {
+        assert_eq!(Tree::unwire(&[0xFF]), None);
+        assert_eq!(Tree::unwire(&[TAG_SCALAR, 0x05, 0x00, 0x00, 0x00]), None);
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
             (b"id".to_vec(),         Tree::Scalar(b"1".to_vec())),
             (b"deleted_at".to_vec(), Tree::Null),
         ]);
-        assert_eq!(Tree::deserialize(&v.serialize()).unwrap(), v);
+        assert_eq!(Tree::unwire(&v.wire()).unwrap(), v);
     }
 }
 

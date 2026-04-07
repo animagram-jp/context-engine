@@ -54,7 +54,7 @@ impl KvsClient {
 impl StoreClient for KvsClient {
     fn get(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         let bytes = self.data.lock().unwrap().get(key).cloned()?;
-        // In real impl: deserialize wire bytes → Tree
+        // In real impl: unwire bytes → Tree
         Some(bytes)
     }
     fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
