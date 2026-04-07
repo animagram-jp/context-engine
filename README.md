@@ -2,7 +2,9 @@
 
 Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., data should be accessible as system_context["session.user"] rather than users[session[user-id]]). context-engine processes for each label, the data retrieval methods that application developers define as a DSL in YAML files. This allows, for example, server/client differences in system_context["session.user.preference"] and multi-tenant differences in context[session.user.tenant] to be resolved appropriately through the data retrieval methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture(see [## background](#background)).
 
-- [original text(ja)](#original-text-ja)
+- [See original text(ja)](#original-text-ja)
+
+---
 
 ## Version
 
@@ -12,11 +14,15 @@ Data labels used by a web system's runtime within a single processing cycle shou
 | 0.1.5   | Current   | 2026-3-21 | improve #43 |
 | 0.1.6   | Scheduled | 2026-4-19 | improve #38 |
 
+---
+
 ## Provided Functions
 
-| mod | description | fn |
+| Mod | Description | fn |
 |-------|------|---------|
-| `Context` | operates context | `get`, `set`, `delete`, `exists` |
+| `Context` | operates context | `new/get/set/delete/exists` |
+
+---
 
 ## Why context-engine?
 
@@ -36,7 +42,11 @@ let user = redis.get(&session_key).or_else(|| {
 let user = state.get("session.user.name")?;
 ```
 
-## Installation
+---
+
+## Quick Start
+
+1. Add to dependencies.
 
 ```toml
 # Cargo.toml
@@ -44,9 +54,7 @@ let user = state.get("session.user.name")?;
 context-engine = "0.1"
 ```
 
-## Quick Start
-
-1. Write a yaml file.
+2. Write a yaml file.
 
 ```yaml
 # mine.yml
@@ -66,21 +74,21 @@ session:
 |-------------------|---------|
 | multi-tenant app  | [tenant.yml](./examples/tenant.yml) |
 
-2. Implement `StoreClient` and `StoreRegistry` for your stores.
+3. Implement `StoreClient` and `StoreRegistry` for your stores.
 
 | Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
 | `StoreClient`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
 | `StoreRegistry` | maps YAML client names to `StoreClient`s | [MyRegistry](./examples/implements.rs) |
 
-3. Precompile your yaml to a rs file.
+4. Precompile your yaml to a rs file.
 
 ```bash
 cargo run --example precompile --features precompile -- examples/mine.yml src/dsl_compiled.rs
 # -- <input.yml: required> <output.rs: optional>
 ```
 
-4. Initialize Context with your registry.
+5. Initialize Context with your registry.
 
 ```rust
 use context_engine::{Context, Index};
@@ -100,8 +108,12 @@ let index = Arc::new(Index::new(
 let registry = MyRegistry::new();
 let mut context = Context::new(index, &registry);
 
+// --- setup completed ---
+
 let user_name = context.get("session.user.name")?;
 ```
+
+---
 
 ## Architecture
 
@@ -117,11 +129,11 @@ let user_name = context.get("session.user.name")?;
                                   ▲
                                   │
 ┌─────────────┐       ┌───────────┴────────────────────┐
-│ ClientImpl  │------>│ StoreRegistry (required port)  │
-└─────────────┘ impl  └────────────────────────────────┘
+│ ClientImpls │------>│ StoreRegistry (required port)  │
+└─────────────┘regist └────────────────────────────────┘
 ```
 
-see for details [Architecture.md](./docs/Architecture.md)
+See for details [Architecture.md](./docs/Architecture.md)
 
 ## Tree
 
@@ -160,10 +172,14 @@ Passed unit and integration tests
 cargo test --features=logging -- --nocapture
 ```
 
+---
+
 ## License
 
 SPDX-License-Identifier: Apache-2.0
 Copyright (c) 2026 Andyou <andyou@animagram.jp>
+
+---
 
 ## Background
 
