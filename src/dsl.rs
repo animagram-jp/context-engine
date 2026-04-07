@@ -17,22 +17,24 @@ pub const PROP_MAP:    &[u8] = b"map";
 
 // ── path field layout (u64) ───────────────────────────────────────────────────
 //
-// | field      | bits |
-// |------------|------|
-// | is_leaf    |    1 | bit 63
-// | offset     |   32 | bits 54..23
-// | count      |    8 | bits 22..15
-// |            |      |   is_leaf=0: [3:0]=子path数(1~16), [7:4]=unused
-// |            |      |   is_leaf=1: [7:4]=load_args count, [3:0]=store_args count (各最大15)
-// | (reserved) |   23 | bits 14..0
+// | field       | bits |
+// |-------------|------|
+// | is_leaf     |    1 | bit 63
+// | offset      |   32 | bits 54..23
+// | count       |    8 | bits 22..15
+// |             |      |   is_leaf=0: [3:0]=子path数(1~16), [7:4]=unused
+// |             |      |   is_leaf=1: [7:4]=load_args count, [3:0]=store_args count (各最大15)
+// | keyword_idx |   23 | bits 14..0  interning_idx of this node's keyword
 
-pub const PATH_IS_LEAF_SHIFT: u64 = 63;
-pub const PATH_OFFSET_SHIFT:  u64 = 23;
-pub const PATH_COUNT_SHIFT:   u64 = 15;
+pub const PATH_IS_LEAF_SHIFT:    u64 = 63;
+pub const PATH_OFFSET_SHIFT:     u64 = 23;
+pub const PATH_COUNT_SHIFT:      u64 = 15;
+pub const PATH_KEYWORD_IDX_SHIFT: u64 = 0;
 
-pub const PATH_IS_LEAF_MASK: u64 = 0x1          << PATH_IS_LEAF_SHIFT;
-pub const PATH_OFFSET_MASK:  u64 = 0xffff_ffff  << PATH_OFFSET_SHIFT;
-pub const PATH_COUNT_MASK:   u64 = 0xff          << PATH_COUNT_SHIFT;
+pub const PATH_IS_LEAF_MASK:     u64 = 0x1         << PATH_IS_LEAF_SHIFT;
+pub const PATH_OFFSET_MASK:      u64 = 0xffff_ffff << PATH_OFFSET_SHIFT;
+pub const PATH_COUNT_MASK:       u64 = 0xff        << PATH_COUNT_SHIFT;
+pub const PATH_KEYWORD_IDX_MASK: u64 = 0x7fff;     // bits 14..0
 
 // ── Dsl ───────────────────────────────────────────────────────────────────────
 
@@ -63,8 +65,25 @@ impl Dsl {
         Box<[u64]>,
     ) {
         let mut compiler = Compiler::new();
+        // paths[0] = virtual root (keyword_idx=0 = empty string)
+        compiler.intern(b""); // interning[0] = ""
+        compiler.paths.push(0u64); // placeholder, filled after walking top-level
         if let Tree::Mapping(pairs) = tree {
-            compiler.walk_mapping(pairs, None, None);
+            let children_offset = compiler.children.len() as u32;
+            let mut child_count = 0u32;
+            for (k, v) in pairs {
+                if k.first() != Some(&b'_') {
+                    let child_idx = compiler.paths.len() as u32;
+                    compiler.walk_field_key(k, v, None, None);
+                    compiler.children.push(child_idx);
+                    child_count += 1;
+                }
+            }
+            let count_bits = (child_count as u64) & 0xf;
+            compiler.paths[0] =
+                (children_offset as u64) << PATH_OFFSET_SHIFT
+                | count_bits             << PATH_COUNT_SHIFT
+                | 0u64; // keyword_idx=0 (empty)
         }
         compiler.finish()
     }
@@ -127,21 +146,6 @@ impl Compiler {
 
     // ── walk ──────────────────────────────────────────────────────────────────
 
-    /// Walk a mapping's field_key entries, building path/children/leaves.
-    /// `inh_load` / `inh_store`: inherited MetaBlock from parent (carried down).
-    fn walk_mapping(
-        &mut self,
-        pairs: &[(Vec<u8>, Tree)],
-        inh_load:  Option<&MetaBlock>,
-        inh_store: Option<&MetaBlock>,
-    ) {
-        for (k, v) in pairs {
-            if k.first() != Some(&b'_') {
-                self.walk_field_key(k, v, inh_load, inh_store);
-            }
-        }
-    }
-
     /// Process a single field_key node.
     fn walk_field_key(
         &mut self,
@@ -179,8 +183,9 @@ impl Compiler {
                 } else {
                     let count_bits = (child_count as u64) & 0xf;
                     self.paths[path_idx as usize] =
-                        (children_offset as u64) << PATH_OFFSET_SHIFT
-                        | count_bits              << PATH_COUNT_SHIFT;
+                        (children_offset as u64)  << PATH_OFFSET_SHIFT
+                        | count_bits               << PATH_COUNT_SHIFT
+                        | (keyword_idx as u64)     & PATH_KEYWORD_IDX_MASK;
                 }
             }
             // Scalar or Null → leaf with optional hardcoded value.
@@ -306,8 +311,9 @@ impl Compiler {
                   | ((store_args_count as u64) & 0xf);
         self.paths[path_idx as usize] =
             PATH_IS_LEAF_MASK
-            | (leaf_offset as u64) << PATH_OFFSET_SHIFT
-            | count                << PATH_COUNT_SHIFT;
+            | (leaf_offset as u64)    << PATH_OFFSET_SHIFT
+            | count                   << PATH_COUNT_SHIFT
+            | (keyword_idx as u64)    & PATH_KEYWORD_IDX_MASK;
     }
 
     // ── interning ─────────────────────────────────────────────────────────────
@@ -461,8 +467,10 @@ mod tests {
             ("name", Tree::Null),
         ]);
         let (paths, _children, _leaves, _interning, _interning_idx) = compile(&tree);
-        assert_eq!(paths.len(), 1);
-        assert!(paths[0] & PATH_IS_LEAF_MASK != 0);
+        // root(0) + name(1)
+        assert_eq!(paths.len(), 2);
+        assert!(paths[0] & PATH_IS_LEAF_MASK == 0); // root is not a leaf
+        assert!(paths[1] & PATH_IS_LEAF_MASK != 0);
     }
 
     #[test]
@@ -474,15 +482,14 @@ mod tests {
             ])),
         ]);
         let (paths, children, _leaves, _interning, _interning_idx) = compile(&tree);
-        // user(0) + id(1) + name(2)
-        assert_eq!(paths.len(), 3);
-        // user is not a leaf (has children)
-        assert!(paths[0] & PATH_IS_LEAF_MASK == 0);
-        // id and name are leaves
-        assert!(paths[1] & PATH_IS_LEAF_MASK != 0);
-        assert!(paths[2] & PATH_IS_LEAF_MASK != 0);
-        // children slice has 2 entries
-        assert_eq!(children.len(), 2);
+        // root(0) + user(1) + id(2) + name(3)
+        assert_eq!(paths.len(), 4);
+        assert!(paths[0] & PATH_IS_LEAF_MASK == 0); // root
+        assert!(paths[1] & PATH_IS_LEAF_MASK == 0); // user is not a leaf
+        assert!(paths[2] & PATH_IS_LEAF_MASK != 0); // id
+        assert!(paths[3] & PATH_IS_LEAF_MASK != 0); // name
+        // root→user(1 child) + user→id,name(2 children) = 3 entries
+        assert_eq!(children.len(), 3);
     }
 
     #[test]
@@ -497,8 +504,8 @@ mod tests {
             ])),
         ]);
         let (paths, _children, _leaves, _interning, _interning_idx) = compile(&tree);
-        // user(0) + id(1) — _load must not appear as a path
-        assert_eq!(paths.len(), 2);
+        // root(0) + user(1) + id(2) — _load must not appear as a path
+        assert_eq!(paths.len(), 3);
     }
 
     #[test]
@@ -514,8 +521,8 @@ mod tests {
         ]);
         let (paths, _children, leaves, interning, interning_idx) = compile(&tree);
 
-        // id is a leaf
-        let id_path = paths[1];
+        // root(0), user(1), id(2)
+        let id_path = paths[2];
         assert!(id_path & PATH_IS_LEAF_MASK != 0);
         let leaf_offset = ((id_path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
 
@@ -544,8 +551,8 @@ mod tests {
         ]);
         let (paths, _children, leaves, interning, interning_idx) = compile(&tree);
 
-        // session(0), user(1), id(2)
-        let id_path = paths[2];
+        // root(0), session(1), user(2), id(3)
+        let id_path = paths[3];
         assert!(id_path & PATH_IS_LEAF_MASK != 0);
         let leaf_offset = ((id_path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
 

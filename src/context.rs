@@ -106,7 +106,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (yaml_name, args) = self.index.store_args(leaf.leaf_offset);
+        let (yaml_name, args) = self.index.store_args(leaf);
         let client = self.registry.client_for(yaml_name)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(yaml_name.to_string())
@@ -138,7 +138,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (yaml_name, args) = self.index.store_args(leaf.leaf_offset);
+        let (yaml_name, args) = self.index.store_args(leaf);
         let client = self.registry.client_for(yaml_name)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(yaml_name.to_string())
@@ -172,7 +172,7 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(!matches!(v, Tree::Null));
         }
 
-        let (yaml_name, args) = self.index.store_args(leaf.leaf_offset);
+        let (yaml_name, args) = self.index.store_args(leaf);
         let Some(client) = self.registry.client_for(yaml_name) else {
             return Ok(false);
         };
@@ -201,8 +201,10 @@ impl<'r> Context<'r> {
             return Ok(Some(v.clone()));
         }
 
+        let leaf_ref = crate::index::LeafRef { path_idx, leaf_offset };
+
         // 2. _store
-        let (store_name, store_args) = self.index.store_args(leaf_offset);
+        let (store_name, store_args) = self.index.store_args(&leaf_ref);
         if !store_name.is_empty() {
             if let Some(client) = self.registry.client_for(store_name) {
                 let key = store_args.get("key").and_then(|v| {
@@ -221,7 +223,7 @@ impl<'r> Context<'r> {
         }
 
         // 3. _load
-        let (load_name, load_args) = self.index.load_args(leaf_offset);
+        let (load_name, load_args) = self.index.load_args(&leaf_ref);
         if load_name.is_empty() {
             return Ok(None);
         }

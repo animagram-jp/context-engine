@@ -2,9 +2,13 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::str::from_utf8;
 
 use crate::dsl::{
-    PATH_IS_LEAF_MASK, PATH_OFFSET_SHIFT, PATH_OFFSET_MASK, PATH_COUNT_SHIFT, PATH_COUNT_MASK,
+    PATH_IS_LEAF_MASK,
+    PATH_OFFSET_SHIFT, PATH_OFFSET_MASK,
+    PATH_COUNT_SHIFT,  PATH_COUNT_MASK,
+    PATH_KEYWORD_IDX_MASK,
 };
 use crate::ports::provided::Tree;
 
@@ -47,18 +51,43 @@ impl Index {
         result.into_boxed_slice()
     }
 
-    /// Walk the interning list to find the path_idx matching the dot-separated `path`.
+    /// Resolve the keyword bytes of a path node from the interning list.
+    pub fn keyword_of(&self, path_idx: u32) -> &[u8] {
+        let path = self.paths[path_idx as usize];
+        let interning_idx = (path & PATH_KEYWORD_IDX_MASK) as usize;
+        self.interning_str(interning_idx)
+    }
+
+    /// Extract _load client yaml_name and args for the given leaf.
+    /// Returns ("", empty) if no _load is configured.
+    pub fn load_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Load)
+    }
+
+    /// Extract _store client yaml_name and args for the given leaf.
+    /// Returns ("", empty) if no _store is configured.
+    pub fn store_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)
+    }
+}
+
+// ── private ───────────────────────────────────────────────────────────────────
+
+enum MetaKind { Load, Store }
+
+impl Index {
+    /// Walk dot-separated `path` from the virtual root (paths[0]).
     fn find(&self, path: &str) -> Option<u32> {
-        let mut current: u32 = 0; // root
-        for keyword in path.split('.') {
-            current = self.find_child(current, keyword.as_bytes())?;
+        let mut current: u32 = 0; // paths[0] = virtual root
+        for segment in path.split('.') {
+            current = self.find_child(current, segment.as_bytes())?;
         }
         Some(current)
     }
 
-    /// Among the children of `path_idx`, find the one whose interning keyword matches `keyword`.
+    /// Among the children of `path_idx`, find the one whose keyword matches.
     fn find_child(&self, path_idx: u32, keyword: &[u8]) -> Option<u32> {
-        let path = self.paths[path_idx as usize];
+        let path   = self.paths[path_idx as usize];
         let offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let count  = (((path & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) & 0xf) as usize;
 
@@ -86,20 +115,84 @@ impl Index {
         }
     }
 
-    /// Resolve the keyword bytes of a path node from the interning list.
-    pub fn keyword_of(&self, path_idx: u32) -> &[u8] {
-        todo!("resolve keyword from interning via path_idx")
+    /// Decode _load or _store from `leaves` at `leaf_offset`.
+    ///
+    /// Leaf layout (u32le each):
+    ///   +0  keyword_idx
+    ///   +4  value_idx
+    ///   +8  load_client_idx
+    ///   +12 load_key_idx
+    ///   +16 store_client_idx
+    ///   +20 store_key_idx
+    ///   +24 load.args  × load_args_count  : key_idx | value_idx
+    ///   +24+N store.args × store_args_count : key_idx | value_idx
+    ///
+    /// args counts are in path.count: [7:4]=load, [3:0]=store
+    fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, BTreeMap<String, Tree>) {
+        let base = leaf_offset as usize;
+        let empty = BTreeMap::new();
+
+        if path_idx as usize >= self.paths.len() { return ("", empty); }
+        let path_entry = self.paths[path_idx as usize];
+
+        let count_byte  = ((path_entry & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) as u8;
+        let load_count  = ((count_byte >> 4) & 0xf) as usize;
+        let store_count = (count_byte & 0xf) as usize;
+
+        let (client_offset, key_offset, args_count, args_start) = match kind {
+            MetaKind::Load  => (8,  12, load_count,  24),
+            MetaKind::Store => (16, 20, store_count, 24 + load_count * 8),
+        };
+
+        let client_idx = self.read_u32(base + client_offset) as usize;
+        let key_idx    = self.read_u32(base + key_offset) as usize;
+
+        let client_name = from_utf8(self.interning_str(client_idx)).unwrap_or("");
+        if client_name.is_empty() {
+            return ("", empty);
+        }
+
+        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
+
+        // key arg
+        let key_str = from_utf8(self.interning_str(key_idx)).unwrap_or("");
+        if !key_str.is_empty() {
+            args.insert(
+                String::from("key"),
+                Tree::Scalar(key_str.as_bytes().to_vec()),
+            );
+        }
+
+        // additional args
+        for i in 0..args_count {
+            let off = base + args_start + i * 8;
+            let ak  = self.read_u32(off) as usize;
+            let av  = self.read_u32(off + 4) as usize;
+            let k   = from_utf8(self.interning_str(ak)).unwrap_or("");
+            let v   = self.interning_str(av);
+            if !k.is_empty() {
+                args.insert(
+                    String::from(k),
+                    Tree::Scalar(v.to_vec()),
+                );
+            }
+        }
+
+        (client_name, args)
     }
 
-    /// Extract _load client yaml_name and args from leaves at `leaf_offset`.
-    /// Returns ("", empty) if no _load is configured.
-    pub fn load_args(&self, leaf_offset: u32) -> (&str, BTreeMap<String, Tree>) {
-        todo!("decode _load from leaves[leaf_offset..]")
+    /// Read a u32le from `leaves` at byte offset `off`.
+    fn read_u32(&self, off: usize) -> u32 {
+        let b = &self.leaves[off..off + 4];
+        u32::from_le_bytes(b.try_into().unwrap())
     }
 
-    /// Extract _store client yaml_name and args from leaves at `leaf_offset`.
-    /// Returns ("", empty) if no _store is configured.
-    pub fn store_args(&self, leaf_offset: u32) -> (&str, BTreeMap<String, Tree>) {
-        todo!("decode _store from leaves[leaf_offset..]")
+    /// Resolve interning bytes by interning_idx index.
+    fn interning_str(&self, idx: usize) -> &[u8] {
+        if idx >= self.interning_idx.len() { return b""; }
+        let entry  = self.interning_idx[idx];
+        let offset = (entry >> 32) as usize;
+        let len    = (entry & 0xffff_ffff) as usize;
+        self.interning.get(offset..offset + len).unwrap_or(b"")
     }
 }
