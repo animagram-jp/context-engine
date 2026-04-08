@@ -72,7 +72,7 @@
 | Context | `cache_get` | `(&self, path_idx: u32) -> Option<&Tree>` | インスタンスキャッシュからpath_idxの値を返す | context.rs |
 |         | `cache_set` | `(&mut self, path_idx: u32, value: Tree)` | インスタンスキャッシュにpath_idxの値を書き込む（上書き） | context.rs |
 |         | `cache_remove` | `(&mut self, path_idx: u32)` | インスタンスキャッシュのpath_idxエントリをNullで無効化 | context.rs |
-|         | `guard_recursion` | `(&self, path_idx: u32) -> Result<(), ContextError>` | called_keysの重複・上限超過を検出しエラーを返す | context.rs |
+|         | `guard_recursion` | `(&self, path_idx: u32) -> Result<(), ContextError>` | called_pathsの重複・上限超過を検出しエラーを返す | context.rs |
 |         | `resolve_leaf` | `(&mut self, path_idx: u32, leaf_offset: u32) -> Result<Option<Tree>, ContextError>` | cache→_store→_loadの順で値を解決しwrite-throughする | context.rs |
 
 ## 用語
