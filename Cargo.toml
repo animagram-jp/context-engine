@@ -21,3 +21,11 @@ serde_yaml_ng    = { version = "0.10", optional = true }
 default    = []
 logging    = ["dep:log"]
 precompile = ["dep:serde_yaml_ng"]
+
+[[example]]
+name              = "precompile"
+required-features = ["precompile"]
+
+[[example]]
+name              = "integration_tests"
+required-features = ["precompile"]

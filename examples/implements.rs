@@ -173,6 +173,14 @@ impl MyRegistry {
             tenant_db: Arc::new(TenantDbClient::new()),
         }
     }
+
+    pub fn memory_set(&self, key: &str, value: context_engine::Tree) {
+        self.memory.data.lock().unwrap().insert(key.to_string(), value);
+    }
+
+    pub fn memory_clear(&self) {
+        self.memory.data.lock().unwrap().clear();
+    }
 }
 
 impl StoreRegistry for MyRegistry {

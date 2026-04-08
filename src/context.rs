@@ -15,7 +15,7 @@ pub struct Context<'r> {
     registry:       &'r dyn StoreRegistry,
     cache_keys:     Vec<u32>,       // path_idx
     cache_vals:     Vec<Tree>,      // parallel to cache_keys
-    called_keys:    BTreeSet<u32>,
+    called_paths:    BTreeSet<u32>,
     max_recursion:  usize,
 }
 
@@ -26,7 +26,7 @@ impl<'r> Context<'r> {
             registry,
             cache_keys:    Vec::new(),
             cache_vals:    Vec::new(),
-            called_keys:   BTreeSet::new(),
+            called_paths:   BTreeSet::new(),
             max_recursion: 20,
         }
     }
@@ -54,7 +54,7 @@ impl<'r> Context<'r> {
     }
 
     fn guard_recursion(&self, path_idx: u32) -> Result<(), ContextError> {
-        if self.called_keys.len() >= self.max_recursion || self.called_keys.contains(&path_idx) {
+        if self.called_paths.len() >= self.max_recursion || self.called_paths.contains(&path_idx) {
             return Err(ContextError::RecursionLimitExceeded);
         }
         Ok(())
@@ -75,21 +75,21 @@ impl<'r> ContextTrait for Context<'r> {
         if leaves.len() == 1 {
             let leaf = &leaves[0];
             self.guard_recursion(leaf.path_idx)?;
-            self.called_keys.insert(leaf.path_idx);
+            self.called_paths.insert(leaf.path_idx);
 
             let result = self.resolve_leaf(leaf.path_idx, leaf.leaf_offset);
 
-            self.called_keys.remove(&leaf.path_idx);
+            self.called_paths.remove(&leaf.path_idx);
             result
         } else {
             let mut pairs: Vec<(Vec<u8>, Tree)> = Vec::new();
             for leaf in leaves.iter() {
                 self.guard_recursion(leaf.path_idx)?;
-                self.called_keys.insert(leaf.path_idx);
+                self.called_paths.insert(leaf.path_idx);
 
                 let value = self.resolve_leaf(leaf.path_idx, leaf.leaf_offset)?;
 
-                self.called_keys.remove(&leaf.path_idx);
+                self.called_paths.remove(&leaf.path_idx);
                 if let Some(v) = value {
                     let keyword = self.index.keyword_of(leaf.path_idx).to_vec();
                     pairs.push((keyword, v));
@@ -112,15 +112,14 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
-        let store_key = args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
-        }).ok_or_else(|| ContextError::StoreFailed(
-            StoreError::ConfigMissing("key".to_string())
-        ))?;
+        let store_key = args.get("key")
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .unwrap_or(key);
 
-        let args_ref: BTreeMap<&str, Tree> = args.iter()
+        let mut args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
+        args_ref.insert("value", value.clone());
 
         match client.set(store_key, &args_ref) {
             Some(SetOutcome::Created) | Some(SetOutcome::Updated) => {
@@ -144,11 +143,9 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
-        let store_key = args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
-        }).ok_or_else(|| ContextError::StoreFailed(
-            StoreError::ConfigMissing("key".to_string())
-        ))?;
+        let store_key = args.get("key")
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .unwrap_or(key);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -177,12 +174,9 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(false);
         };
 
-        let store_key = match args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
-        }) {
-            Some(k) => k,
-            None => return Ok(false),
-        };
+        let store_key = args.get("key")
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .unwrap_or(key);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -251,9 +245,10 @@ impl<'r> Context<'r> {
                     if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
                 });
                 if let Some(sk) = store_key {
-                    let sargs: BTreeMap<&str, Tree> = store_args.iter()
+                    let mut sargs: BTreeMap<&str, Tree> = store_args.iter()
                         .map(|(k, v)| (k.as_str(), v.clone()))
                         .collect();
+                    sargs.insert("value", value.clone());
                     store_client.set(sk, &sargs);
                 }
             }

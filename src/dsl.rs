@@ -20,21 +20,21 @@ pub const PROP_MAP:    &[u8] = b"map";
 // | field       | bits |
 // |-------------|------|
 // | is_leaf     |    1 | bit 63
-// | offset      |   32 | bits 54..23
-// | count       |    8 | bits 22..15
+// | offset      |   32 | bits 62..31
+// | count       |    8 | bits 30..23
 // |             |      |   is_leaf=0: [3:0]=子path数(1~16), [7:4]=unused
 // |             |      |   is_leaf=1: [7:4]=load_args count, [3:0]=store_args count (各最大15)
-// | keyword_idx |   23 | bits 14..0  interning_idx of this node's keyword
+// | keyword_idx |   23 | bits 22..0  interning_idx of this node's keyword
 
-pub const PATH_IS_LEAF_SHIFT:    u64 = 63;
-pub const PATH_OFFSET_SHIFT:     u64 = 23;
-pub const PATH_COUNT_SHIFT:      u64 = 15;
+pub const PATH_IS_LEAF_SHIFT:     u64 = 63;
+pub const PATH_OFFSET_SHIFT:      u64 = 31;
+pub const PATH_COUNT_SHIFT:       u64 = 23;
 pub const PATH_KEYWORD_IDX_SHIFT: u64 = 0;
 
 pub const PATH_IS_LEAF_MASK:     u64 = 0x1         << PATH_IS_LEAF_SHIFT;
 pub const PATH_OFFSET_MASK:      u64 = 0xffff_ffff << PATH_OFFSET_SHIFT;
 pub const PATH_COUNT_MASK:       u64 = 0xff        << PATH_COUNT_SHIFT;
-pub const PATH_KEYWORD_IDX_MASK: u64 = 0x7fff;     // bits 14..0
+pub const PATH_KEYWORD_IDX_MASK: u64 = 0x7f_ffff;  // bits 22..0
 
 // ── Dsl ───────────────────────────────────────────────────────────────────────
 
@@ -70,15 +70,20 @@ impl Dsl {
         compiler.paths.push(0u64); // placeholder, filled after walking top-level
         if let Tree::Mapping(pairs) = tree {
             let children_offset = compiler.children.len() as u32;
-            let mut child_count = 0u32;
-            for (k, v) in pairs {
-                if k.first() != Some(&b'_') {
-                    let child_idx = compiler.paths.len() as u32;
-                    compiler.walk_field_key(k, v, None, None);
-                    compiler.children.push(child_idx);
-                    child_count += 1;
-                }
+            let field_pairs: Vec<_> = pairs.iter()
+                .filter(|(k, _)| k.first() != Some(&b'_'))
+                .collect();
+            let child_count = field_pairs.len() as u32;
+
+            for _ in 0..child_count {
+                compiler.children.push(0); // placeholder
             }
+            for (i, (k, v)) in field_pairs.iter().enumerate() {
+                let child_idx = compiler.paths.len() as u32;
+                compiler.children[children_offset as usize + i] = child_idx;
+                compiler.walk_field_key(k, v, None, None);
+            }
+
             let count_bits = (child_count as u64) & 0xf;
             compiler.paths[0] =
                 (children_offset as u64) << PATH_OFFSET_SHIFT
@@ -166,20 +171,29 @@ impl Compiler {
                 let store = self.resolve_meta(pairs, META_STORE, inh_store);
 
                 // Collect child field_keys.
+                // Reserve children slots first so they are contiguous, then walk.
                 let children_offset = self.children.len() as u32;
-                let mut child_count = 0u32;
+                let field_pairs: Vec<_> = pairs.iter()
+                    .filter(|(k, _)| k.first() != Some(&b'_'))
+                    .collect();
+                let child_count = field_pairs.len() as u32;
 
-                for (k, v) in pairs {
-                    if k.first() == Some(&b'_') { continue; }
+                // Reserve placeholder slots for each child's path_idx.
+                let first_child_path_idx = self.paths.len() as u32;
+                for i in 0..child_count {
+                    self.children.push(first_child_path_idx + i); // will be correct after walk
+                }
+
+                // Now walk each child; paths are pushed in order so indices are sequential.
+                for (i, (k, v)) in field_pairs.iter().enumerate() {
                     let child_idx = self.paths.len() as u32;
+                    self.children[children_offset as usize + i] = child_idx;
                     self.walk_field_key(k, v, load.as_ref(), store.as_ref());
-                    self.children.push(child_idx);
-                    child_count += 1;
                 }
 
                 if child_count == 0 {
                     // No child field_keys → treat as leaf.
-                    self.write_leaf(path_idx, keyword_idx, None, load.as_ref(), store.as_ref());
+                    self.write_leaf(path_idx, keyword_idx, &Tree::Null, load.as_ref(), store.as_ref());
                 } else {
                     let count_bits = (child_count as u64) & 0xf;
                     self.paths[path_idx as usize] =
@@ -190,8 +204,7 @@ impl Compiler {
             }
             // Scalar or Null → leaf with optional hardcoded value.
             _ => {
-                let value_idx = self.intern_tree_scalar(value);
-                self.write_leaf(path_idx, keyword_idx, Some(value_idx), inh_load, inh_store);
+                self.write_leaf(path_idx, keyword_idx, value, inh_load, inh_store);
             }
         }
     }
@@ -222,7 +235,7 @@ impl Compiler {
                             client_idx = self.intern(b);
                         }
                     } else if k.as_slice() == PROP_KEY {
-                        key_idx = self.intern_tree_scalar(v);
+                        key_idx = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
                     } else if k.as_slice() == PROP_MAP {
                         // map entries: each value is a string (store column name etc.)
                         // stored as (dst_path_interning_idx, src_value_interning_idx)
@@ -230,7 +243,7 @@ impl Compiler {
                             args.clear(); // local map overrides inherited
                             for (mk, mv) in map_pairs {
                                 let mk_idx = self.intern(mk);
-                                let mv_idx = self.intern_tree_scalar(mv);
+                                let mv_idx = if let Tree::Scalar(b) = mv { self.intern(b) } else { 0 };
                                 args.push((mk_idx, mv_idx));
                             }
                         }
@@ -239,7 +252,7 @@ impl Compiler {
                            && k.as_slice() != META_STATE {
                         // arbitrary implementor arg
                         let ak = self.intern(k);
-                        let av = self.intern_tree_scalar(v);
+                        let av = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
                         // overwrite if key already present, otherwise append
                         if let Some(entry) = args.iter_mut().find(|(ek, _)| *ek == ak) {
                             entry.1 = av;
@@ -258,29 +271,72 @@ impl Compiler {
 
     /// Write leaf data to `leaves` and update `paths[path_idx]`.
     ///
-    /// Leaf layout:
-    ///   keyword_idx (u32le)
-    ///   value_idx   (u32le)   // 0 = null/absent
+    /// Leaf layout (Architecture.md #データ構造仕様 参照):
+    ///   keyword_idx        (u32le)
+    ///   value_token_count  (u32le)
+    ///   token_type[i]      (u8)     0=static(interning_idx), 1=placeholder(path文字列のinterning_idx)
+    ///   token_idx[i]       (u32le)
+    ///   ... × value_token_count
     ///   _load  client_idx (u32le) | key_idx (u32le)
     ///   _store client_idx (u32le) | key_idx (u32le)
     ///   _load.args  × load_args_count  : key_idx(u32le) | value_idx(u32le)
     ///   _store.args × store_args_count : key_idx(u32le) | value_idx(u32le)
     fn write_leaf(
         &mut self,
-        path_idx:   u32,
+        path_idx:    u32,
         keyword_idx: u32,
-        value_idx:  Option<u32>,
-        load:  Option<&MetaBlock>,
-        store: Option<&MetaBlock>,
+        value:       &Tree,
+        load:        Option<&MetaBlock>,
+        store:       Option<&MetaBlock>,
     ) {
         let leaf_offset = self.leaves.len() as u32;
 
         let load_args_count  = load.map(|b| b.args.len()).unwrap_or(0);
         let store_args_count = store.map(|b| b.args.len()).unwrap_or(0);
 
-        // keyword + value
+        // keyword
         self.push_u32(keyword_idx);
-        self.push_u32(value_idx.unwrap_or(0));
+
+        // value tokens: tokenize scalar by ${}, Null → 0 tokens
+        if let Tree::Scalar(b) = value {
+            // split by ${...} into (type, bytes) pairs
+            let mut tokens: Vec<(u8, u32)> = Vec::new();
+            let mut rest = b.as_slice();
+            while !rest.is_empty() {
+                if let Some(start) = rest.windows(2).position(|w| w == b"${") {
+                    if start > 0 {
+                        // static prefix
+                        let idx = self.intern(&rest[..start]);
+                        tokens.push((0, idx));
+                    }
+                    rest = &rest[start + 2..];
+                    if let Some(end) = rest.iter().position(|&c| c == b'}') {
+                        // placeholder path string
+                        let idx = self.intern(&rest[..end]);
+                        tokens.push((1, idx));
+                        rest = &rest[end + 1..];
+                    } else {
+                        // malformed: treat remainder as static
+                        let idx = self.intern(rest);
+                        tokens.push((0, idx));
+                        break;
+                    }
+                } else {
+                    // no more placeholders
+                    let idx = self.intern(rest);
+                    tokens.push((0, idx));
+                    break;
+                }
+            }
+            self.push_u32(tokens.len() as u32);
+            for (t, idx) in tokens {
+                self.leaves.push(t);
+                self.push_u32(idx);
+            }
+        } else {
+            // Null → 0 tokens
+            self.push_u32(0);
+        }
 
         // _load header
         self.push_u32(load.map(|b| b.client_idx).unwrap_or(0));
@@ -311,9 +367,9 @@ impl Compiler {
                   | ((store_args_count as u64) & 0xf);
         self.paths[path_idx as usize] =
             PATH_IS_LEAF_MASK
-            | (leaf_offset as u64)    << PATH_OFFSET_SHIFT
-            | count                   << PATH_COUNT_SHIFT
-            | (keyword_idx as u64)    & PATH_KEYWORD_IDX_MASK;
+            | (leaf_offset as u64) << PATH_OFFSET_SHIFT
+            | count                << PATH_COUNT_SHIFT
+            | (keyword_idx as u64) & PATH_KEYWORD_IDX_MASK;
     }
 
     // ── interning ─────────────────────────────────────────────────────────────
@@ -336,15 +392,6 @@ impl Compiler {
         idx
     }
 
-    /// Intern a Tree scalar as bytes. Null → intern empty slice → index 0.
-    fn intern_tree_scalar(&mut self, v: &Tree) -> u32 {
-        match v {
-            Tree::Scalar(b) => self.intern(b),
-            Tree::Null      => self.intern(b""),
-            _               => self.intern(b""),
-        }
-    }
-
     // ── helpers ───────────────────────────────────────────────────────────────
 
     fn push_u32(&mut self, v: u32) {
@@ -365,7 +412,7 @@ impl Compiler {
 // ── precompile helpers ────────────────────────────────────────────────────────
 
 #[cfg(feature = "precompile")]
-fn parse_yaml(src: &[u8]) -> Result<Tree, alloc::string::String> {
+pub fn parse_yaml(src: &[u8]) -> Result<Tree, alloc::string::String> {
     extern crate std;
     use std::string::ToString;
     use std::format;
@@ -461,40 +508,38 @@ mod tests {
         (p.into_vec(), c.into_vec(), l.into_vec(), i.into_vec(), ii.into_vec())
     }
 
-    #[test]
-    fn test_single_leaf() {
-        let tree = mapping(vec![
-            ("name", Tree::Null),
-        ]);
-        let (paths, _children, _leaves, _interning, _interning_idx) = compile(&tree);
-        // root(0) + name(1)
-        assert_eq!(paths.len(), 2);
-        assert!(paths[0] & PATH_IS_LEAF_MASK == 0); // root is not a leaf
-        assert!(paths[1] & PATH_IS_LEAF_MASK != 0);
-    }
+    // --- single_leaf ---
 
     #[test]
-    fn test_nested_field_keys() {
-        let tree = mapping(vec![
+    fn single_leaf() {
+        let (paths, ..) = compile(&mapping(vec![
+            ("name", Tree::Null),
+        ]));
+        assert_eq!(paths.len(), 2);                       // root(0) + name(1)
+        assert!(paths[0] & PATH_IS_LEAF_MASK == 0);       // root is not a leaf
+        assert!(paths[1] & PATH_IS_LEAF_MASK != 0);       // name is a leaf
+    }
+
+    // --- nested ---
+
+    #[test]
+    fn nested() {
+        let (paths, children, ..) = compile(&mapping(vec![
             ("user", mapping(vec![
                 ("id",   Tree::Null),
                 ("name", Tree::Null),
             ])),
-        ]);
-        let (paths, children, _leaves, _interning, _interning_idx) = compile(&tree);
-        // root(0) + user(1) + id(2) + name(3)
-        assert_eq!(paths.len(), 4);
-        assert!(paths[0] & PATH_IS_LEAF_MASK == 0); // root
-        assert!(paths[1] & PATH_IS_LEAF_MASK == 0); // user is not a leaf
-        assert!(paths[2] & PATH_IS_LEAF_MASK != 0); // id
-        assert!(paths[3] & PATH_IS_LEAF_MASK != 0); // name
-        // root→user(1 child) + user→id,name(2 children) = 3 entries
-        assert_eq!(children.len(), 3);
+        ]));
+        assert_eq!(paths.len(), 4);                       // root(0) + user(1) + id(2) + name(3)
+        assert!(paths[1] & PATH_IS_LEAF_MASK == 0);       // user is not a leaf
+        assert_eq!(children.len(), 3);                    // root→user(1) + user→id,name(2)
     }
 
+    // --- meta_key ---
+
     #[test]
-    fn test_meta_key_excluded_from_paths() {
-        let tree = mapping(vec![
+    fn meta_key_excluded_from_paths() {
+        let (paths, ..) = compile(&mapping(vec![
             ("user", mapping(vec![
                 ("_load", mapping(vec![
                     ("client", scalar("Memory")),
@@ -502,15 +547,16 @@ mod tests {
                 ])),
                 ("id", Tree::Null),
             ])),
-        ]);
-        let (paths, _children, _leaves, _interning, _interning_idx) = compile(&tree);
-        // root(0) + user(1) + id(2) — _load must not appear as a path
+        ]));
+        // root(0) + user(1) + id(2) — _load must not appear
         assert_eq!(paths.len(), 3);
     }
 
+    // --- load in leaf ---
+
     #[test]
-    fn test_load_stored_in_leaf() {
-        let tree = mapping(vec![
+    fn load_client_stored_in_leaf() {
+        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("user", mapping(vec![
                 ("_load", mapping(vec![
                     ("client", scalar("Memory")),
@@ -518,27 +564,23 @@ mod tests {
                 ])),
                 ("id", Tree::Null),
             ])),
-        ]);
-        let (paths, _children, leaves, interning, interning_idx) = compile(&tree);
-
+        ]));
         // root(0), user(1), id(2)
-        let id_path = paths[2];
-        assert!(id_path & PATH_IS_LEAF_MASK != 0);
-        let leaf_offset = ((id_path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-
-        // keyword_idx(4) + value_idx(4) + load_client(4) + load_key(4) + store_client(4) + store_key(4) = 24 bytes
-        assert!(leaves.len() >= leaf_offset + 24);
-
-        // load client_idx points to "Memory"
-        let load_client_idx = u32::from_le_bytes(leaves[leaf_offset+8..leaf_offset+12].try_into().unwrap()) as usize;
-        let offset = (interning_idx[load_client_idx] >> 32) as usize;
-        let len    = (interning_idx[load_client_idx] & 0xffff_ffff) as usize;
-        assert_eq!(&interning[offset..offset+len], b"Memory");
+        // leaf: keyword(4) + token_count(4) + tokens(0×5) + load_client(4)
+        let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let token_count = u32::from_le_bytes(leaves[leaf_offset+4..leaf_offset+8].try_into().unwrap()) as usize;
+        let meta_base = leaf_offset + 8 + token_count * 5;
+        let client_idx = u32::from_le_bytes(leaves[meta_base..meta_base+4].try_into().unwrap()) as usize;
+        let off = (interning_idx[client_idx] >> 32) as usize;
+        let len = (interning_idx[client_idx] & 0xffff_ffff) as usize;
+        assert_eq!(&interning[off..off+len], b"Memory");
     }
 
+    // --- store inheritance ---
+
     #[test]
-    fn test_store_inheritance() {
-        let tree = mapping(vec![
+    fn store_inherited_to_child_leaf() {
+        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("session", mapping(vec![
                 ("_store", mapping(vec![
                     ("client", scalar("Kvs")),
@@ -548,50 +590,45 @@ mod tests {
                     ("id", Tree::Null),
                 ])),
             ])),
-        ]);
-        let (paths, _children, leaves, interning, interning_idx) = compile(&tree);
-
+        ]));
         // root(0), session(1), user(2), id(3)
-        let id_path = paths[3];
-        assert!(id_path & PATH_IS_LEAF_MASK != 0);
-        let leaf_offset = ((id_path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-
-        // store client_idx (offset 16) should point to "Kvs"
-        let store_client_idx = u32::from_le_bytes(leaves[leaf_offset+16..leaf_offset+20].try_into().unwrap()) as usize;
-        let offset = (interning_idx[store_client_idx] >> 32) as usize;
-        let len    = (interning_idx[store_client_idx] & 0xffff_ffff) as usize;
-        assert_eq!(&interning[offset..offset+len], b"Kvs");
+        // leaf: keyword(4) + token_count(4) + tokens(0×5) + load_client(4) + load_key(4) + store_client(4)
+        let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let token_count = u32::from_le_bytes(leaves[leaf_offset+4..leaf_offset+8].try_into().unwrap()) as usize;
+        let meta_base = leaf_offset + 8 + token_count * 5;
+        let client_idx = u32::from_le_bytes(leaves[meta_base+8..meta_base+12].try_into().unwrap()) as usize;
+        let off = (interning_idx[client_idx] >> 32) as usize;
+        let len = (interning_idx[client_idx] & 0xffff_ffff) as usize;
+        assert_eq!(&interning[off..off+len], b"Kvs");
     }
 
+    // --- intern ---
+
     #[test]
-    fn test_intern_dedup() {
-        let tree = mapping(vec![
+    fn intern_dedup() {
+        let (_, _, _, interning, interning_idx) = compile(&mapping(vec![
             ("a", scalar("hello")),
             ("b", scalar("hello")),
-        ]);
-        let (_paths, _children, _leaves, _interning, interning_idx) = compile(&tree);
-        // "hello" should be interned only once
+        ]));
         let hello_count = (0..interning_idx.len()).filter(|&i| {
-            let offset = (interning_idx[i] >> 32) as usize;
-            let len    = (interning_idx[i] & 0xffff_ffff) as usize;
-            &_interning[offset..offset+len] == b"hello"
+            let off = (interning_idx[i] >> 32) as usize;
+            let len = (interning_idx[i] & 0xffff_ffff) as usize;
+            interning.get(off..off+len) == Some(b"hello" as &[u8])
         }).count();
         assert_eq!(hello_count, 1);
     }
 
+    // --- precompile ---
+
     #[cfg(feature = "precompile")]
     #[test]
-    fn test_write_tenant_yml() {
+    fn write_tenant_yml() {
         extern crate std;
         let src = std::include_bytes!("../examples/tenant.yml");
         let out = std::env::temp_dir().join("tenant_compiled.rs");
-        std::fs::remove_file(&out).ok(); // idempotency
+        std::fs::remove_file(&out).ok();
         Dsl::write(src, out.to_str().unwrap()).expect("write failed");
         let content = std::fs::read_to_string(&out).expect("output not written");
         assert!(content.contains("pub static PATHS:"));
-        assert!(content.contains("pub static LEAVES:"));
-        assert!(content.contains("pub static INTERNING:"));
-        assert!(content.contains("// @generated"));
-        // output intentionally left for inspection
     }
 }

@@ -117,15 +117,16 @@ impl Index {
 
     /// Decode _load or _store from `leaves` at `leaf_offset`.
     ///
-    /// Leaf layout (u32le each):
-    ///   +0  keyword_idx
-    ///   +4  value_idx
-    ///   +8  load_client_idx
-    ///   +12 load_key_idx
-    ///   +16 store_client_idx
-    ///   +20 store_key_idx
-    ///   +24 load.args  × load_args_count  : key_idx | value_idx
-    ///   +24+N store.args × store_args_count : key_idx | value_idx
+    /// Leaf layout (Architecture.md #データ構造仕様 参照):
+    ///   +0  keyword_idx        (u32)
+    ///   +4  value_token_count  (u32)
+    ///   +8  token[i]: type(u8) + idx(u32) × value_token_count
+    ///   +8+N  load_client_idx  (u32)   N = token_count × 5
+    ///   +8+N+4  load_key_idx   (u32)
+    ///   +8+N+8  store_client_idx (u32)
+    ///   +8+N+12 store_key_idx  (u32)
+    ///   +8+N+16 load.args  × load_count  : key_idx(u32) | value_idx(u32)
+    ///   +8+N+16+M store.args × store_count : key_idx(u32) | value_idx(u32)
     ///
     /// args counts are in path.count: [7:4]=load, [3:0]=store
     fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, BTreeMap<String, Tree>) {
@@ -139,13 +140,17 @@ impl Index {
         let load_count  = ((count_byte >> 4) & 0xf) as usize;
         let store_count = (count_byte & 0xf) as usize;
 
+        // skip keyword(4) + value_token_count(4) + tokens(token_count × 5)
+        let token_count = self.read_u32(base + 4) as usize;
+        let meta_base = base + 8 + token_count * 5;
+
         let (client_offset, key_offset, args_count, args_start) = match kind {
-            MetaKind::Load  => (8,  12, load_count,  24),
-            MetaKind::Store => (16, 20, store_count, 24 + load_count * 8),
+            MetaKind::Load  => (0,  4, load_count,  16),
+            MetaKind::Store => (8, 12, store_count, 16 + load_count * 8),
         };
 
-        let client_idx = self.read_u32(base + client_offset) as usize;
-        let key_idx    = self.read_u32(base + key_offset) as usize;
+        let client_idx = self.read_u32(meta_base + client_offset) as usize;
+        let key_idx    = self.read_u32(meta_base + key_offset) as usize;
 
         let client_name = from_utf8(self.interning_str(client_idx)).unwrap_or("");
         if client_name.is_empty() {
@@ -165,7 +170,7 @@ impl Index {
 
         // additional args
         for i in 0..args_count {
-            let off = base + args_start + i * 8;
+            let off = meta_base + args_start + i * 8;
             let ak  = self.read_u32(off) as usize;
             let av  = self.read_u32(off + 4) as usize;
             let k   = from_utf8(self.interning_str(ak)).unwrap_or("");
@@ -194,5 +199,171 @@ impl Index {
         let offset = (entry >> 32) as usize;
         let len    = (entry & 0xffff_ffff) as usize;
         self.interning.get(offset..offset + len).unwrap_or(b"")
+    }
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use crate::dsl::Dsl;
+
+    fn scalar(s: &str) -> Tree { Tree::Scalar(s.as_bytes().to_vec()) }
+    fn mapping(pairs: Vec<(&str, Tree)>) -> Tree {
+        Tree::Mapping(pairs.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect())
+    }
+
+    fn make_index(tree: &Tree) -> Index {
+        let (paths, children, leaves, interning, interning_idx) = Dsl::compile(tree);
+        Index::new(paths, children, leaves, interning, interning_idx)
+    }
+
+    // --- traverse ---
+
+    #[test]
+    fn traverse_leaf_path() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("user", mapping(vec![
+                    ("id", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user.id");
+        assert_eq!(leaves.len(), 1);
+    }
+
+    #[test]
+    fn traverse_intermediate_collects_all_leaves() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("user", mapping(vec![
+                    ("id",   Tree::Null),
+                    ("name", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user");
+        assert_eq!(leaves.len(), 2);
+    }
+
+    #[test]
+    fn traverse_nonexistent_returns_empty() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("user", mapping(vec![
+                    ("id", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user.missing");
+        assert!(leaves.is_empty());
+    }
+
+    // --- keyword_of ---
+
+    #[test]
+    fn keyword_of_leaf() {
+        let idx = make_index(&mapping(vec![
+            ("user", mapping(vec![
+                ("id", Tree::Null),
+            ])),
+        ]));
+        // root(0), user(1), id(2)
+        assert_eq!(idx.keyword_of(2), b"id");
+    }
+
+    #[test]
+    fn keyword_of_intermediate() {
+        let idx = make_index(&mapping(vec![
+            ("user", mapping(vec![
+                ("id", Tree::Null),
+            ])),
+        ]));
+        assert_eq!(idx.keyword_of(1), b"user");
+    }
+
+    // --- load_args ---
+
+    #[test]
+    fn load_args_client_name() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("_load", mapping(vec![
+                    ("client", scalar("Memory")),
+                    ("key",    scalar("session:1")),
+                ])),
+                ("user", mapping(vec![
+                    ("id", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user.id");
+        let (client, _) = idx.load_args(&leaves[0]);
+        assert_eq!(client, "Memory");
+    }
+
+    #[test]
+    fn load_args_key() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("_load", mapping(vec![
+                    ("client", scalar("Memory")),
+                    ("key",    scalar("session:1")),
+                ])),
+                ("user", mapping(vec![
+                    ("id", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user.id");
+        let (_, args) = idx.load_args(&leaves[0]);
+        assert_eq!(args.get("key"), Some(&Tree::Scalar(b"session:1".to_vec())));
+    }
+
+    #[test]
+    fn load_args_no_load_returns_empty() {
+        let idx = make_index(&mapping(vec![
+            ("user", mapping(vec![
+                ("id", Tree::Null),
+            ])),
+        ]));
+        let leaves = idx.traverse("user.id");
+        let (client, args) = idx.load_args(&leaves[0]);
+        assert!(client.is_empty() && args.is_empty());
+    }
+
+    // --- store_args ---
+
+    #[test]
+    fn store_args_client_name() {
+        let idx = make_index(&mapping(vec![
+            ("session", mapping(vec![
+                ("_store", mapping(vec![
+                    ("client", scalar("Kvs")),
+                    ("key",    scalar("session:1")),
+                ])),
+                ("user", mapping(vec![
+                    ("id", Tree::Null),
+                ])),
+            ])),
+        ]));
+        let leaves = idx.traverse("session.user.id");
+        let (client, _) = idx.store_args(&leaves[0]);
+        assert_eq!(client, "Kvs");
+    }
+
+    #[test]
+    fn store_args_no_store_returns_empty() {
+        let idx = make_index(&mapping(vec![
+            ("user", mapping(vec![
+                ("id", Tree::Null),
+            ])),
+        ]));
+        let leaves = idx.traverse("user.id");
+        let (client, args) = idx.store_args(&leaves[0]);
+        assert!(client.is_empty() && args.is_empty());
     }
 }
