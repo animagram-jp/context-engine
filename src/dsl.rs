@@ -20,21 +20,23 @@ pub const PROP_MAP:    &[u8] = b"map";
 // | field       | bits |
 // |-------------|------|
 // | is_leaf     |    1 | bit 63
-// | offset      |   32 | bits 62..31
-// | count       |    8 | bits 30..23
-// |             |      |   is_leaf=0: [3:0]=子path数(1~16), [7:4]=unused
-// |             |      |   is_leaf=1: [7:4]=load_args count, [3:0]=store_args count (各最大15)
-// | keyword_idx |   23 | bits 22..0  interning_idx of this node's keyword
+// | offset      |   16 | bits 62..47
+// | count       |    4 | bits 46..43  is_leaf=0: 子path数, is_leaf=1: unused
+// | padding     |   11 | bits 42..32
+// | parent_idx  |   16 | bits 31..16  virtual root is self-referential (0)
+// | keyword_idx |   16 | bits 15..0   interning_idx of this path's keyword
 
 pub const PATH_IS_LEAF_SHIFT:     u64 = 63;
-pub const PATH_OFFSET_SHIFT:      u64 = 31;
-pub const PATH_COUNT_SHIFT:       u64 = 23;
+pub const PATH_OFFSET_SHIFT:      u64 = 47;
+pub const PATH_COUNT_SHIFT:       u64 = 43;
+pub const PATH_PARENT_IDX_SHIFT:  u64 = 16;
 pub const PATH_KEYWORD_IDX_SHIFT: u64 = 0;
 
-pub const PATH_IS_LEAF_MASK:     u64 = 0x1         << PATH_IS_LEAF_SHIFT;
-pub const PATH_OFFSET_MASK:      u64 = 0xffff_ffff << PATH_OFFSET_SHIFT;
-pub const PATH_COUNT_MASK:       u64 = 0xff        << PATH_COUNT_SHIFT;
-pub const PATH_KEYWORD_IDX_MASK: u64 = 0x7f_ffff;  // bits 22..0
+pub const PATH_IS_LEAF_MASK:     u64 = 0x1    << PATH_IS_LEAF_SHIFT;
+pub const PATH_OFFSET_MASK:      u64 = 0xffff << PATH_OFFSET_SHIFT;
+pub const PATH_COUNT_MASK:       u64 = 0xf    << PATH_COUNT_SHIFT;
+pub const PATH_PARENT_IDX_MASK:  u64 = 0xffff << PATH_PARENT_IDX_SHIFT;
+pub const PATH_KEYWORD_IDX_MASK: u64 = 0xffff; // bits 15..0
 
 // ── Dsl ───────────────────────────────────────────────────────────────────────
 
@@ -81,13 +83,14 @@ impl Dsl {
             for (i, (k, v)) in field_pairs.iter().enumerate() {
                 let child_idx = compiler.paths.len() as u32;
                 compiler.children[children_offset as usize + i] = child_idx;
-                compiler.walk_field_key(k, v, None, None);
+                compiler.walk_field_key(k, v, 0, None, None); // parent=virtual root(0)
             }
 
             let count_bits = (child_count as u64) & 0xf;
             compiler.paths[0] =
                 (children_offset as u64) << PATH_OFFSET_SHIFT
                 | count_bits             << PATH_COUNT_SHIFT
+                | 0u64 << PATH_PARENT_IDX_SHIFT  // self-referential
                 | 0u64; // keyword_idx=0 (empty)
         }
         compiler.finish()
@@ -151,13 +154,14 @@ impl Compiler {
 
     // ── walk ──────────────────────────────────────────────────────────────────
 
-    /// Process a single field_key node.
+    /// Process a single field_key.
     fn walk_field_key(
         &mut self,
-        keyword: &[u8],
-        value:   &Tree,
-        inh_load:  Option<&MetaBlock>,
-        inh_store: Option<&MetaBlock>,
+        keyword:    &[u8],
+        value:      &Tree,
+        parent_idx: u32,
+        inh_load:   Option<&MetaBlock>,
+        inh_store:  Option<&MetaBlock>,
     ) {
         let path_idx = self.paths.len() as u32;
         self.paths.push(0u64); // placeholder, filled below
@@ -188,23 +192,24 @@ impl Compiler {
                 for (i, (k, v)) in field_pairs.iter().enumerate() {
                     let child_idx = self.paths.len() as u32;
                     self.children[children_offset as usize + i] = child_idx;
-                    self.walk_field_key(k, v, load.as_ref(), store.as_ref());
+                    self.walk_field_key(k, v, path_idx, load.as_ref(), store.as_ref());
                 }
 
                 if child_count == 0 {
                     // No child field_keys → treat as leaf.
-                    self.write_leaf(path_idx, keyword_idx, &Tree::Null, load.as_ref(), store.as_ref());
+                    self.write_leaf(path_idx, keyword_idx, parent_idx, &Tree::Null, load.as_ref(), store.as_ref());
                 } else {
                     let count_bits = (child_count as u64) & 0xf;
                     self.paths[path_idx as usize] =
-                        (children_offset as u64)  << PATH_OFFSET_SHIFT
-                        | count_bits               << PATH_COUNT_SHIFT
-                        | (keyword_idx as u64)     & PATH_KEYWORD_IDX_MASK;
+                        (children_offset as u64) << PATH_OFFSET_SHIFT
+                        | count_bits              << PATH_COUNT_SHIFT
+                        | (parent_idx as u64)     << PATH_PARENT_IDX_SHIFT
+                        | (keyword_idx as u64)    & PATH_KEYWORD_IDX_MASK;
                 }
             }
             // Scalar or Null → leaf with optional hardcoded value.
             _ => {
-                self.write_leaf(path_idx, keyword_idx, value, inh_load, inh_store);
+                self.write_leaf(path_idx, keyword_idx, parent_idx, value, inh_load, inh_store);
             }
         }
     }
@@ -285,6 +290,7 @@ impl Compiler {
         &mut self,
         path_idx:    u32,
         keyword_idx: u32,
+        parent_idx:  u32,
         value:       &Tree,
         load:        Option<&MetaBlock>,
         store:       Option<&MetaBlock>,
@@ -362,14 +368,12 @@ impl Compiler {
             }
         }
 
-        // Update path entry: is_leaf=1, offset=leaf_offset, count=load_args<<4|store_args
-        let count = ((load_args_count as u64) & 0xf) << 4
-                  | ((store_args_count as u64) & 0xf);
+        // Update path entry: is_leaf=1, offset=leaf_offset, count=unused
         self.paths[path_idx as usize] =
             PATH_IS_LEAF_MASK
-            | (leaf_offset as u64) << PATH_OFFSET_SHIFT
-            | count                << PATH_COUNT_SHIFT
-            | (keyword_idx as u64) & PATH_KEYWORD_IDX_MASK;
+            | (leaf_offset as u64)  << PATH_OFFSET_SHIFT
+            | (parent_idx as u64)   << PATH_PARENT_IDX_SHIFT
+            | (keyword_idx as u64)  & PATH_KEYWORD_IDX_MASK;
     }
 
     // ── interning ─────────────────────────────────────────────────────────────

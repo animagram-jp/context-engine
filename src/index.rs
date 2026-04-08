@@ -8,6 +8,7 @@ use crate::dsl::{
     PATH_IS_LEAF_MASK,
     PATH_OFFSET_SHIFT, PATH_OFFSET_MASK,
     PATH_COUNT_SHIFT,  PATH_COUNT_MASK,
+    PATH_PARENT_IDX_SHIFT, PATH_PARENT_IDX_MASK,
     PATH_KEYWORD_IDX_MASK,
 };
 use crate::ports::provided::Tree;
@@ -16,6 +17,7 @@ use crate::ports::provided::Tree;
 
 pub struct LeafRef {
     pub path_idx:    u32,
+    pub parent_idx:  u32,
     pub leaf_offset: u32,
 }
 
@@ -105,7 +107,8 @@ impl Index {
         let path = self.paths[path_idx as usize];
         if path & PATH_IS_LEAF_MASK != 0 {
             let leaf_offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as u32;
-            out.push(LeafRef { path_idx, leaf_offset });
+            let parent_idx  = ((path & PATH_PARENT_IDX_MASK) >> PATH_PARENT_IDX_SHIFT) as u32;
+            out.push(LeafRef { path_idx, parent_idx, leaf_offset });
             return;
         }
         let offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;

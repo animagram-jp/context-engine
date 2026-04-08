@@ -22,17 +22,17 @@ impl MemoryClient {
 }
 
 impl StoreClient for MemoryClient {
-    fn get(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
-    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
         data.insert(key.to_string(), value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> bool {
+    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
         self.data.lock().unwrap().remove(key).is_some()
     }
 }
@@ -52,12 +52,12 @@ impl KvsClient {
 }
 
 impl StoreClient for KvsClient {
-    fn get(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         let bytes = self.data.lock().unwrap().get(key).cloned()?;
         // In real impl: unwire bytes → Tree
         Some(bytes)
     }
-    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
         let value = args.get("value")?.clone();
         // args["ttl"] ignored in mock
         let mut data = self.data.lock().unwrap();
@@ -65,7 +65,7 @@ impl StoreClient for KvsClient {
         data.insert(key.to_string(), value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> bool {
+    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
         self.data.lock().unwrap().remove(key).is_some()
     }
 }
@@ -78,7 +78,7 @@ impl StoreClient for KvsClient {
 pub struct EnvClient;
 
 impl StoreClient for EnvClient {
-    fn get(&self, _key: &str, args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+    fn get(&self, _key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         let pairs: Vec<(Vec<u8>, Tree)> = args.iter()
             .filter_map(|(&k, v)| {
                 let env_key = match v {
@@ -93,8 +93,8 @@ impl StoreClient for EnvClient {
             .collect();
         if pairs.is_empty() { None } else { Some(Tree::Mapping(pairs)) }
     }
-    fn set(&self, _key: &str, _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> { None }
-    fn delete(&self, _key: &str, _args: &BTreeMap<&str, Tree>) -> bool { false }
+    fn set(&self, _key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> { None }
+    fn delete(&self, _key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool { false }
 }
 
 // ── CommonDb (mock) ───────────────────────────────────────────────────────────
@@ -110,17 +110,17 @@ impl CommonDbClient {
 }
 
 impl StoreClient for CommonDbClient {
-    fn get(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
-    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
         data.insert(key.to_string(), value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> bool {
+    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
         self.data.lock().unwrap().remove(key).is_some()
     }
 }
@@ -138,17 +138,17 @@ impl TenantDbClient {
 }
 
 impl StoreClient for TenantDbClient {
-    fn get(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
-    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
         data.insert(key.to_string(), value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _args: &BTreeMap<&str, Tree>) -> bool {
+    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
         self.data.lock().unwrap().remove(key).is_some()
     }
 }

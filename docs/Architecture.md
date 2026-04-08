@@ -47,8 +47,8 @@
 | Module | fn | Signature | Description | Filename |
 |--------|----|-----------|-------------|----------|
 | Compiler | `new` | `() -> Compiler` | Compiler初期化 | dsl.rs |
-|          | `walk_field_key` | `(&mut self, keyword: &[u8], value: &Tree, inh_load: Option<&MetaBlock>, inh_store: Option<&MetaBlock>)` | field_keyノードを再帰処理しpaths/children/leavesを構築 | dsl.rs |
-|          | `resolve_meta` | `(&mut self, pairs: &[(Vec<u8>, Tree)], meta_key: &[u8], inherited: Option<&MetaBlock>) -> Option<MetaBlock>` | `_load`/`_store`ブロックを親から継承しつつ現ノードで上書きして返す | dsl.rs |
+|          | `walk_field_key` | `(&mut self, keyword: &[u8], value: &Tree, inh_load: Option<&MetaBlock>, inh_store: Option<&MetaBlock>)` | field_keyを再帰処理しpaths/children/leavesを構築 | dsl.rs |
+|          | `resolve_meta` | `(&mut self, pairs: &[(Vec<u8>, Tree)], meta_key: &[u8], inherited: Option<&MetaBlock>) -> Option<MetaBlock>` | `_load`/`_store`ブロックを親から継承しつつ現keyで上書きして返す | dsl.rs |
 |          | `write_leaf` | `(&mut self, path_idx: u32, keyword_idx: u32, value_idx: Option<u32>, load: Option<&MetaBlock>, store: Option<&MetaBlock>)` | leavesにleafデータを書き込みpaths[path_idx]をis_leaf=1で更新 | dsl.rs |
 |          | `intern` | `(&mut self, s: &[u8]) -> u32` | バイト列をinterningに追加しinterning_idxを返す（重複排除） | dsl.rs |
 |          | `intern_tree_scalar` | `(&mut self, v: &Tree) -> u32` | TreeスカラーまたはNullをinternしてindexを返す | dsl.rs |
@@ -151,55 +151,79 @@ Contextインスタンス固有のキャッシュ。StoreClientとは独立。
 ### 静的データ配列
 
 `Dsl::compile`が返す5配列。アプリ起動時に一度だけ構築し、`Index`が保持する。
+**読み込むdslの、全(部分含む)path数は、u16(65535個以下)を充てる。**
 
 ```
-paths:         Box<[u64]>   // pathノード一覧。[0]がvirtual root
-children:      Box<[u32]>   // 各pathの子path_idxをフラットに連結
-leaves:        Box<[u8]>    // leafデータのバイト列
-interning:     Box<[u8]>    // 文字列バイト列をフラットに連結
-interning_idx: Box<[u64]>   // interningのoffset(u32)+len(u32)エントリ一覧
+paths:         Box<[u64]>   // pathのlist
+children:      Box<[u16]>   // 各pathの子path_idxを連結したu16列
+leaves:        Box<[u32]>   // leafのlist。u32刻み
+interning:     Box<[u8]>    // 文字列バイト列を連結したバイト列
+interning_idx: Box<[u64]>   // interningの文字列境界 interning_idx[u64] のlist
 ```
 
 ### path (u64)
 
-| field       | bits | 範囲      |
-|-------------|------|-----------|
-| is_leaf     |    1 | bit 63    |
-| offset      |   32 | bits 62..31 |
-| count       |    8 | bits 30..23 |
-| keyword_idx |   23 | bits 22..0  |
+**paths[0]は常にvirtual root**
 
-- `is_leaf=0`: 非leafノード。`children[offset..offset+count[3:0]]`に子path_idxが並ぶ
-- `is_leaf=1`: leafノード。`leaves[offset..]`にleafデータが並ぶ。`count[7:4]=load_args数`, `count[3:0]=store_args数`
-- `keyword_idx`: このノードのkeywordのinterning_idx
+| Field       | bits | range       |
+|-------------|------|-------------|
+| is_leaf     |    1 | bit 63      |
+| offset      |   16 | bits 62..47 |
+| count       |    4 | bits 46..43 |
+| padding     |   11 | bits 42..32 |
+| parent_idx  |   16 | bits 31..16 |
+| keyword_idx |   16 | bits 15..0  |
 
-### children ([u32])
+- `is_leaf=0`: 非leaf path。`children[offset..offset+count]`に子path_idxが並ぶ
+- `is_leaf=1`: leaf path。`leaves[offset..]`にleafデータが並ぶ。`count`は未使用
+- `parent_idx`: 親path_idx。virtual root(paths[0])は自己参照(0)
+- `keyword_idx`: このpathのkeywordのinterning_idx
 
-各エントリはpath_idx。各pathノードが持つ子の範囲は`path.offset`と`path.count[3:0]`で決まる。
+### child (u16)
 
-### leaves
+| Field     | Bits | Range      |
+|-----------|------|------------|
+| child_idx |   16 | bits 15..0 | // path_idx
 
-leafノード1つ分のバイト列レイアウト:
+各path所属の始端終端は、`path.offset`と`path.count[3:0]`で決まる。
+**1pathあたりの直接子path数は、count[3:0]の4bit制限により最大15。**
 
-| フィールド          | サイズ   | 説明 |
-|---------------------|----------|------|
-| keyword_idx         | u32      | このleafのkeywordのinterning_idx |
-| value_token_count   | u32      | valueトークン数。0=null |
-| token_type[0]       | u8       | 0=static(interning_idx), 1=placeholder(path_idx) |
-| token_idx[0]        | u32      | interning_idxまたはpath_idx |
-| ... × value_token_count | | |
-| load_client_idx     | u32      | interning_idx |
-| load_key_idx        | u32      | interning_idx |
-| store_client_idx    | u32      | interning_idx |
-| store_key_idx       | u32      | interning_idx |
-| load.args  × N      | u32+u32  | key_idx + value_idx (interning) |
-| store.args × N      | u32+u32  | key_idx + value_idx (interning) |
+### leaf
+
+leaf 1つ分のレイアウト（u32単位）:
+
+| Category    | Field                | Bits | Range                           |
+|-------------|----------------------|------|---------------------------------|
+| header      | keyword_idx          |   16 | u32[0] bits 31..16              | // interning_idx
+| header      | fragment_count       |    8 | u32[0] bits 15..8               | // valueフラグメント数。0=null
+| header      | load_map_count       |    8 | u32[0] bits 7..0                | // load.mapエントリ数
+| header      | load_args_count      |    8 | u32[1] bits 31..24              | // load.argsエントリ数
+| header      | store_map_count      |    8 | u32[1] bits 23..16              | // store.mapエントリ数
+| header      | store_args_count     |    8 | u32[1] bits 15..8               | // store.argsエントリ数
+| header      | padding              |    8 | u32[1] bits 7..0                |
+| header      | load_client_idx      |   16 | u32[2] bits 31..16              | // interning_idx
+| header      | load_key_idx         |   16 | u32[2] bits 15..0               | // interning_idx
+| header      | store_client_idx     |   16 | u32[3] bits 31..16              | // interning_idx
+| header      | store_key_idx        |   16 | u32[3] bits 15..0               | // interning_idx
+| fragment×F  | padding              |   15 | u32[4+i] bits 31..17            |
+| fragment×F  | is_placeholder       |    1 | u32[4+i] bit 16                 | // 0=static, 1=placeholder
+| fragment×F  | idx                  |   16 | u32[4+i] bits 15..0             | // is_placeholder=0: interning_idx / 1: path_idx
+| load.map×M0 | dst_idx              |   16 | u32[4+F+i] bits 31..16          | // context path interning_idx
+| load.map×M0 | src_idx              |   16 | u32[4+F+i] bits 15..0           | // store column interning_idx
+| load.args×A0| key_idx              |   16 | u32[4+F+M0+i] bits 31..16       | // interning_idx
+| load.args×A0| val_idx              |   16 | u32[4+F+M0+i] bits 15..0        | // interning_idx
+| store.map×M1| dst_idx              |   16 | u32[4+F+M0+A0+i] bits 31..16    | // context path interning_idx
+| store.map×M1| src_idx              |   16 | u32[4+F+M0+A0+i] bits 15..0     | // store column interning_idx
+| store.args×A1| key_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 31..16 | // interning_idx
+| store.args×A1| val_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 15..0  | // interning_idx
+
+// F=fragment_count, M0=load_map_count, A0=load_args_count, M1=store_map_count, A1=store_args_count
 
 **valueの解釈:**
-- `token_count=0`: null
-- `token_count=1, type=static`: 静的文字列
-- `token_count=1, type=placeholder`: 単独`${path}` → `Context.get(path_idx)`の値をそのままコピー（型保持）
-- `token_count≥2` または混在: template → 各tokenを解決しstring結合
+- `fragment_count=0`: null
+- `fragment_count=1, is_placeholder=0`: 静的文字列
+- `fragment_count=1, is_placeholder=1`: 単独`${path}` → `Context.get(path_idx)`の値をそのままコピー（型保持）
+- `fragment_count≥2` または混在: template → 各fragmentを解決しstring結合
 
 **placeholder解決はcompile時に2パスで行う:**
 1. 1パス目: path構造を確定（全path_idxを決定）
@@ -207,7 +231,13 @@ leafノード1つ分のバイト列レイアウト:
 
 ### interning_idx ([u64])
 
-各エントリ: `offset(u32, bits63..32) | len(u32, bits31..0)`
+| Field  | Bits | Range  |
+|--------|------|--------|
+| offset |   32 | 63..32 |
+| padding|   16 | 31..16 |
+| len    |   16 | 15..0  |
+
+**1文字列の最大長はu16(65535バイト以下)を充てる。**
 
 インデックス0は空文字列（virtual rootのkeyword）。
 
@@ -216,8 +246,8 @@ leafノード1つ分のバイト列レイアウト:
 `${}`内のパスは常に絶対パスとして扱う。
 
 **実行時の解決:**
-- `token_count=1, type=placeholder`: `Context.get(path_idx)`の値をそのままコピー（string化しない）
-- template: 各tokenを`Context.get()`で解決しstringとして結合
+- `fragment_count=1, is_placeholder=1`: `Context.get(path_idx)`の値をそのままコピー（string化しない）
+- template: 各fragmentを`Context.get()`で解決しstringとして結合
 
 ## Error Types
 

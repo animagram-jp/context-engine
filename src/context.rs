@@ -121,7 +121,7 @@ impl<'r> ContextTrait for Context<'r> {
             .collect();
         args_ref.insert("value", value.clone());
 
-        match client.set(store_key, &args_ref) {
+        match client.set(store_key, &[], &args_ref) {
             Some(SetOutcome::Created) | Some(SetOutcome::Updated) => {
                 self.cache_set(leaf.path_idx, value);
                 Ok(true)
@@ -151,7 +151,7 @@ impl<'r> ContextTrait for Context<'r> {
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        let ok = client.delete(store_key, &args_ref);
+        let ok = client.delete(store_key, &[], &args_ref);
         if ok {
             self.cache_remove(leaf.path_idx);
         }
@@ -182,7 +182,7 @@ impl<'r> ContextTrait for Context<'r> {
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        Ok(client.get(store_key, &args_ref).is_some())
+        Ok(client.get(store_key, &[], &args_ref).is_some())
     }
 }
 
@@ -195,7 +195,7 @@ impl<'r> Context<'r> {
             return Ok(Some(v.clone()));
         }
 
-        let leaf_ref = crate::index::LeafRef { path_idx, leaf_offset };
+        let leaf_ref = crate::index::LeafRef { path_idx, parent_idx: 0, leaf_offset };
 
         // 2. _store
         let (store_name, store_args) = self.index.store_args(&leaf_ref);
@@ -209,7 +209,7 @@ impl<'r> Context<'r> {
                 let args_ref: BTreeMap<&str, Tree> = store_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                if let Some(value) = client.get(key, &args_ref) {
+                if let Some(value) = client.get(key, &[], &args_ref) {
                     self.cache_set(path_idx, value.clone());
                     return Ok(Some(value));
                 }
@@ -233,7 +233,7 @@ impl<'r> Context<'r> {
         let args_ref: BTreeMap<&str, Tree> = load_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
-        let value = client.get(key, &args_ref)
+        let value = client.get(key, &[], &args_ref)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
@@ -249,7 +249,7 @@ impl<'r> Context<'r> {
                         .map(|(k, v)| (k.as_str(), v.clone()))
                         .collect();
                     sargs.insert("value", value.clone());
-                    store_client.set(sk, &sargs);
+                    store_client.set(sk, &[], &sargs);
                 }
             }
         }
