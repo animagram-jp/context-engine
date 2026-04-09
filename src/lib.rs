@@ -1,19 +1,25 @@
-mod core;
-pub mod log_format;
+#![no_std]
+extern crate core;
+extern crate alloc;
+
+#[cfg(feature = "precompile")]
+extern crate std;
+
+pub(crate) mod debug_log;
 pub mod ports;
-pub mod load;
-pub mod store;
-pub mod state;
+pub mod context;
+pub mod tree;
+pub mod dsl;
+pub mod index;
 
-pub use log_format::LogFormat;
-pub use ports::provided::State as StateTrait;
-pub use ports::default::DefaultFileClient;
-pub use state::State;
-
-pub use ports::required::{
-    DbClient, EnvClient,
-    KVSClient, InMemoryClient,
-    HttpClient, FileClient,
+pub use ports::provided::{
+    Tree,
+    DslError, LoadError, StoreError, ContextError,
+    Context,
 };
-
-pub use ports::provided::{ManifestError, StateError, LoadError, StoreError, Value};
+pub use ports::required::{
+    StoreClient,
+    StoreRegistry,
+    SetOutcome,
+};
+pub use index::Index;

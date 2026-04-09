@@ -2,6 +2,7 @@
 **/target/**
 Cargo.lock
 **/Cargo.lock
+**/dsl_compiled.rs
 **/.npmrc
 
 CLAUDE.md

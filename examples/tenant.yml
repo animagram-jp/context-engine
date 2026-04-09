@@ -1,0 +1,92 @@
+session:
+  user:
+    _store:
+      client: Kvs
+      ttl:    3600 # seconds
+      
+    id:
+      _load:
+        client: Memory
+        key:    "request.authorization.user"
+
+    _load:
+      client:     TenantDb
+      key:        "users.id.${session.user.id}"
+      connection: ${connection.tenant_db}
+      map:
+        password_hash:         "password_hash"
+        name:                  "name"
+        email:                 "email"
+        is_manager:            "is_manager"
+        preference.color_mode: "color_mode"
+
+    password_hash:
+    name:
+    email:
+    is_manager:
+    preference:
+      color_mode:
+    name_copy: ${session.user.name}
+
+    tenant:
+      id:
+        _load:
+          client: Memory
+          key:    "request.authorization.tenant"
+      _load:
+        client:       CommonDb
+        connection:   ${connection.common_db}
+        key:          "tenants.id.${session.user.tenant.id}"
+        map:
+          code:        "code"
+          name:        "name"
+          email:       "email"
+          locale:      "locale"
+          allowed_ips: "allowed_ips"
+
+      code:
+      name:
+      email:
+      locale:
+      allowed_ips:
+
+connection:
+  common_db:
+    _load:
+      client: Env
+      map:
+        host:     "COMMON_DB_HOST"
+        port:     "COMMON_DB_PORT"
+        database: "COMMON_DB_DATABASE"
+        username: "COMMON_DB_USERNAME"
+        password: "COMMON_DB_PASSWORD"
+
+    host:
+    port:
+    database:
+    username:
+    password:
+    driver:  "postgres"
+    charset: "UTF8"
+
+  tenant_db:
+    _load:
+      client:     CommonDb
+      connection: ${connection.common_db}
+      key:        "tenants.id.${session.user.tenant.id}"
+      map:
+        host:     "host"
+        port:     "port"
+        database: "database"
+        username: "username"
+        password: "password"
+    _store:
+      client: Kvs
+      ttl:    36000 # seconds
+        
+    host:
+    port:
+    username:
+    password:
+    driver:  "postgres"
+    charset: "UTF8"
