@@ -1,4 +1,4 @@
-// this file includes contents that untranslated expressions (ja).
+// This file includes contents that untranslated expressions (ja).
 
 # Architecture
 
@@ -39,7 +39,7 @@
 |             | `set` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<SetOutcome>` | keyとdsl記載のマップから値を保存しSetOutcomeを返す | required.rs |
 |             | `delete` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> bool` | keyとdsl記載のマップから値を削除し成否を返す | required.rs |
 | StoreRegistry | `client_for` | `&self, keyword: &str -> Option<&dyn StoreClient>` | StoreClientのkeywordからStoreClientを返す | required.rs |
-| DslError | `fmt` | `&self, f: &mut fmt::Formatter<'_> -> fmt::Result` | ※エラーを返す | provided.rs |
+| DslError | `fmt` | `&self, f: &mut fmt::Formatter<'_> -> fmt::Result` | Dslのエラーを返す | provided.rs |
 | LoadError | `fmt` |  | _loadクライアント呼び出しエラーを返す | provided.rs |
 | StoreError | `fmt` |  | _storeクライアント呼び出しエラーを返す | provided.rs |
 | ContextError | `fmt` |  | Contextの出力するエラーを返す | provided.rs |
