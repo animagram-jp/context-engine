@@ -1,5 +1,5 @@
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::str::from_utf8;
@@ -220,7 +220,60 @@ impl<'r> Context<'r> {
             }
         }
 
-        // 3. _load
+        // 3. value fragments (static scalar / placeholder / template)
+        //
+        // Evaluated after _store so that a runtime set() — which writes to _store and
+        // cache — is always preferred.  Results are cache_set regardless of fragment
+        // kind: Context is request-scoped and does not need to track mid-request changes.
+        // Collect fragments into owned data to release the immutable borrow on
+        // self.index before calling self.get() (which needs &mut self).
+        let frags: Vec<(bool, Vec<u8>)> = self.index.leaf_fragments(&leaf_ref)
+            .into_iter()
+            .map(|(is_ph, b)| (is_ph, b.to_vec()))
+            .collect();
+        if !frags.is_empty() {
+            let value = if frags.len() == 1 && frags[0].0 {
+                // Single placeholder: ${path} — resolve via get() and copy as-is
+                // (type-preserving; does not stringify).
+                let path_str = from_utf8(&frags[0].1)
+                    .map_err(|_| ContextError::LoadFailed(
+                        crate::ports::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
+                    ))?
+                    .to_string();
+                self.get(&path_str)?
+                    .ok_or_else(|| ContextError::LoadFailed(
+                        crate::ports::provided::LoadError::NotFound(path_str.clone())
+                    ))?
+            } else {
+                // Static scalar or template: concatenate all fragments as strings.
+                // Placeholders are resolved via get() and stringified.
+                let mut buf = String::new();
+                for (is_ph, bytes) in frags {
+                    if is_ph {
+                        let path_str = from_utf8(&bytes)
+                            .map_err(|_| ContextError::LoadFailed(
+                                crate::ports::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
+                            ))?;
+                        match self.get(path_str)? {
+                            Some(Tree::Scalar(b)) => {
+                                buf.push_str(from_utf8(&b).unwrap_or(""));
+                            }
+                            Some(_) => {}
+                            None => return Err(ContextError::LoadFailed(
+                                crate::ports::provided::LoadError::NotFound(path_str.to_string())
+                            )),
+                        }
+                    } else {
+                        buf.push_str(from_utf8(&bytes).unwrap_or(""));
+                    }
+                }
+                Tree::Scalar(buf.into_bytes())
+            };
+            self.cache_set(path_idx, value.clone());
+            return Ok(Some(value));
+        }
+
+        // 4. _load
         let (load_name, load_map, load_args) = self.index.load_args(&leaf_ref);
         if load_name.is_empty() {
             return Ok(None);

@@ -95,6 +95,43 @@ impl Index {
     pub fn store_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
         self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)
     }
+
+    /// Return the value fragments encoded in the leaf.
+    ///
+    /// Each element is `(is_placeholder, bytes)`:
+    /// - `is_placeholder = false` — static string literal
+    /// - `is_placeholder = true`  — `${path}` reference whose bytes are the path string
+    ///
+    /// An empty slice means the leaf has no value (`Null`).
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::{Tree, Index, dsl::Dsl};
+    /// let tree = Tree::Mapping(alloc::vec![
+    ///     (b"driver".to_vec(), Tree::Scalar(b"postgres".to_vec())),
+    /// ]);
+    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
+    /// let idx = Index::new(p, c, l, i, ii);
+    /// let leaves = idx.traverse("driver");
+    /// let frags = idx.leaf_fragments(&leaves[0]);
+    /// assert_eq!(frags.len(), 1);
+    /// assert_eq!(frags[0].0, false);
+    /// assert_eq!(frags[0].1, b"postgres");
+    /// ```
+    pub fn leaf_fragments(&self, leaf: &LeafRef) -> Vec<(bool, &[u8])> {
+        let base = leaf.leaf_offset as usize;
+        let h0 = self.leaves[base];
+        let fragment_count = ((h0 >> 8) & 0xff) as usize;
+        let frag_start = base + 4;
+        let mut result = Vec::with_capacity(fragment_count);
+        for i in 0..fragment_count {
+            let word = self.leaves[frag_start + i];
+            let is_placeholder = ((word >> 16) & 0x1) != 0;
+            let idx = (word & 0xffff) as usize;
+            result.push((is_placeholder, self.interning_str(idx)));
+        }
+        result
+    }
 }
 
 // ── private ───────────────────────────────────────────────────────────────────
@@ -214,11 +251,6 @@ impl Index {
         }
 
         (client_name, map, args)
-    }
-
-    /// Read a u32 from `leaves` at element index `idx`.
-    fn read_u32(&self, idx: usize) -> u32 {
-        self.leaves[idx]
     }
 
     /// Resolve interning bytes by interning_idx index.
@@ -362,6 +394,53 @@ mod tests {
         let leaves = idx.traverse("user.id");
         let (client, _, args) = idx.load_args(&leaves[0]);
         assert!(client.is_empty() && args.is_empty());
+    }
+
+    // --- leaf_fragments ---
+
+    #[test]
+    fn leaf_fragments_static_value() {
+        let idx = make_index(&mapping(vec![
+            ("driver", scalar("postgres")),
+        ]));
+        let leaves = idx.traverse("driver");
+        let frags = idx.leaf_fragments(&leaves[0]);
+        assert_eq!(frags.len(), 1);
+        assert_eq!(frags[0], (false, b"postgres" as &[u8]));
+    }
+
+    #[test]
+    fn leaf_fragments_null_value_is_empty() {
+        let idx = make_index(&mapping(vec![
+            ("id", Tree::Null),
+        ]));
+        let leaves = idx.traverse("id");
+        let frags = idx.leaf_fragments(&leaves[0]);
+        assert!(frags.is_empty());
+    }
+
+    #[test]
+    fn leaf_fragments_single_placeholder() {
+        let idx = make_index(&mapping(vec![
+            ("copy", scalar("${session.user.name}")),
+        ]));
+        let leaves = idx.traverse("copy");
+        let frags = idx.leaf_fragments(&leaves[0]);
+        assert_eq!(frags.len(), 1);
+        assert_eq!(frags[0], (true, b"session.user.name" as &[u8]));
+    }
+
+    #[test]
+    fn leaf_fragments_template() {
+        let idx = make_index(&mapping(vec![
+            ("key", scalar("prefix.${some.path}.suffix")),
+        ]));
+        let leaves = idx.traverse("key");
+        let frags = idx.leaf_fragments(&leaves[0]);
+        assert_eq!(frags.len(), 3);
+        assert_eq!(frags[0], (false, b"prefix." as &[u8]));
+        assert_eq!(frags[1], (true,  b"some.path" as &[u8]));
+        assert_eq!(frags[2], (false, b".suffix" as &[u8]));
     }
 
     // --- store_args ---
