@@ -15,7 +15,7 @@ pub struct Context<'r> {
     registry:       &'r dyn StoreRegistry,
     cache_keys:     Vec<u32>,       // path_idx
     cache_vals:     Vec<Tree>,      // parallel to cache_keys
-    called_paths:    BTreeSet<u32>,
+    called_paths:   BTreeSet<u32>,
     max_recursion:  usize,
 }
 

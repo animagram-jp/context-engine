@@ -1,6 +1,4 @@
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-
+use alloc::{boxed::Box,vec::Vec};
 use crate::ports::provided::Tree;
 
 // ── meta_key keywords ─────────────────────────────────────────────────────────

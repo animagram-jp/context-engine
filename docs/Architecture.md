@@ -1,17 +1,20 @@
+// this file includes contents that untranslated expressions (ja).
+
 # Architecture
 
-## ライブラリ要件
+## Requirement
 
-- README 3行目 参照
+- [README.md:3](../README.md#context-engine)
 - システムが認識するべき概念を階層構造の名前空間で表現できたとする。この時、名前空間から導かれる全通りの(部分含む)パスが、ランタイムの単一処理スコープで操作する可能性のある値のキーを網羅している。このキー群の値全てを、DSLにて漏れなく取得方法の定義を宣言する。
 
-## 機能構成
+## Function
 
-- parse & compile: DSLを読み込み、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
+- parse: YAMLをパースする
+- compile: dslから、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
 - traversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
-- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンス。
+- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンスで行い、リクエストを跨いで保持したい場合は全て_storeにて指示する
 
-## ポート構成
+## Port
 
 | Module | Port | Signature | Description | Filename |
 |--------|------|-----------|-------------|----------|
@@ -75,23 +78,19 @@
 |         | `guard_recursion` | `(&self, path_idx: u32) -> Result<(), ContextError>` | called_pathsの重複・上限超過を検出しエラーを返す | context.rs |
 |         | `resolve_leaf` | `(&mut self, path_idx: u32, leaf_offset: u32) -> Result<Option<Tree>, ContextError>` | cache→_store→_loadの順で値を解決しwrite-throughする | context.rs |
 
-## 用語
+## Terms
 
-```
-key:            n層マップDSLの最末端value以外の要素
-keyword:        keyの名前文字列
-field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-meta_key:       keywordが'_'始まりのkeyと、その子孫key
-leaf_key:       子にkeyを持たず値を持つkey
-value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
-path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
-qualified_path: DSL内で一意な完全修飾パス
-placeholder:    key参照記述("${path}")。valueのみに適用。
-                単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
-template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。
-                is_template=trueとして扱い、解決時にstring化する
-called_path:    Context.get()等に渡されるパス文字列
-```
+- key:            n層マップDSLの最末端value以外の要素
+- keyword:        keyの名前文字列
+- field_key:      自身と親祖先のkeywordが'_'で始まらないkey
+- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
+- leaf_key:       子にkeyを持たず値を持つkey
+- value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
+- path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
+- qualified_path: DSL内で一意な完全修飾パス
+- placeholder:    key参照記述("${path}")。valueのみに適用。単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
+- template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。is_template=trueとして扱い、解決時にstring化する
+- called_path:    Context.get()等に渡されるパス文字列
 
 ## モジュール仕様
 
