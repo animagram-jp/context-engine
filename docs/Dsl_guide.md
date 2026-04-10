@@ -1,22 +1,20 @@
+// this file includes contents that untranslated expressions (ja).
+
 # DSL guide
 
-## 用語
+## Terms
 
-```
-key:            n層マップDSLの最末端value以外の要素
-keyword:        keyの名前文字列
-field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
-leaf_key:       子にkeyを持たず値を持つkey
-value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
-path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
-qualified_path: DSL内で一意な完全修飾パス
-placeholder:    key参照記述("${path}")。valueのみに適用。
-                単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
-template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。
-                is_template=trueとして扱い、解決時にstring化する
-called_path:    Context.get()等に渡されるパス文字列
-```
+- key:            n層マップDSLの最末端value以外の要素
+- keyword:        keyの名前文字列
+- field_key:      自身と親祖先のkeywordが'_'で始まらないkey
+- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
+- leaf_key:       子にkeyを持たず値を持つkey
+- value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
+- path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
+- qualified_path: DSL内で一意な完全修飾パス
+- placeholder:    key参照記述("${path}")。valueのみに適用。単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
+- template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。is_template=trueとして扱い、解決時にstring化する
+- called_path:    Context.get()等に渡されるパス文字列
 
 ## Rules
 
