@@ -17,6 +17,7 @@ use crate::ports::provided::Tree;
 
 // ── LeafRef ───────────────────────────────────────────────────────────────────
 
+/// Reference to a leaf path entry returned by `Index::traverse`.
 pub struct LeafRef {
     pub path_idx:    u32,
     pub parent_idx:  u32,
@@ -25,6 +26,7 @@ pub struct LeafRef {
 
 // ── Index ─────────────────────────────────────────────────────────────────────
 
+/// Compiled DSL index. Holds the five static arrays produced by `Dsl::compile` and supports path traversal.
 pub struct Index {
     paths:         Box<[u64]>,
     children:      Box<[u16]>,
@@ -46,6 +48,16 @@ impl Index {
 
     /// Traverse to the path node matching `path` (dot-separated keywords),
     /// then collect all leaf descendants into a flat list.
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::{Tree, Index, dsl::Dsl};
+    /// let tree = Tree::Mapping(alloc::vec![(b"id".to_vec(), Tree::Null)]);
+    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
+    /// let idx = Index::new(p, c, l, i, ii);
+    /// assert_eq!(idx.traverse("id").len(), 1);
+    /// assert!(idx.traverse("missing").is_empty());
+    /// ```
     pub fn traverse(&self, path: &str) -> Box<[LeafRef]> {
         let mut result = Vec::new();
         let Some(path_idx) = self.find(path) else {
@@ -56,6 +68,16 @@ impl Index {
     }
 
     /// Resolve the keyword bytes of a path node from the interning list.
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::{Tree, Index, dsl::Dsl};
+    /// let tree = Tree::Mapping(alloc::vec![(b"name".to_vec(), Tree::Null)]);
+    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
+    /// let idx = Index::new(p, c, l, i, ii);
+    /// // paths[1] = "name" leaf (paths[0] = virtual root)
+    /// assert_eq!(idx.keyword_of(1), b"name");
+    /// ```
     pub fn keyword_of(&self, path_idx: u32) -> &[u8] {
         let path = self.paths[path_idx as usize];
         let interning_idx = (path & PATH_KEYWORD_IDX_MASK) as usize;

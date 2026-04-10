@@ -10,6 +10,7 @@ use crate::ports::required::{StoreRegistry, SetOutcome};
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
+/// Request-scoped context instance. Wraps an `Index` and a `StoreRegistry` to resolve DSL paths.
 pub struct Context<'r> {
     index:          Arc<Index>,
     registry:       &'r dyn StoreRegistry,
@@ -112,9 +113,10 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
+        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(key);
+            .unwrap_or(&idx_str);
 
         let mut args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -143,9 +145,10 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
+        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(key);
+            .unwrap_or(&idx_str);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -174,9 +177,10 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(false);
         };
 
+        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(key);
+            .unwrap_or(&idx_str);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -201,15 +205,15 @@ impl<'r> Context<'r> {
         let (store_name, store_map, store_args) = self.index.store_args(&leaf_ref);
         if !store_name.is_empty() {
             if let Some(client) = self.registry.client_for(store_name) {
-                let key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
-                }).ok_or_else(|| ContextError::StoreFailed(
-                    StoreError::ConfigMissing("key".to_string())
-                ))?;
+                // DSL key省略時はpath_idxを文字列化してstore keyとする（compile時確定・一意）
+                let idx_str = alloc::string::ToString::to_string(&path_idx);
+                let store_key = store_args.get("key")
+                    .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
+                    .unwrap_or(&idx_str);
                 let args_ref: BTreeMap<&str, Tree> = store_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                if let Some(value) = client.get(key, &store_map, &args_ref) {
+                if let Some(value) = client.get(store_key, &store_map, &args_ref) {
                     self.cache_set(path_idx, value.clone());
                     return Ok(Some(value));
                 }
@@ -241,16 +245,15 @@ impl<'r> Context<'r> {
         // write-through to _store if configured
         if !store_name.is_empty() {
             if let Some(store_client) = self.registry.client_for(store_name) {
-                let store_key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
-                });
-                if let Some(sk) = store_key {
-                    let mut sargs: BTreeMap<&str, Tree> = store_args.iter()
-                        .map(|(k, v)| (k.as_str(), v.clone()))
-                        .collect();
-                    sargs.insert("value", value.clone());
-                    store_client.set(sk, &store_map, &sargs);
-                }
+                let idx_str = alloc::string::ToString::to_string(&path_idx);
+                let sk = store_args.get("key")
+                    .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
+                    .unwrap_or(&idx_str);
+                let mut sargs: BTreeMap<&str, Tree> = store_args.iter()
+                    .map(|(k, v)| (k.as_str(), v.clone()))
+                    .collect();
+                sargs.insert("value", value.clone());
+                store_client.set(sk, &store_map, &sargs);
             }
         }
 

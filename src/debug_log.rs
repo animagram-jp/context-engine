@@ -83,13 +83,13 @@ mod tests {
     use alloc::vec;
 
     #[test]
-    fn test_message_multiple_args() {
+    fn message_multiple_args() {
         let result = message("State", "get", &["'cache.user'", "null"]);
         assert_eq!(result, "State::get('cache.user', null)");
     }
 
     #[test]
-    fn test_format_arg_scalar() {
+    fn format_arg_variants() {
         assert_eq!(format_arg(&Tree::Scalar(b"text".to_vec())), "'text'");
         assert_eq!(format_arg(&Tree::Null), "null");
         assert_eq!(format_arg(&Tree::Sequence(vec![])), "[]");
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_arg_long_string() {
+    fn format_arg_long_string_truncated() {
         let long_str = "a".repeat(60);
         let result = format_arg(&Tree::Scalar(long_str.into_bytes()));
         assert!(result.starts_with("'aaa"));
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn test_format_str_arg() {
+    fn format_str_arg_short_and_long() {
         assert_eq!(format_str_arg("key"), "'key'");
         let long_str = "a".repeat(60);
         let result = format_str_arg(&long_str);

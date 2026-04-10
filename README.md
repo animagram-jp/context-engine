@@ -170,6 +170,9 @@ Passed unit and integration tests
 ```bash
 # unit test
 cargo test --features=logging -- --nocapture
+
+# integration test (includes precompile path verification)
+cargo run --example precompile --features precompile -- examples/tenant.yml src/dsl_compiled.rs && cargo run --example integration_tests --features precompile
 ```
 
 ---

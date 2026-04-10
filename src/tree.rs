@@ -15,12 +15,30 @@ const TAG_SEQUENCE: u8 = 0x02;
 const TAG_MAPPING:  u8 = 0x03;
 
 impl Tree {
+    /// Serializes the tree to the wire format.
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::Tree;
+    /// let v = Tree::Scalar(b"hi".to_vec());
+    /// let bytes = v.wire();
+    /// assert_eq!(Tree::unwire(&bytes), Some(v));
+    /// ```
     pub fn wire(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         write_value(self, &mut buf);
         buf
     }
 
+    /// Deserializes a tree from wire-format bytes. Returns `None` on malformed input.
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::Tree;
+    /// assert_eq!(Tree::unwire(&[0xFF]), None);
+    /// let bytes = Tree::Null.wire();
+    /// assert_eq!(Tree::unwire(&bytes), Some(Tree::Null));
+    /// ```
     pub fn unwire(bytes: &[u8]) -> Option<Self> {
         let (value, _) = read_value(bytes)?;
         Some(value)
@@ -111,22 +129,22 @@ mod tests {
     }
 
     #[test]
-    fn test_null() {
+    fn null_roundtrip() {
         assert_eq!(rt(&Tree::Null), Tree::Null);
     }
 
     #[test]
-    fn test_scalar() {
+    fn scalar_roundtrip() {
         assert_eq!(rt(&Tree::Scalar(b"hello".to_vec())), Tree::Scalar(b"hello".to_vec()));
     }
 
     #[test]
-    fn test_scalar_empty() {
+    fn scalar_empty_roundtrip() {
         assert_eq!(rt(&Tree::Scalar(vec![])), Tree::Scalar(vec![]));
     }
 
     #[test]
-    fn test_sequence() {
+    fn sequence_roundtrip() {
         let v = Tree::Sequence(vec![
             Tree::Scalar(b"a".to_vec()),
             Tree::Null,
@@ -136,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mapping() {
+    fn mapping_roundtrip() {
         let v = Tree::Mapping(vec![
             (b"id".to_vec(),   Tree::Scalar(b"1".to_vec())),
             (b"name".to_vec(), Tree::Scalar(b"alice".to_vec())),
@@ -145,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nested() {
+    fn nested_roundtrip() {
         let v = Tree::Mapping(vec![
             (b"user".to_vec(), Tree::Mapping(vec![
                 (b"id".to_vec(),    Tree::Scalar(b"1".to_vec())),
@@ -160,13 +178,13 @@ mod tests {
     }
 
     #[test]
-    fn test_unwire_invalid_returns_none() {
+    fn unwire_invalid_returns_none() {
         assert_eq!(Tree::unwire(&[0xFF]), None);
         assert_eq!(Tree::unwire(&[TAG_SCALAR, 0x05, 0x00, 0x00, 0x00]), None);
     }
 
     #[test]
-    fn test_roundtrip_null_field() {
+    fn mapping_with_null_field_roundtrip() {
         let v = Tree::Mapping(vec![
             (b"id".to_vec(),         Tree::Scalar(b"1".to_vec())),
             (b"deleted_at".to_vec(), Tree::Null),

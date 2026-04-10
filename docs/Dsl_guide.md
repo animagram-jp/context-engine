@@ -91,6 +91,30 @@ _load:
 
 implementorは `args: &BTreeMap<&str, Tree>` から任意キーを取り出して使う。
 
+#### _store.key の省略
+
+`_store.key` は省略可能。省略時、ライブラリはそのleafの `path_idx`（compile時確定のu32）を文字列化してstore keyとして使う。
+
+```yaml
+session:
+  user:
+    _store:
+      client: Kvs
+      ttl: 3600
+      # key: 省略 → path_idxが自動的にstore keyになる
+    id:
+      _load:
+        client: Memory
+        key: "request.authorization.user.id"
+```
+
+**この設計の根拠:**
+- `path_idx`は同じYAMLから生成された全インスタンスで同一（compile時確定）
+- qualified_pathを文字列で持たなくてもleaf固有の一意キーとして機能する
+- 中間パス（`session.user`）経由のgetでも各leafが自身の`path_idx`を使うため衝突しない
+
+`_load.key` は省略不可。
+
 ### 5. map
 
 `_load.map:` / `_store.map:` でparent field_keyの子fieldにストア列等をマッピングする。

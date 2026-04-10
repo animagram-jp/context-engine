@@ -11,11 +11,16 @@ use std::sync::Arc;
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
+include!("../src/dsl_compiled.rs");
+
 fn make_context<'r>(registry: &'r MyRegistry) -> Context<'r> {
-    let src = include_bytes!("tenant.yml");
-    let tree = context_engine::dsl::parse_yaml(src).expect("parse failed");
-    let (paths, children, leaves, interning, interning_idx) = context_engine::dsl::Dsl::compile(&tree);
-    let index = Arc::new(Index::new(paths, children, leaves, interning, interning_idx));
+    let index = Arc::new(Index::new(
+        Box::from(PATHS),
+        Box::from(CHILDREN),
+        Box::from(LEAVES),
+        Box::from(INTERNING),
+        Box::from(INTERNING_IDX),
+    ));
     Context::new(index, registry)
 }
 
@@ -249,6 +254,33 @@ fn main() {
         let result = ctx.exists("session.nonexistent");
         assert!(matches!(result, Err(ContextError::KeyNotFound(_))));
     });
+
+    // =========================================================================
+    // recursion limit
+    // max_recursion=20: traversing an intermediate path that expands to more
+    // than 20 leaves hits the guard in the multi-leaf branch.
+    // =========================================================================
+    // std::println!("\n[RecursionLimitExceeded — >20 leaves under one path]");
+
+    // test!("get intermediate path with 21 leaves returns RecursionLimitExceeded", {
+    //     // Build a DSL with 21 leaves under "group", each with a Memory _load.
+    //     let leaf_names = [
+    //         "a","b","c","d","e","f","g","h","i","j",
+    //         "k","l","m","n","o","p","q","r","s","t","u",
+    //     ];
+    //     let mut yaml = std::string::String::from("group:\n  _store:\n    client: Kvs\n    key: g\n");
+    //     for name in &leaf_names {
+    //         yaml.push_str(&std::format!("  {}:\n    _load:\n      client: Memory\n      key: req.{}\n", name, name));
+    //     }
+    //     let src = yaml.as_bytes();
+    //     let tree = context_engine::dsl::parse_yaml(src).expect("parse failed");
+    //     let (paths, children, leaves, interning, interning_idx) = context_engine::dsl::Dsl::compile(&tree);
+    //     let index = Arc::new(Index::new(paths, children, leaves, interning, interning_idx));
+    //     let registry = MyRegistry::new();
+    //     let mut ctx = Context::new(index, &registry);
+    //     let result = ctx.get("group");
+    //     assert!(matches!(result, Err(ContextError::RecursionLimitExceeded)));
+    // });
 
     // =========================================================================
     // results

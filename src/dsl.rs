@@ -38,6 +38,7 @@ pub const PATH_KEYWORD_IDX_MASK: u64 = 0xffff; // bits 15..0
 
 // ── Dsl ───────────────────────────────────────────────────────────────────────
 
+/// Compiles a DSL tree into static index data arrays consumed by `Index`.
 pub struct Dsl {
     paths:         Box<[u64]>,
     children:      Box<[u16]>,
@@ -57,6 +58,17 @@ impl Dsl {
         Self { paths, children, leaves, interning, interning_idx }
     }
 
+    /// Compiles a `Tree` into five static data arrays: `(paths, children, leaves, interning, interning_idx)`.
+    ///
+    /// ```
+    /// # extern crate alloc;
+    /// use context_engine::{Tree, dsl::Dsl};
+    /// let tree = Tree::Mapping(alloc::vec![
+    ///     (b"id".to_vec(), Tree::Null),
+    /// ]);
+    /// let (paths, children, ..) = Dsl::compile(&tree);
+    /// assert_eq!(paths.len(), 2); // virtual root + id
+    /// ```
     pub fn compile(tree: &Tree) -> (
         Box<[u64]>,
         Box<[u16]>,
@@ -107,8 +119,8 @@ impl Dsl {
         let mut out = String::new();
         out.push_str("// @generated — do not edit by hand\n\n");
         emit_u64_slice(&mut out, "PATHS",         &paths);
-        emit_u32_slice(&mut out, "CHILDREN",      &children);
-        emit_u8_slice (&mut out, "LEAVES",        &leaves);
+        emit_u16_slice(&mut out, "CHILDREN",      &children);
+        emit_u32_slice(&mut out, "LEAVES",        &leaves);
         emit_u8_slice (&mut out, "INTERNING",     &interning);
         emit_u64_slice(&mut out, "INTERNING_IDX", &interning_idx);
 
@@ -471,6 +483,19 @@ fn emit_u64_slice(out: &mut alloc::string::String, name: &str, data: &[u64]) {
 }
 
 #[cfg(feature = "precompile")]
+fn emit_u16_slice(out: &mut alloc::string::String, name: &str, data: &[u16]) {
+    extern crate std;
+    use std::format;
+    out.push_str(&format!("pub static {name}: &[u16] = &[\n"));
+    for chunk in data.chunks(8) {
+        out.push_str("    ");
+        for v in chunk { out.push_str(&format!("0x{v:04x}, ")); }
+        out.push('\n');
+    }
+    out.push_str("];\n\n");
+}
+
+#[cfg(feature = "precompile")]
 fn emit_u32_slice(out: &mut alloc::string::String, name: &str, data: &[u32]) {
     extern crate std;
     use std::format;
@@ -619,6 +644,106 @@ mod tests {
             interning.get(off..off+len) == Some(b"hello" as &[u8])
         }).count();
         assert_eq!(hello_count, 1);
+    }
+
+    // --- fragment ---
+
+    #[test]
+    fn static_value_stored_as_single_fragment() {
+        // Scalar value with no placeholder → fragment_count=1, is_placeholder=0
+        let (paths, _, leaves, ..) = compile(&mapping(vec![
+            ("key", scalar("hello")),
+        ]));
+        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let h0 = leaves[leaf_offset];
+        let fragment_count = (h0 >> 8) & 0xff;
+        let frag = leaves[leaf_offset + 4];
+        let is_placeholder = (frag >> 16) & 0x1;
+        assert_eq!(fragment_count, 1);
+        assert_eq!(is_placeholder, 0); // static string
+    }
+
+    #[test]
+    fn placeholder_value_stored_as_single_fragment_is_placeholder() {
+        // Scalar value "${some.path}" → fragment_count=1, is_placeholder=1
+        let (paths, _, leaves, ..) = compile(&mapping(vec![
+            ("copy", scalar("${session.user.id}")),
+        ]));
+        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let h0 = leaves[leaf_offset];
+        let fragment_count = (h0 >> 8) & 0xff;
+        let frag = leaves[leaf_offset + 4];
+        let is_placeholder = (frag >> 16) & 0x1;
+        assert_eq!(fragment_count, 1);
+        assert_eq!(is_placeholder, 1); // placeholder
+    }
+
+    #[test]
+    fn template_value_stored_as_multiple_fragments() {
+        // "prefix.${some.path}.suffix" → fragment_count=3: static, placeholder, static
+        let (paths, _, leaves, ..) = compile(&mapping(vec![
+            ("key", scalar("prefix.${some.path}.suffix")),
+        ]));
+        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let h0 = leaves[leaf_offset];
+        let fragment_count = (h0 >> 8) & 0xff;
+        assert_eq!(fragment_count, 3);
+        let frag0 = leaves[leaf_offset + 4];
+        let frag1 = leaves[leaf_offset + 5];
+        let frag2 = leaves[leaf_offset + 6];
+        assert_eq!((frag0 >> 16) & 0x1, 0); // static
+        assert_eq!((frag1 >> 16) & 0x1, 1); // placeholder
+        assert_eq!((frag2 >> 16) & 0x1, 0); // static
+    }
+
+    // --- resolve_meta ---
+
+    #[test]
+    fn local_load_overrides_inherited_client() {
+        // parent defines _load with client="A", child overrides with client="B"
+        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+            ("parent", mapping(vec![
+                ("_load", mapping(vec![
+                    ("client", scalar("ClientA")),
+                    ("key",    scalar("k")),
+                ])),
+                ("child", mapping(vec![
+                    ("_load", mapping(vec![
+                        ("client", scalar("ClientB")),
+                        ("key",    scalar("k")),
+                    ])),
+                    ("leaf", Tree::Null),
+                ])),
+            ])),
+        ]));
+        // root(0), parent(1), child(2), leaf(3)
+        let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let h2 = leaves[leaf_offset + 2];
+        let client_idx = ((h2 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[client_idx] >> 32) as usize;
+        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        assert_eq!(&interning[off..off+len], b"ClientB");
+    }
+
+    #[test]
+    fn load_inherited_when_no_local_override() {
+        // parent defines _load with client="Inherited", child has no _load
+        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+            ("parent", mapping(vec![
+                ("_load", mapping(vec![
+                    ("client", scalar("Inherited")),
+                    ("key",    scalar("k")),
+                ])),
+                ("leaf", Tree::Null),
+            ])),
+        ]));
+        // root(0), parent(1), leaf(2)
+        let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
+        let h2 = leaves[leaf_offset + 2];
+        let client_idx = ((h2 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[client_idx] >> 32) as usize;
+        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        assert_eq!(&interning[off..off+len], b"Inherited");
     }
 
     // --- precompile ---

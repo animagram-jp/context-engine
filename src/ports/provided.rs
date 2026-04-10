@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-// Request-scoped context handle. Manages state per DSL definition.
+/// Request-scoped context handle. Manages state per DSL definition.
 pub trait Context {
     /// Returns value from instance cache → _store, triggers _load on miss.
     fn get(&mut self, key: &str) -> Result<Option<Tree>, ContextError>;
@@ -17,7 +17,7 @@ pub trait Context {
     fn exists(&mut self, key: &str) -> Result<bool, ContextError>;
 }
 
-// The value type used throughout context-engine's public API.
+/// The value type used throughout context-engine's public API.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Tree {
     Scalar(Vec<u8>),
@@ -28,6 +28,7 @@ pub enum Tree {
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
+/// DSL parse/file errors returned by `Dsl::write`.
 #[derive(Debug, PartialEq)]
 pub enum DslError {
     FileNotFound(String),
@@ -45,6 +46,7 @@ impl fmt::Display for DslError {
     }
 }
 
+/// Errors from `_load` client resolution during `Context::get`.
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
     /// StoreRegistry::client_for() returned None for the given keyword.
@@ -68,6 +70,7 @@ impl fmt::Display for LoadError {
     }
 }
 
+/// Errors from `_store` client operations during `Context::set` / `Context::delete`.
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
     /// StoreRegistry::client_for() returned None for the given keyword.
@@ -88,6 +91,7 @@ impl fmt::Display for StoreError {
     }
 }
 
+/// Top-level errors returned by all `Context` methods.
 #[derive(Debug, PartialEq)]
 pub enum ContextError {
     ParseFailed(String),
