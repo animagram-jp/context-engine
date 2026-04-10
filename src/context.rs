@@ -106,14 +106,14 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (keyword, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.store_args(leaf);
         let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
         let store_key = args.get("key")
-            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
             .unwrap_or(key);
 
         let mut args_ref: BTreeMap<&str, Tree> = args.iter()
@@ -121,7 +121,7 @@ impl<'r> ContextTrait for Context<'r> {
             .collect();
         args_ref.insert("value", value.clone());
 
-        match client.set(store_key, &[], &args_ref) {
+        match client.set(store_key, &map, &args_ref) {
             Some(SetOutcome::Created) | Some(SetOutcome::Updated) => {
                 self.cache_set(leaf.path_idx, value);
                 Ok(true)
@@ -137,21 +137,21 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (keyword, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.store_args(leaf);
         let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
 
         let store_key = args.get("key")
-            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
             .unwrap_or(key);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        let ok = client.delete(store_key, &[], &args_ref);
+        let ok = client.delete(store_key, &map, &args_ref);
         if ok {
             self.cache_remove(leaf.path_idx);
         }
@@ -169,20 +169,20 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(!matches!(v, Tree::Null));
         }
 
-        let (keyword, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.store_args(leaf);
         let Some(client) = self.registry.client_for(keyword) else {
             return Ok(false);
         };
 
         let store_key = args.get("key")
-            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None })
+            .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
             .unwrap_or(key);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        Ok(client.get(store_key, &[], &args_ref).is_some())
+        Ok(client.get(store_key, &map, &args_ref).is_some())
     }
 }
 
@@ -198,18 +198,18 @@ impl<'r> Context<'r> {
         let leaf_ref = crate::index::LeafRef { path_idx, parent_idx: 0, leaf_offset };
 
         // 2. _store
-        let (store_name, store_args) = self.index.store_args(&leaf_ref);
+        let (store_name, store_map, store_args) = self.index.store_args(&leaf_ref);
         if !store_name.is_empty() {
             if let Some(client) = self.registry.client_for(store_name) {
                 let key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
+                    if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
                 }).ok_or_else(|| ContextError::StoreFailed(
                     StoreError::ConfigMissing("key".to_string())
                 ))?;
                 let args_ref: BTreeMap<&str, Tree> = store_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                if let Some(value) = client.get(key, &[], &args_ref) {
+                if let Some(value) = client.get(key, &store_map, &args_ref) {
                     self.cache_set(path_idx, value.clone());
                     return Ok(Some(value));
                 }
@@ -217,7 +217,7 @@ impl<'r> Context<'r> {
         }
 
         // 3. _load
-        let (load_name, load_args) = self.index.load_args(&leaf_ref);
+        let (load_name, load_map, load_args) = self.index.load_args(&leaf_ref);
         if load_name.is_empty() {
             return Ok(None);
         }
@@ -226,14 +226,14 @@ impl<'r> Context<'r> {
                 LoadError::ClientNotFound(load_name.to_string())
             ))?;
         let key = load_args.get("key").and_then(|v| {
-            if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
+            if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
         }).ok_or_else(|| ContextError::LoadFailed(
             LoadError::ConfigMissing("key".to_string())
         ))?;
         let args_ref: BTreeMap<&str, Tree> = load_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
-        let value = client.get(key, &[], &args_ref)
+        let value = client.get(key, &load_map, &args_ref)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
@@ -242,14 +242,14 @@ impl<'r> Context<'r> {
         if !store_name.is_empty() {
             if let Some(store_client) = self.registry.client_for(store_name) {
                 let store_key = store_args.get("key").and_then(|v| {
-                    if let Tree::Scalar(b) = v { from_utf8(b).ok() } else { None }
+                    if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
                 });
                 if let Some(sk) = store_key {
                     let mut sargs: BTreeMap<&str, Tree> = store_args.iter()
                         .map(|(k, v)| (k.as_str(), v.clone()))
                         .collect();
                     sargs.insert("value", value.clone());
-                    store_client.set(sk, &[], &sargs);
+                    store_client.set(sk, &store_map, &sargs);
                 }
             }
         }

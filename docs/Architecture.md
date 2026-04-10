@@ -225,9 +225,6 @@ leaf 1つ分のレイアウト（u32単位）:
 - `fragment_count=1, is_placeholder=1`: 単独`${path}` → `Context.get(path_idx)`の値をそのままコピー（型保持）
 - `fragment_count≥2` または混在: template → 各fragmentを解決しstring結合
 
-**placeholder解決はcompile時に2パスで行う:**
-1. 1パス目: path構造を確定（全path_idxを決定）
-2. 2パス目: value内の`${path}`文字列をpath_idxに解決してleavesに書き込む
 
 ### interning_idx ([u64])
 

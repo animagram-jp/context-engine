@@ -42,8 +42,8 @@ pub const PATH_KEYWORD_IDX_MASK: u64 = 0xffff; // bits 15..0
 
 pub struct Dsl {
     paths:         Box<[u64]>,
-    children:      Box<[u32]>,
-    leaves:        Box<[u8]>,
+    children:      Box<[u16]>,
+    leaves:        Box<[u32]>,
     interning:     Box<[u8]>,
     interning_idx: Box<[u64]>,
 }
@@ -51,8 +51,8 @@ pub struct Dsl {
 impl Dsl {
     pub fn new(
         paths:         Box<[u64]>,
-        children:      Box<[u32]>,
-        leaves:        Box<[u8]>,
+        children:      Box<[u16]>,
+        leaves:        Box<[u32]>,
         interning:     Box<[u8]>,
         interning_idx: Box<[u64]>,
     ) -> Self {
@@ -61,8 +61,8 @@ impl Dsl {
 
     pub fn compile(tree: &Tree) -> (
         Box<[u64]>,
+        Box<[u16]>,
         Box<[u32]>,
-        Box<[u8]>,
         Box<[u8]>,
         Box<[u64]>,
     ) {
@@ -78,10 +78,10 @@ impl Dsl {
             let child_count = field_pairs.len() as u32;
 
             for _ in 0..child_count {
-                compiler.children.push(0); // placeholder
+                compiler.children.push(0u16); // placeholder
             }
             for (i, (k, v)) in field_pairs.iter().enumerate() {
-                let child_idx = compiler.paths.len() as u32;
+                let child_idx = compiler.paths.len() as u16;
                 compiler.children[children_offset as usize + i] = child_idx;
                 compiler.walk_field_key(k, v, 0, None, None); // parent=virtual root(0)
             }
@@ -126,17 +126,18 @@ impl Dsl {
 
 #[derive(Clone)]
 struct MetaBlock {
-    client_idx: u32,              // interning_idx of client keyword
-    key_idx:    u32,              // interning_idx of key value
-    args:       Vec<(u32, u32)>,  // (key_interning_idx, value_interning_idx)
+    client_idx:  u32,              // interning_idx of client keyword
+    key_idx:     u32,              // interning_idx of key value
+    map_entries: Vec<(u32, u32)>,  // (dst_interning_idx, src_interning_idx) from map:
+    scalar_args: Vec<(u32, u32)>,  // (key_interning_idx, value_interning_idx) other args
 }
 
 // ── Compiler (internal) ───────────────────────────────────────────────────────
 
 struct Compiler {
     paths:         Vec<u64>,
-    children:      Vec<u32>,
-    leaves:        Vec<u8>,
+    children:      Vec<u16>,
+    leaves:        Vec<u32>,
     interning:     Vec<u8>,
     interning_idx: Vec<u64>,
 }
@@ -183,14 +184,14 @@ impl Compiler {
                 let child_count = field_pairs.len() as u32;
 
                 // Reserve placeholder slots for each child's path_idx.
-                let first_child_path_idx = self.paths.len() as u32;
+                let first_child_path_idx = self.paths.len() as u16;
                 for i in 0..child_count {
-                    self.children.push(first_child_path_idx + i); // will be correct after walk
+                    self.children.push(first_child_path_idx + i as u16); // will be correct after walk
                 }
 
                 // Now walk each child; paths are pushed in order so indices are sequential.
                 for (i, (k, v)) in field_pairs.iter().enumerate() {
-                    let child_idx = self.paths.len() as u32;
+                    let child_idx = self.paths.len() as u16;
                     self.children[children_offset as usize + i] = child_idx;
                     self.walk_field_key(k, v, path_idx, load.as_ref(), store.as_ref());
                 }
@@ -230,9 +231,10 @@ impl Compiler {
             (None, Some(inh)) => Some(inh.clone()),
             (Some((_, Tree::Mapping(meta_pairs))), inh) => {
                 // Start from inherited, overwrite with local fields.
-                let mut client_idx = inh.map(|b| b.client_idx).unwrap_or(0);
-                let mut key_idx    = inh.map(|b| b.key_idx).unwrap_or(0);
-                let mut args: Vec<(u32, u32)> = inh.map(|b| b.args.clone()).unwrap_or_default();
+                let mut client_idx  = inh.map(|b| b.client_idx).unwrap_or(0);
+                let mut key_idx     = inh.map(|b| b.key_idx).unwrap_or(0);
+                let mut map_entries: Vec<(u32, u32)> = inh.map(|b| b.map_entries.clone()).unwrap_or_default();
+                let mut scalar_args: Vec<(u32, u32)> = inh.map(|b| b.scalar_args.clone()).unwrap_or_default();
 
                 for (k, v) in meta_pairs {
                     if k.as_slice() == PROP_CLIENT {
@@ -242,31 +244,29 @@ impl Compiler {
                     } else if k.as_slice() == PROP_KEY {
                         key_idx = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
                     } else if k.as_slice() == PROP_MAP {
-                        // map entries: each value is a string (store column name etc.)
-                        // stored as (dst_path_interning_idx, src_value_interning_idx)
+                        // map: local definition fully replaces inherited
                         if let Tree::Mapping(map_pairs) = v {
-                            args.clear(); // local map overrides inherited
+                            map_entries.clear();
                             for (mk, mv) in map_pairs {
                                 let mk_idx = self.intern(mk);
                                 let mv_idx = if let Tree::Scalar(b) = mv { self.intern(b) } else { 0 };
-                                args.push((mk_idx, mv_idx));
+                                map_entries.push((mk_idx, mv_idx));
                             }
                         }
                     } else if k.as_slice() != META_LOAD
                            && k.as_slice() != META_STORE
                            && k.as_slice() != META_STATE {
-                        // arbitrary implementor arg
+                        // arbitrary scalar arg: overwrite if key present, otherwise append
                         let ak = self.intern(k);
                         let av = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
-                        // overwrite if key already present, otherwise append
-                        if let Some(entry) = args.iter_mut().find(|(ek, _)| *ek == ak) {
+                        if let Some(entry) = scalar_args.iter_mut().find(|(ek, _)| *ek == ak) {
                             entry.1 = av;
                         } else {
-                            args.push((ak, av));
+                            scalar_args.push((ak, av));
                         }
                     }
                 }
-                Some(MetaBlock { client_idx, key_idx, args })
+                Some(MetaBlock { client_idx, key_idx, map_entries, scalar_args })
             }
             _ => inherited.cloned(),
         }
@@ -275,17 +275,7 @@ impl Compiler {
     // ── leaf serialization ────────────────────────────────────────────────────
 
     /// Write leaf data to `leaves` and update `paths[path_idx]`.
-    ///
-    /// Leaf layout (Architecture.md #データ構造仕様 参照):
-    ///   keyword_idx        (u32le)
-    ///   value_token_count  (u32le)
-    ///   token_type[i]      (u8)     0=static(interning_idx), 1=placeholder(path文字列のinterning_idx)
-    ///   token_idx[i]       (u32le)
-    ///   ... × value_token_count
-    ///   _load  client_idx (u32le) | key_idx (u32le)
-    ///   _store client_idx (u32le) | key_idx (u32le)
-    ///   _load.args  × load_args_count  : key_idx(u32le) | value_idx(u32le)
-    ///   _store.args × store_args_count : key_idx(u32le) | value_idx(u32le)
+    /// Leaf layout: Architecture.md #leaf 参照
     fn write_leaf(
         &mut self,
         path_idx:    u32,
@@ -297,78 +287,96 @@ impl Compiler {
     ) {
         let leaf_offset = self.leaves.len() as u32;
 
-        let load_args_count  = load.map(|b| b.args.len()).unwrap_or(0);
-        let store_args_count = store.map(|b| b.args.len()).unwrap_or(0);
-
-        // keyword
-        self.push_u32(keyword_idx);
-
-        // value tokens: tokenize scalar by ${}, Null → 0 tokens
+        // collect fragments first
+        let mut fragments: Vec<(u32, u32)> = Vec::new(); // (is_placeholder, idx)
         if let Tree::Scalar(b) = value {
-            // split by ${...} into (type, bytes) pairs
-            let mut tokens: Vec<(u8, u32)> = Vec::new();
             let mut rest = b.as_slice();
             while !rest.is_empty() {
                 if let Some(start) = rest.windows(2).position(|w| w == b"${") {
                     if start > 0 {
-                        // static prefix
                         let idx = self.intern(&rest[..start]);
-                        tokens.push((0, idx));
+                        fragments.push((0, idx));
                     }
                     rest = &rest[start + 2..];
                     if let Some(end) = rest.iter().position(|&c| c == b'}') {
-                        // placeholder path string
                         let idx = self.intern(&rest[..end]);
-                        tokens.push((1, idx));
+                        fragments.push((1, idx));
                         rest = &rest[end + 1..];
                     } else {
-                        // malformed: treat remainder as static
                         let idx = self.intern(rest);
-                        tokens.push((0, idx));
+                        fragments.push((0, idx));
                         break;
                     }
                 } else {
-                    // no more placeholders
                     let idx = self.intern(rest);
-                    tokens.push((0, idx));
+                    fragments.push((0, idx));
                     break;
                 }
             }
-            self.push_u32(tokens.len() as u32);
-            for (t, idx) in tokens {
-                self.leaves.push(t);
-                self.push_u32(idx);
-            }
-        } else {
-            // Null → 0 tokens
-            self.push_u32(0);
         }
 
-        // _load header
-        self.push_u32(load.map(|b| b.client_idx).unwrap_or(0));
-        self.push_u32(load.map(|b| b.key_idx).unwrap_or(0));
+        let load_map_count   = load.map(|b| b.map_entries.len()).unwrap_or(0);
+        let load_args_count  = load.map(|b| b.scalar_args.len()).unwrap_or(0);
+        let store_map_count  = store.map(|b| b.map_entries.len()).unwrap_or(0);
+        let store_args_count = store.map(|b| b.scalar_args.len()).unwrap_or(0);
 
-        // _store header
-        self.push_u32(store.map(|b| b.client_idx).unwrap_or(0));
-        self.push_u32(store.map(|b| b.key_idx).unwrap_or(0));
+        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
+        self.leaves.push(
+            ((keyword_idx & 0xffff) << 16)
+            | ((fragments.len() as u32 & 0xff) << 8)
+            | (load_map_count as u32 & 0xff)
+        );
+        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
+        self.leaves.push(
+            ((load_args_count as u32 & 0xff) << 24)
+            | ((store_map_count as u32 & 0xff) << 16)
+            | ((store_args_count as u32 & 0xff) << 8)
+        );
+        // header u32[2]: load_client_idx(16) | load_key_idx(16)
+        self.leaves.push(
+            ((load.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
+            | (load.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
+        );
+        // header u32[3]: store_client_idx(16) | store_key_idx(16)
+        self.leaves.push(
+            ((store.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
+            | (store.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
+        );
 
-        // _load.args
+        // fragment×F: padding(15) | is_placeholder(1) | idx(16)
+        for (is_ph, idx) in &fragments {
+            self.leaves.push(((is_ph & 0x1) << 16) | (idx & 0xffff));
+        }
+
+        // load.map×M0: dst_idx(16) | src_idx(16)
         if let Some(b) = load {
-            for &(ak, av) in &b.args {
-                self.push_u32(ak);
-                self.push_u32(av);
+            for &(dst, src) in &b.map_entries {
+                self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
             }
         }
 
-        // _store.args
+        // load.args×A0: key_idx(16) | val_idx(16)
+        if let Some(b) = load {
+            for &(ak, av) in &b.scalar_args {
+                self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
+            }
+        }
+
+        // store.map×M1: dst_idx(16) | src_idx(16)
         if let Some(b) = store {
-            for &(ak, av) in &b.args {
-                self.push_u32(ak);
-                self.push_u32(av);
+            for &(dst, src) in &b.map_entries {
+                self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
             }
         }
 
-        // Update path entry: is_leaf=1, offset=leaf_offset, count=unused
+        // store.args×A1: key_idx(16) | val_idx(16)
+        if let Some(b) = store {
+            for &(ak, av) in &b.scalar_args {
+                self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
+            }
+        }
+
+        // Update path entry: is_leaf=1, offset=leaf_offset(u32 index), count=unused
         self.paths[path_idx as usize] =
             PATH_IS_LEAF_MASK
             | (leaf_offset as u64)  << PATH_OFFSET_SHIFT
@@ -384,7 +392,7 @@ impl Compiler {
         // Linear scan for dedup (DSL strings are small in number).
         for (i, entry) in self.interning_idx.iter().enumerate() {
             let offset = (entry >> 32) as usize;
-            let len    = (entry & 0xffff_ffff) as usize;
+            let len    = (entry & 0xffff) as usize; // bits15..0 = len(u16)
             if self.interning.get(offset..offset + len) == Some(s) {
                 return i as u32;
             }
@@ -392,17 +400,12 @@ impl Compiler {
         let offset = self.interning.len();
         self.interning.extend_from_slice(s);
         let idx = self.interning_idx.len() as u32;
-        self.interning_idx.push(((offset as u64) << 32) | s.len() as u64);
+        // offset(u32, bits63..32) | padding(u16, bits31..16) | len(u16, bits15..0)
+        self.interning_idx.push(((offset as u64) << 32) | (s.len() as u64 & 0xffff));
         idx
     }
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    fn push_u32(&mut self, v: u32) {
-        self.leaves.extend_from_slice(&v.to_le_bytes());
-    }
-
-    fn finish(self) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>) {
+    fn finish(self) -> (Box<[u64]>, Box<[u16]>, Box<[u32]>, Box<[u8]>, Box<[u64]>) {
         (
             self.paths.into_boxed_slice(),
             self.children.into_boxed_slice(),
@@ -507,7 +510,7 @@ mod tests {
         Tree::Mapping(pairs.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect())
     }
 
-    fn compile(tree: &Tree) -> (Vec<u64>, Vec<u32>, Vec<u8>, Vec<u8>, Vec<u64>) {
+    fn compile(tree: &Tree) -> (Vec<u64>, Vec<u16>, Vec<u32>, Vec<u8>, Vec<u64>) {
         let (p, c, l, i, ii) = Dsl::compile(tree);
         (p.into_vec(), c.into_vec(), l.into_vec(), i.into_vec(), ii.into_vec())
     }
@@ -570,13 +573,12 @@ mod tests {
             ])),
         ]));
         // root(0), user(1), id(2)
-        // leaf: keyword(4) + token_count(4) + tokens(0×5) + load_client(4)
+        // header u32[2]: load_client_idx(16) | load_key_idx(16)
         let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let token_count = u32::from_le_bytes(leaves[leaf_offset+4..leaf_offset+8].try_into().unwrap()) as usize;
-        let meta_base = leaf_offset + 8 + token_count * 5;
-        let client_idx = u32::from_le_bytes(leaves[meta_base..meta_base+4].try_into().unwrap()) as usize;
+        let h2 = leaves[leaf_offset + 2];
+        let client_idx = ((h2 >> 16) & 0xffff) as usize;
         let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff_ffff) as usize;
+        let len = (interning_idx[client_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"Memory");
     }
 
@@ -596,13 +598,12 @@ mod tests {
             ])),
         ]));
         // root(0), session(1), user(2), id(3)
-        // leaf: keyword(4) + token_count(4) + tokens(0×5) + load_client(4) + load_key(4) + store_client(4)
+        // header u32[3]: store_client_idx(16) | store_key_idx(16)
         let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let token_count = u32::from_le_bytes(leaves[leaf_offset+4..leaf_offset+8].try_into().unwrap()) as usize;
-        let meta_base = leaf_offset + 8 + token_count * 5;
-        let client_idx = u32::from_le_bytes(leaves[meta_base+8..meta_base+12].try_into().unwrap()) as usize;
+        let h3 = leaves[leaf_offset + 3];
+        let client_idx = ((h3 >> 16) & 0xffff) as usize;
         let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff_ffff) as usize;
+        let len = (interning_idx[client_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"Kvs");
     }
 
@@ -616,7 +617,7 @@ mod tests {
         ]));
         let hello_count = (0..interning_idx.len()).filter(|&i| {
             let off = (interning_idx[i] >> 32) as usize;
-            let len = (interning_idx[i] & 0xffff_ffff) as usize;
+            let len = (interning_idx[i] & 0xffff) as usize;
             interning.get(off..off+len) == Some(b"hello" as &[u8])
         }).count();
         assert_eq!(hello_count, 1);

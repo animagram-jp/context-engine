@@ -25,8 +25,8 @@ pub struct LeafRef {
 
 pub struct Index {
     paths:         Box<[u64]>,
-    children:      Box<[u32]>,
-    leaves:        Box<[u8]>,
+    children:      Box<[u16]>,
+    leaves:        Box<[u32]>,
     interning:     Box<[u8]>,
     interning_idx: Box<[u64]>,
 }
@@ -34,8 +34,8 @@ pub struct Index {
 impl Index {
     pub fn new(
         paths:         Box<[u64]>,
-        children:      Box<[u32]>,
-        leaves:        Box<[u8]>,
+        children:      Box<[u16]>,
+        leaves:        Box<[u32]>,
         interning:     Box<[u8]>,
         interning_idx: Box<[u64]>,
     ) -> Self {
@@ -60,15 +60,15 @@ impl Index {
         self.interning_str(interning_idx)
     }
 
-    /// Extract _load client keyword and args for the given leaf.
-    /// Returns ("", empty) if no _load is configured.
-    pub fn load_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
+    /// Extract _load client keyword, map entries, and args for the given leaf.
+    /// Returns ("", empty, empty) if no _load is configured.
+    pub fn load_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
         self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Load)
     }
 
-    /// Extract _store client keyword and args for the given leaf.
-    /// Returns ("", empty) if no _store is configured.
-    pub fn store_args(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>) {
+    /// Extract _store client keyword, map entries, and args for the given leaf.
+    /// Returns ("", empty, empty) if no _store is configured.
+    pub fn store_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
         self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)
     }
 }
@@ -94,7 +94,7 @@ impl Index {
         let count  = (((path & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) & 0xf) as usize;
 
         for i in 0..count {
-            let child_idx = self.children[offset + i];
+            let child_idx = self.children[offset + i] as u32;
             if self.keyword_of(child_idx) == keyword {
                 return Some(child_idx);
             }
@@ -114,85 +114,87 @@ impl Index {
         let offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let count  = (((path & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) & 0xf) as usize;
         for i in 0..count {
-            self.collect_leaves(self.children[offset + i], out);
+            self.collect_leaves(self.children[offset + i] as u32, out);
         }
     }
 
     /// Decode _load or _store from `leaves` at `leaf_offset`.
-    ///
-    /// Leaf layout (Architecture.md #データ構造仕様 参照):
-    ///   +0  keyword_idx        (u32)
-    ///   +4  value_token_count  (u32)
-    ///   +8  token[i]: type(u8) + idx(u32) × value_token_count
-    ///   +8+N  load_client_idx  (u32)   N = token_count × 5
-    ///   +8+N+4  load_key_idx   (u32)
-    ///   +8+N+8  store_client_idx (u32)
-    ///   +8+N+12 store_key_idx  (u32)
-    ///   +8+N+16 load.args  × load_count  : key_idx(u32) | value_idx(u32)
-    ///   +8+N+16+M store.args × store_count : key_idx(u32) | value_idx(u32)
-    ///
-    /// args counts are in path.count: [7:4]=load, [3:0]=store
-    fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, BTreeMap<String, Tree>) {
-        let base = leaf_offset as usize;
-        let empty = BTreeMap::new();
+    /// Leaf layout: Architecture.md #leaf 参照
+    fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
+        let base  = leaf_offset as usize;
+        let empty_map  = Vec::new();
+        let empty_args = BTreeMap::new();
 
-        if path_idx as usize >= self.paths.len() { return ("", empty); }
-        let path_entry = self.paths[path_idx as usize];
+        if path_idx as usize >= self.paths.len() { return ("", empty_map, empty_args); }
 
-        let count_byte  = ((path_entry & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) as u8;
-        let load_count  = ((count_byte >> 4) & 0xf) as usize;
-        let store_count = (count_byte & 0xf) as usize;
+        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
+        let h0 = self.leaves[base];
+        let fragment_count  = ((h0 >> 8) & 0xff) as usize;
+        let load_map_count  = (h0 & 0xff) as usize;
 
-        // skip keyword(4) + value_token_count(4) + tokens(token_count × 5)
-        let token_count = self.read_u32(base + 4) as usize;
-        let meta_base = base + 8 + token_count * 5;
+        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
+        let h1 = self.leaves[base + 1];
+        let load_args_count  = ((h1 >> 24) & 0xff) as usize;
+        let store_map_count  = ((h1 >> 16) & 0xff) as usize;
+        let store_args_count = ((h1 >> 8)  & 0xff) as usize;
 
-        let (client_offset, key_offset, args_count, args_start) = match kind {
-            MetaKind::Load  => (0,  4, load_count,  16),
-            MetaKind::Store => (8, 12, store_count, 16 + load_count * 8),
+        // header u32[2]: load_client_idx(16) | load_key_idx(16)
+        let h2 = self.leaves[base + 2];
+        let load_client_idx = ((h2 >> 16) & 0xffff) as usize;
+        let load_key_idx    = (h2 & 0xffff) as usize;
+
+        // header u32[3]: store_client_idx(16) | store_key_idx(16)
+        let h3 = self.leaves[base + 3];
+        let store_client_idx = ((h3 >> 16) & 0xffff) as usize;
+        let store_key_idx    = (h3 & 0xffff) as usize;
+
+        // variable section offsets
+        let frag_start      = base + 4;
+        let lmap_start      = frag_start + fragment_count;
+        let largs_start     = lmap_start + load_map_count;
+        let smap_start      = largs_start + load_args_count;
+        let sargs_start     = smap_start + store_map_count;
+
+        let (client_idx, key_idx, map_start, map_count, args_start, args_count) = match kind {
+            MetaKind::Load  => (load_client_idx,  load_key_idx,  lmap_start,  load_map_count,  largs_start, load_args_count),
+            MetaKind::Store => (store_client_idx, store_key_idx, smap_start,  store_map_count, sargs_start, store_args_count),
         };
-
-        let client_idx = self.read_u32(meta_base + client_offset) as usize;
-        let key_idx    = self.read_u32(meta_base + key_offset) as usize;
 
         let client_name = from_utf8(self.interning_str(client_idx)).unwrap_or("");
         if client_name.is_empty() {
-            return ("", empty);
+            return ("", empty_map, empty_args);
         }
 
-        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
+        // map entries
+        let mut map: Vec<(Tree, Tree)> = Vec::with_capacity(map_count);
+        for i in 0..map_count {
+            let entry = self.leaves[map_start + i];
+            let dst = self.interning_str((entry >> 16) as usize).to_vec();
+            let src = self.interning_str((entry & 0xffff) as usize).to_vec();
+            map.push((Tree::Scalar(dst), Tree::Scalar(src)));
+        }
 
-        // key arg
+        // scalar args
+        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
         let key_str = from_utf8(self.interning_str(key_idx)).unwrap_or("");
         if !key_str.is_empty() {
-            args.insert(
-                String::from("key"),
-                Tree::Scalar(key_str.as_bytes().to_vec()),
-            );
+            args.insert(String::from("key"), Tree::Scalar(key_str.as_bytes().to_vec()));
         }
-
-        // additional args
         for i in 0..args_count {
-            let off = meta_base + args_start + i * 8;
-            let ak  = self.read_u32(off) as usize;
-            let av  = self.read_u32(off + 4) as usize;
-            let k   = from_utf8(self.interning_str(ak)).unwrap_or("");
-            let v   = self.interning_str(av);
-            if !k.is_empty() {
-                args.insert(
-                    String::from(k),
-                    Tree::Scalar(v.to_vec()),
-                );
+            let entry = self.leaves[args_start + i];
+            let ak = from_utf8(self.interning_str((entry >> 16) as usize)).unwrap_or("");
+            let av = self.interning_str((entry & 0xffff) as usize);
+            if !ak.is_empty() {
+                args.insert(String::from(ak), Tree::Scalar(av.to_vec()));
             }
         }
 
-        (client_name, args)
+        (client_name, map, args)
     }
 
-    /// Read a u32le from `leaves` at byte offset `off`.
-    fn read_u32(&self, off: usize) -> u32 {
-        let b = &self.leaves[off..off + 4];
-        u32::from_le_bytes(b.try_into().unwrap())
+    /// Read a u32 from `leaves` at element index `idx`.
+    fn read_u32(&self, idx: usize) -> u32 {
+        self.leaves[idx]
     }
 
     /// Resolve interning bytes by interning_idx index.
@@ -200,7 +202,7 @@ impl Index {
         if idx >= self.interning_idx.len() { return b""; }
         let entry  = self.interning_idx[idx];
         let offset = (entry >> 32) as usize;
-        let len    = (entry & 0xffff_ffff) as usize;
+        let len    = (entry & 0xffff) as usize; // bits15..0 = len(u16)
         self.interning.get(offset..offset + len).unwrap_or(b"")
     }
 }
@@ -304,7 +306,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _) = idx.load_args(&leaves[0]);
+        let (client, _, _) = idx.load_args(&leaves[0]);
         assert_eq!(client, "Memory");
     }
 
@@ -322,7 +324,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (_, args) = idx.load_args(&leaves[0]);
+        let (_, _, args) = idx.load_args(&leaves[0]);
         assert_eq!(args.get("key"), Some(&Tree::Scalar(b"session:1".to_vec())));
     }
 
@@ -334,7 +336,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, args) = idx.load_args(&leaves[0]);
+        let (client, _, args) = idx.load_args(&leaves[0]);
         assert!(client.is_empty() && args.is_empty());
     }
 
@@ -354,7 +356,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _) = idx.store_args(&leaves[0]);
+        let (client, _, _) = idx.store_args(&leaves[0]);
         assert_eq!(client, "Kvs");
     }
 
@@ -366,7 +368,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, args) = idx.store_args(&leaves[0]);
+        let (client, _, args) = idx.store_args(&leaves[0]);
         assert!(client.is_empty() && args.is_empty());
     }
 }
