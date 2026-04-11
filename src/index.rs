@@ -13,7 +13,7 @@ use crate::dsl::{
     PATH_PARENT_IDX_SHIFT, PATH_PARENT_IDX_MASK,
     PATH_KEYWORD_IDX_MASK,
 };
-use crate::ports::provided::Tree;
+use crate::port::provided::Tree;
 
 // ── LeafRef ───────────────────────────────────────────────────────────────────
 

@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use core::str::from_utf8;
 
 use crate::index::Index;
-use crate::ports::provided::{Context as ContextTrait, ContextError, StoreError, LoadError, Tree};
-use crate::ports::required::{StoreRegistry, SetOutcome};
+use crate::port::provided::{Context as ContextTrait, ContextError, StoreError, LoadError, Tree};
+use crate::port::required::{StoreRegistry, SetOutcome};
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
@@ -237,12 +237,12 @@ impl<'r> Context<'r> {
                 // (type-preserving; does not stringify).
                 let path_str = from_utf8(&frags[0].1)
                     .map_err(|_| ContextError::LoadFailed(
-                        crate::ports::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
+                        crate::port::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
                     ))?
                     .to_string();
                 self.get(&path_str)?
                     .ok_or_else(|| ContextError::LoadFailed(
-                        crate::ports::provided::LoadError::NotFound(path_str.clone())
+                        crate::port::provided::LoadError::NotFound(path_str.clone())
                     ))?
             } else {
                 // Static scalar or template: concatenate all fragments as strings.
@@ -252,7 +252,7 @@ impl<'r> Context<'r> {
                     if is_ph {
                         let path_str = from_utf8(&bytes)
                             .map_err(|_| ContextError::LoadFailed(
-                                crate::ports::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
+                                crate::port::provided::LoadError::ConfigMissing("placeholder utf8".to_string())
                             ))?;
                         match self.get(path_str)? {
                             Some(Tree::Scalar(b)) => {
@@ -260,7 +260,7 @@ impl<'r> Context<'r> {
                             }
                             Some(_) => {}
                             None => return Err(ContextError::LoadFailed(
-                                crate::ports::provided::LoadError::NotFound(path_str.to_string())
+                                crate::port::provided::LoadError::NotFound(path_str.to_string())
                             )),
                         }
                     } else {

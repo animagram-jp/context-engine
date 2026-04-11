@@ -1,5 +1,5 @@
 use alloc::collections::BTreeMap;
-use crate::ports::provided::Tree;
+use crate::port::provided::Tree;
 
 /// Outcome of a `StoreClient::set` call.
 pub enum SetOutcome {

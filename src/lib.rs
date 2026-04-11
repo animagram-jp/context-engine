@@ -6,19 +6,19 @@ extern crate alloc;
 extern crate std;
 
 pub(crate) mod debug_log;
-pub mod ports;
+pub mod port;
 pub mod list;
 pub mod context;
 pub mod tree;
 pub mod dsl;
 pub mod index;
 
-pub use ports::provided::{
+pub use port::provided::{
     Tree,
     DslError, LoadError, StoreError, ContextError,
     Context,
 };
-pub use ports::required::{
+pub use port::required::{
     StoreClient,
     StoreRegistry,
     SetOutcome,

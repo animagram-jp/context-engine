@@ -1,6 +1,6 @@
 use alloc::string::{String, ToString};
 
-use crate::ports::provided::Tree;
+use crate::port::provided::Tree;
 
 pub(crate) fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
     let mut s = String::from(class);
