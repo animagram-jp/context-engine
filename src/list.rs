@@ -105,7 +105,7 @@ impl<T: Clone + PartialEq + Default + Into<u64>> StoreClient<ListSchema, ListDir
         let base   = schema.base.ok_or(ListError::SchemaMissing)?;
         let extent = schema.extent.ok_or(ListError::SchemaMissing)?;
         let index  = directive.index.ok_or(ListError::SchemaMissing)?;
-        let bound @ (origin, extent) = cal_bound(directive.origin, base, index, extent, directive.list.as_ref());
+        let (origin, extent) = cal_bound(directive.origin, base, index, extent, directive.list.as_ref());
         if origin + extent > self.line.len() as u64 { return Err(ListError::OutOfBounds); }
         if schema.interning.unwrap_or(false) {
             // interning: dedup; fold on first hit. multiple hits = list corruption (out of scope).
