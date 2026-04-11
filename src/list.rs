@@ -1,3 +1,9 @@
+use core::clone::Clone;
+use core::cmp::PartialEq;
+use core::convert::Into;
+use core::default::Default;
+use alloc::vec::Vec;
+
 // binary.list — a bit line whose meaning is given by a schema known to the caller.
 //
 // binary.bound = (origin, extent)
