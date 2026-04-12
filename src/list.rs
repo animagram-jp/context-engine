@@ -103,8 +103,8 @@ mod list {
     /// list: line
     /// idx:  index number of target
     /// unit: units of target extent
-    pub fn delete(list: &mut Vec<usize>, index: usize, unit: usize) -> Result<(), ListError> {
-        let start = index * unit;
+    pub fn delete(list: &mut Vec<usize>, idx: usize, unit: usize) -> Result<(), ListError> {
+        let start = idx * unit;
         let end = start + unit;
         if end > list.len() {
             return Err(ListError::OutOfBounds);
@@ -137,7 +137,7 @@ mod variable_list {
     ///
     /// ```
     pub fn get<'a>(index: &[usize], data: &'a [usize], idx: usize) -> Result<&'a [usize], ListError> {
-        let idx_start = i * 2;
+        let idx_start = idx * 2;
         let idx_end = idx_start + 2;
         let idx_slot = index.get(idx_start..idx_end).ok_or(ListError::OutOfBounds)?;
         if is_vacant(idx_slot) {
@@ -161,9 +161,9 @@ mod variable_list {
     ///
     /// ```
     pub fn set(index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, ListError> {
-        match i {
-            Some(i) => {
-                let idx_start = i * 2;
+        match idx {
+            Some(idx) => {
+                let idx_start = idx * 2;
                 let idx_end = idx_start + 2;
                 if idx_end > index.len() {
                     return Err(ListError::OutOfBounds);
@@ -205,7 +205,7 @@ mod variable_list {
     ///
     /// ```
     pub fn delete(index: &mut Vec<usize>, idx: usize) -> Result<(), ListError> {
-        let idx_start = i * 2;
+        let idx_start = idx * 2;
         let idx_end = idx_start + 2;
         if idx_end > index.len() {
             return Err(ListError::OutOfBounds);
