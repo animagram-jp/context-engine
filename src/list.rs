@@ -29,16 +29,18 @@ pub trait StoreClient {
 
 // --- List ---
 
+#[derive(Debug)]
 pub enum ListError {
     OutOfBounds,
     NotExist,
 }
+#[derive(Debug)]
 pub enum SetOutcome {
     Created(usize),
     Updated,
 }
 
-mod list {
+pub mod list {
     use super::{ListError, SetOutcome};
     use alloc::vec::Vec;
 
@@ -109,9 +111,6 @@ mod list {
         if end > list.len() {
             return Err(ListError::OutOfBounds);
         }
-        if is_vacant(&list[start..end]) {
-            return Err(ListError::NotExist); // 修正検討したほうがいい
-        }
         list[start..end].fill(0);
         Ok(())
     }
@@ -119,22 +118,31 @@ mod list {
 
 // --- Variable List  ---
 
+#[derive(Debug)]
 pub enum VariableListError {
     List(ListError),
     Compact,
 }
-mod variable_list {
+pub mod variable_list {
+    use super::{ListError, SetOutcome, VariableListError};
+    use super::list;
+    use alloc::vec::Vec;
+
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
     }
 
     /// index: line that has ranges
     /// data:  line that has values
-    /// idx:   index number of target 
+    /// idx:   index number of target
     ///
     /// example:
-    /// ```test
-    ///
+    /// ```
+    /// use context_engine::list::variable_list;
+    /// let index = vec![0, 3, 3, 6];
+    /// let data  = vec![1, 2, 3, 4, 5, 6];
+    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
+    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[4, 5, 6]);
     /// ```
     pub fn get<'a>(index: &[usize], data: &'a [usize], idx: usize) -> Result<&'a [usize], ListError> {
         let idx_start = idx * 2;
@@ -151,14 +159,31 @@ mod variable_list {
     /// index: line that has ranges
     /// data:  line that has values
     /// idx:   index number of target (optional)
-    /// value: 
+    /// value:
     /// intern: when idx: null, search data and return first-match idx or not
     ///
     /// note: when writing, always appends-only (warning!: to both index and data).
     ///
     /// example:
-    /// ```test
+    /// ```
+    /// use context_engine::list::variable_list;
+    /// use context_engine::list::SetOutcome;
+    /// let mut index = vec![];
+    /// let mut data  = vec![];
     ///
+    /// // append
+    /// let r = variable_list::set(&mut index, &mut data, None, &[1, 2, 3], false).unwrap();
+    /// assert!(matches!(r, SetOutcome::Created(0)));
+    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
+    ///
+    /// // update
+    /// let r = variable_list::set(&mut index, &mut data, Some(0), &[7, 8, 9], false).unwrap();
+    /// assert!(matches!(r, SetOutcome::Updated));
+    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[7, 8, 9]);
+    ///
+    /// // intern: same value returns existing idx
+    /// let r = variable_list::set(&mut index, &mut data, None, &[7, 8, 9], true).unwrap();
+    /// assert!(matches!(r, SetOutcome::Created(0)));
     /// ```
     pub fn set(index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, ListError> {
         match idx {
@@ -201,8 +226,12 @@ mod variable_list {
     /// idx:   index number of target
     ///
     /// example:
-    /// ```test
-    ///
+    /// ```
+    /// use context_engine::list::variable_list;
+    /// use context_engine::list::ListError;
+    /// let mut index = vec![0, 3, 3, 6];
+    /// variable_list::delete(&mut index, 0).unwrap();
+    /// assert!(matches!(variable_list::get(&index, &[1,2,3,4,5,6], 0), Err(ListError::NotExist)));
     /// ```
     pub fn delete(index: &mut Vec<usize>, idx: usize) -> Result<(), ListError> {
         let idx_start = idx * 2;
@@ -210,20 +239,22 @@ mod variable_list {
         if idx_end > index.len() {
             return Err(ListError::OutOfBounds);
         }
-        if is_vacant(&index[idx_start..idx_end]) {
-            return Err(ListError::NotExist);
-        }
         index[idx_start..idx_end].fill(0);
         Ok(())
     }
 
     /// index: line that has ranges
     /// data:  line that has values
-    /// idx:   index number of target
     ///
     /// example:
-    /// ```test
-    ///
+    /// ```
+    /// use context_engine::list::variable_list;
+    /// let mut index = vec![0, 3, 0, 0, 3, 6]; // idx=1 is vacant
+    /// let mut data  = vec![1, 2, 3, 4, 5, 6];
+    /// variable_list::compact(&mut index, &mut data).unwrap();
+    /// assert_eq!(data, vec![1, 2, 3, 4, 5, 6]); // vacant skipped, data compacted
+    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
+    /// assert_eq!(variable_list::get(&index, &data, 2).unwrap(), &[4, 5, 6]);
     /// ```
     pub fn compact(index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), VariableListError> {
         let mut new_data = Vec::new();
