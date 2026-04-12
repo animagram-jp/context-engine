@@ -3,19 +3,28 @@
 use alloc::vec::Vec;
 use core::result::Result;
 
-// --- StoreClient ----
+// --- StoreClient (draft) ----
 
 pub trait StoreError {}
 
-/// T: target    - target of operation
-/// S: schema    - structure of the list; invariant.
-/// D: directive - caller-supplied instruction; usecase-dependent.
-/// V: value     - element type for get/set.
-pub trait StoreClient<T, S, D, V> {
+pub trait StoreClient {
     type Error: StoreError;
-    fn get(&mut self, target: &T, schema: &S, directive: &D) -> Result<Option<Vec<V>>, Self::Error>;
-    fn set(&mut self, target: &T, schema: &S, directive: &D, value: &[usize]) -> Result<Option<SetOutcome>, Self::Error>;
-    fn delete(&mut self, target: &T, schema: &S, directive: &D) -> Result<bool, Self::Error>;
+
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target 
+    fn get(&mut self, index: &[usize], data: &[usize], idx: usize) -> Result<&[usize], Self::Error>;
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target (optional)
+    /// value: 
+    /// intern: when idx: null, search data and return first-match idx or not
+    fn set(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, Self::Error>;
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target
+    fn delete(&mut self, index: &mut Vec<usize>, idx: usize) -> Result<(), Self::Error>;
+    fn compact(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), Self::Error>;
 }
 
 // --- List ---
@@ -36,8 +45,12 @@ mod list {
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
     }
-    pub fn get(list: &[usize], index: usize, unit: usize) -> Result<&[usize], ListError> {
-        let start = index * unit;
+
+    /// list: line
+    /// idx:  index number of target
+    /// unit: units of target extent
+    pub fn get(list: &[usize], idx: usize, unit: usize) -> Result<&[usize], ListError> {
+        let start = idx * unit;
         let end = start + unit;
         let slot = list.get(start..end).ok_or(ListError::OutOfBounds)?;
         if is_vacant(slot) {
@@ -45,13 +58,19 @@ mod list {
         }
         Ok(slot)
     }
-    pub fn set(list: &mut Vec<usize>, index: Option<usize>, unit: usize, value: &[usize], reuse_vacant: bool) -> Result<SetOutcome, ListError> {
+
+    /// list: line
+    /// idx:  index number of target
+    /// unit: units of target extent
+    /// value:
+    /// resue_vacant: write to first match 00...00 slice
+    pub fn set(list: &mut Vec<usize>, idx: Option<usize>, unit: usize, value: &[usize], reuse_vacant: bool) -> Result<SetOutcome, ListError> {
         if value.len() != unit {
             return Err(ListError::OutOfBounds);
         }
-        match index {
-            Some(index) => {
-                let start = index * unit;
+        match idx {
+            Some(idx) => {
+                let start = idx * unit;
                 let end = start + unit;
                 if end > list.len() {
                     return Err(ListError::OutOfBounds);
@@ -81,6 +100,9 @@ mod list {
         }
     }
 
+    /// list: line
+    /// idx:  index number of target
+    /// unit: units of target extent
     pub fn delete(list: &mut Vec<usize>, index: usize, unit: usize) -> Result<(), ListError> {
         let start = index * unit;
         let end = start + unit;
@@ -88,7 +110,7 @@ mod list {
             return Err(ListError::OutOfBounds);
         }
         if is_vacant(&list[start..end]) {
-            return Err(ListError::NotExist);
+            return Err(ListError::NotExist); // 修正検討したほうがいい
         }
         list[start..end].fill(0);
         Ok(())
@@ -97,12 +119,24 @@ mod list {
 
 // --- Variable List  ---
 
+pub enum VariableListError {
+    List(ListError),
+    Compact,
+}
 mod variable_list {
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
     }
 
-    pub fn get<'a>(index: &[usize], data: &'a [usize], i: usize) -> Result<&'a [usize], ListError> {
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target 
+    ///
+    /// example:
+    /// ```test
+    ///
+    /// ```
+    pub fn get<'a>(index: &[usize], data: &'a [usize], idx: usize) -> Result<&'a [usize], ListError> {
         let idx_start = i * 2;
         let idx_end = idx_start + 2;
         let idx_slot = index.get(idx_start..idx_end).ok_or(ListError::OutOfBounds)?;
@@ -114,7 +148,19 @@ mod variable_list {
         data.get(start..end).ok_or(ListError::OutOfBounds)
     }
 
-    pub fn set(index: &mut Vec<usize>, data: &mut Vec<usize>, i: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, ListError> {
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target (optional)
+    /// value: 
+    /// intern: when idx: null, search data and return first-match idx or not
+    ///
+    /// note: when writing, always appends-only (warning!: to both index and data).
+    ///
+    /// example:
+    /// ```test
+    ///
+    /// ```
+    pub fn set(index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, ListError> {
         match i {
             Some(i) => {
                 let idx_start = i * 2;
@@ -150,7 +196,15 @@ mod variable_list {
         }
     }
 
-    pub fn delete(index: &mut Vec<usize>, i: usize) -> Result<(), ListError> {
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target
+    ///
+    /// example:
+    /// ```test
+    ///
+    /// ```
+    pub fn delete(index: &mut Vec<usize>, idx: usize) -> Result<(), ListError> {
         let idx_start = i * 2;
         let idx_end = idx_start + 2;
         if idx_end > index.len() {
@@ -163,22 +217,32 @@ mod variable_list {
         Ok(())
     }
 
-    pub fn compact(index: &mut Vec<usize>, data: &mut Vec<usize>) {
+    /// index: line that has ranges
+    /// data:  line that has values
+    /// idx:   index number of target
+    ///
+    /// example:
+    /// ```test
+    ///
+    /// ```
+    pub fn compact(index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), VariableListError> {
         let mut new_data = Vec::new();
         let count = index.len() / 2;
         for i in 0..count {
             let idx_start = i * 2;
             let start = index[idx_start];
             let end = index[idx_start + 1];
-            if start == 0 && end == 0 {
+            if is_vacant(&index[idx_start..idx_start + 2]) {
                 continue;
             }
+            let slice = data.get(start..end).ok_or(VariableListError::Compact)?;
             let new_start = new_data.len();
-            new_data.extend_from_slice(&data[start..end]);
+            new_data.extend_from_slice(slice);
             let new_end = new_data.len();
             index[idx_start] = new_start;
             index[idx_start + 1] = new_end;
         }
         *data = new_data;
+        Ok(())
     }
 }
