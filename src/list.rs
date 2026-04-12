@@ -1,31 +1,28 @@
 // --- file global ---
 
-use alloc::vec::Vec;
-use core::result::Result;
-
 // --- StoreClient (draft) ----
 
-pub trait StoreError {}
+// pub trait StoreError {}
 
-pub trait StoreClient {
-    type Error: StoreError;
+// pub trait StoreClient {
+//     type Error: StoreError;
 
-    /// index: line that has ranges
-    /// data:  line that has values
-    /// idx:   index number of target 
-    fn get(&mut self, index: &[usize], data: &[usize], idx: usize) -> Result<&[usize], Self::Error>;
-    /// index: line that has ranges
-    /// data:  line that has values
-    /// idx:   index number of target (optional)
-    /// value: 
-    /// intern: when idx: null, search data and return first-match idx or not
-    fn set(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, Self::Error>;
-    /// index: line that has ranges
-    /// data:  line that has values
-    /// idx:   index number of target
-    fn delete(&mut self, index: &mut Vec<usize>, idx: usize) -> Result<(), Self::Error>;
-    fn compact(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), Self::Error>;
-}
+//     /// index: line that has ranges
+//     /// data:  line that has values
+//     /// idx:   index number of target
+//     fn get(&mut self, index: &[usize], data: &[usize], idx: usize) -> Result<&[usize], Self::Error>;
+//     /// index: line that has ranges
+//     /// data:  line that has values
+//     /// idx:   index number of target (optional)
+//     /// value:
+//     /// intern: when idx: null, search data and return first-match idx or not
+//     fn set(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, Self::Error>;
+//     /// index: line that has ranges
+//     /// data:  line that has values
+//     /// idx:   index number of target
+//     fn delete(&mut self, index: &mut Vec<usize>, idx: usize) -> Result<(), Self::Error>;
+//     fn compact(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), Self::Error>;
+// }
 
 // --- List ---
 
@@ -41,8 +38,9 @@ pub enum SetOutcome {
 }
 
 pub mod list {
-    use super::{ListError, SetOutcome};
     use alloc::vec::Vec;
+    use core::result::Result;
+    use super::{ListError, SetOutcome};
 
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
@@ -123,10 +121,12 @@ pub enum VariableListError {
     List(ListError),
     Compact,
 }
+
 pub mod variable_list {
+    use alloc::vec::Vec;
+    use core::result::Result;
     use super::{ListError, SetOutcome, VariableListError};
     use super::list;
-    use alloc::vec::Vec;
 
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
