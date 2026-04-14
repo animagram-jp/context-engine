@@ -4,8 +4,8 @@ fn main() {}
 // These are minimal stubs showing how to implement StoreClient and StoreRegistry
 // for common backing stores under the new unified interface.
 
-use context_engine::ports::required::{StoreClient, StoreRegistry, SetOutcome};
-use context_engine::ports::provided::Tree;
+use context_engine::required::{StoreClient, StoreRegistry, SetOutcome};
+use context_engine::provided::Tree;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 

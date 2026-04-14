@@ -5,7 +5,7 @@ mod implements;
 
 use implements::MyRegistry;
 use context_engine::context::Context;
-use context_engine::ports::provided::{Context as ContextTrait, ContextError};
+use context_engine::provided::{Context as ContextTrait, ContextError};
 use context_engine::{Index, Tree};
 use std::sync::Arc;
 

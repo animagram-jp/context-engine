@@ -7,13 +7,14 @@
 // pub trait StoreClient {
 //     type Error: StoreError;
 
-//     /// index: line that has ranges
-//     /// data:  line that has values
-//     /// idx:   index number of target
-//     fn get(&mut self, index: &[usize], data: &[usize], idx: usize) -> Result<&[usize], Self::Error>;
-//     /// index: line that has ranges
-//     /// data:  line that has values
-//     /// idx:   index number of target (optional)
+    /// data:     the stored values
+    /// schema:   the structure that maps values to indices
+    /// identity: declares what the caller is addressing within the store
+    /// index:    resolves which element within the addressed set
+    fn get(&mut self, data: &T, schema: &T, identity: &T, index: &T) -> Result<&[usize], Self::Error>;
+//     /// store: physical data store 
+//     /// schema: store schema
+//     /// key:   identity to select a certain range in schema (optional)
 //     /// value:
 //     /// intern: when idx: null, search data and return first-match idx or not
 //     fn set(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, Self::Error>;
@@ -60,27 +61,40 @@ pub mod list {
     }
 
     /// list: line
-    /// idx:  index number of target
+    /// idx:  index number of target (1-based; idx=0 is the null sentinel)
     /// unit: units of target extent
     /// value:
-    /// resue_vacant: write to first match 00...00 slice
+    /// reuse_vacant: write to first match 00...00 slice (skips idx=0 sentinel)
+    ///
+    /// On first use, call set(None, ...) to initialise: it reserves idx=0 as the
+    /// null sentinel and returns Created(1) for the first real entry.
     pub fn set(list: &mut Vec<usize>, idx: Option<usize>, unit: usize, value: &[usize], reuse_vacant: bool) -> Result<SetOutcome, ListError> {
         if value.len() != unit {
             return Err(ListError::OutOfBounds);
         }
         match idx {
             Some(idx) => {
+                if idx == 0 {
+                    return Err(ListError::NotExist);
+                }
                 let start = idx * unit;
                 let end = start + unit;
                 if end > list.len() {
                     return Err(ListError::OutOfBounds);
                 }
+                if is_vacant(&list[start..end]) {
+                    return Err(ListError::NotExist);
+                }
                 list[start..end].copy_from_slice(value);
                 Ok(SetOutcome::Updated)
             }
             None => {
+                // Ensure idx=0 sentinel slot exists
+                if list.is_empty() {
+                    list.extend(core::iter::repeat(0).take(unit));
+                }
                 let vacant = if reuse_vacant {
-                    (0..list.len() / unit)
+                    (1..list.len() / unit)
                         .find(|&i| is_vacant(&list[i * unit..(i + 1) * unit]))
                 } else {
                     None
@@ -124,6 +138,7 @@ pub enum VariableListError {
 
 pub mod variable_list {
     use alloc::vec::Vec;
+    use alloc::vec;
     use core::result::Result;
     use super::{ListError, SetOutcome, VariableListError};
     use super::list;
@@ -134,15 +149,16 @@ pub mod variable_list {
 
     /// index: line that has ranges
     /// data:  line that has values
-    /// idx:   index number of target
+    /// idx:   index number of target (1-based; idx=0 is the null sentinel)
     ///
     /// example:
     /// ```
     /// use context_engine::list::variable_list;
-    /// let index = vec![0, 3, 3, 6];
+    /// // idx=0 is the null sentinel (2 zeros); real entries start at idx=1
+    /// let index = vec![0, 0, 0, 3, 3, 6];
     /// let data  = vec![1, 2, 3, 4, 5, 6];
-    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
-    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[4, 5, 6]);
+    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[1, 2, 3]);
+    /// assert_eq!(variable_list::get(&index, &data, 2).unwrap(), &[4, 5, 6]);
     /// ```
     pub fn get<'a>(index: &[usize], data: &'a [usize], idx: usize) -> Result<&'a [usize], ListError> {
         let idx_start = idx * 2;
@@ -158,11 +174,13 @@ pub mod variable_list {
 
     /// index: line that has ranges
     /// data:  line that has values
-    /// idx:   index number of target (optional)
+    /// idx:   index number of target (1-based; idx=0 is the null sentinel)
     /// value:
-    /// intern: when idx: null, search data and return first-match idx or not
+    /// intern: when idx: None, search data and return first-match idx if found
     ///
-    /// note: when writing, always appends-only (warning!: to both index and data).
+    /// note: update tries in-place if value fits the existing slot; otherwise
+    ///       appends to data and rewrites the index range (old bytes become unreachable
+    ///       until compact is called).
     ///
     /// example:
     /// ```
@@ -171,38 +189,54 @@ pub mod variable_list {
     /// let mut index = vec![];
     /// let mut data  = vec![];
     ///
-    /// // append
+    /// // append: first real entry is idx=1 (idx=0 is the null sentinel)
     /// let r = variable_list::set(&mut index, &mut data, None, &[1, 2, 3], false).unwrap();
-    /// assert!(matches!(r, SetOutcome::Created(0)));
-    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
+    /// assert!(matches!(r, SetOutcome::Created(1)));
+    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[1, 2, 3]);
     ///
-    /// // update
-    /// let r = variable_list::set(&mut index, &mut data, Some(0), &[7, 8, 9], false).unwrap();
+    /// // update in-place (same length)
+    /// let r = variable_list::set(&mut index, &mut data, Some(1), &[7, 8, 9], false).unwrap();
     /// assert!(matches!(r, SetOutcome::Updated));
-    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[7, 8, 9]);
+    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[7, 8, 9]);
     ///
     /// // intern: same value returns existing idx
     /// let r = variable_list::set(&mut index, &mut data, None, &[7, 8, 9], true).unwrap();
-    /// assert!(matches!(r, SetOutcome::Created(0)));
+    /// assert!(matches!(r, SetOutcome::Created(1)));
     /// ```
     pub fn set(index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, ListError> {
         match idx {
             Some(idx) => {
+                if idx == 0 {
+                    return Err(ListError::NotExist);
+                }
                 let idx_start = idx * 2;
                 let idx_end = idx_start + 2;
                 if idx_end > index.len() {
                     return Err(ListError::OutOfBounds);
                 }
-                let start = data.len();
-                let end = start + value.len();
-                data.extend_from_slice(value);
-                index[idx_start..idx_end].copy_from_slice(&[start, end]);
+                if is_vacant(&index[idx_start..idx_end]) {
+                    return Err(ListError::NotExist);
+                }
+                let old_start = index[idx_start];
+                let old_end   = index[idx_start + 1];
+                let old_len   = old_end - old_start;
+                if value.len() <= old_len {
+                    // in-place: value fits within the existing slot
+                    data[old_start..old_start + value.len()].copy_from_slice(value);
+                    index[idx_start + 1] = old_start + value.len();
+                } else {
+                    // append: value does not fit; old bytes are unreachable until compact
+                    let start = data.len();
+                    let end = start + value.len();
+                    data.extend_from_slice(value);
+                    index[idx_start..idx_end].copy_from_slice(&[start, end]);
+                }
                 Ok(SetOutcome::Updated)
             }
             None => {
                 if intern {
                     let count = index.len() / 2;
-                    for i in 0..count {
+                    for i in 1..count {
                         let idx_start = i * 2;
                         let start = index[idx_start];
                         let end = index[idx_start + 1];
@@ -223,17 +257,21 @@ pub mod variable_list {
 
     /// index: line that has ranges
     /// data:  line that has values
-    /// idx:   index number of target
+    /// idx:   index number of target (1-based; idx=0 is the null sentinel)
     ///
     /// example:
     /// ```
     /// use context_engine::list::variable_list;
     /// use context_engine::list::ListError;
-    /// let mut index = vec![0, 3, 3, 6];
-    /// variable_list::delete(&mut index, 0).unwrap();
-    /// assert!(matches!(variable_list::get(&index, &[1,2,3,4,5,6], 0), Err(ListError::NotExist)));
+    /// // idx=0 sentinel, idx=1 -> [1,2,3], idx=2 -> [4,5,6]
+    /// let mut index = vec![0, 0, 0, 3, 3, 6];
+    /// variable_list::delete(&mut index, 1).unwrap();
+    /// assert!(matches!(variable_list::get(&index, &[1,2,3,4,5,6], 1), Err(ListError::NotExist)));
     /// ```
     pub fn delete(index: &mut Vec<usize>, idx: usize) -> Result<(), ListError> {
+        if idx == 0 {
+            return Err(ListError::NotExist);
+        }
         let idx_start = idx * 2;
         let idx_end = idx_start + 2;
         if idx_end > index.len() {
@@ -246,34 +284,51 @@ pub mod variable_list {
     /// index: line that has ranges
     /// data:  line that has values
     ///
+    /// Rebuilds both index and data from scratch:
+    /// - vacant slots are removed from index (index shrinks)
+    /// - update-leaked bytes in data are reclaimed
+    /// - idx=0 sentinel is preserved at the head of the new index
+    /// - surviving entries are re-assigned sequential idx values starting at 1
+    ///
+    /// Returns a mapping of old idx -> new idx for callers that hold external references.
+    ///
     /// example:
     /// ```
     /// use context_engine::list::variable_list;
-    /// let mut index = vec![0, 3, 0, 0, 3, 6]; // idx=1 is vacant
+    /// // idx=0 sentinel, idx=1 -> [1,2,3], idx=2 is vacant, idx=3 -> [4,5,6]
+    /// let mut index = vec![0, 0, 0, 3, 0, 0, 3, 6];
     /// let mut data  = vec![1, 2, 3, 4, 5, 6];
-    /// variable_list::compact(&mut index, &mut data).unwrap();
-    /// assert_eq!(data, vec![1, 2, 3, 4, 5, 6]); // vacant skipped, data compacted
-    /// assert_eq!(variable_list::get(&index, &data, 0).unwrap(), &[1, 2, 3]);
+    /// let remap = variable_list::compact(&mut index, &mut data).unwrap();
+    /// // vacant idx=2 removed; survivors re-assigned to idx=1 and idx=2
+    /// assert_eq!(remap[&1], 1);
+    /// assert_eq!(remap[&3], 2);
+    /// assert_eq!(variable_list::get(&index, &data, 1).unwrap(), &[1, 2, 3]);
     /// assert_eq!(variable_list::get(&index, &data, 2).unwrap(), &[4, 5, 6]);
     /// ```
-    pub fn compact(index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), VariableListError> {
-        let mut new_data = Vec::new();
+    pub fn compact(index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<alloc::collections::BTreeMap<usize, usize>, VariableListError> {
+        let mut new_index = vec![0, 0]; // idx=0 sentinel
+        let mut new_data  = Vec::new();
+        let mut remap     = alloc::collections::BTreeMap::new();
         let count = index.len() / 2;
-        for i in 0..count {
+        // skip i=0 (sentinel)
+        for i in 1..count {
             let idx_start = i * 2;
-            let start = index[idx_start];
-            let end = index[idx_start + 1];
             if is_vacant(&index[idx_start..idx_start + 2]) {
                 continue;
             }
+            let start = index[idx_start];
+            let end   = index[idx_start + 1];
             let slice = data.get(start..end).ok_or(VariableListError::Compact)?;
             let new_start = new_data.len();
             new_data.extend_from_slice(slice);
             let new_end = new_data.len();
-            index[idx_start] = new_start;
-            index[idx_start + 1] = new_end;
+            let new_idx = new_index.len() / 2;
+            new_index.push(new_start);
+            new_index.push(new_end);
+            remap.insert(i, new_idx);
         }
-        *data = new_data;
-        Ok(())
+        *index = new_index;
+        *data  = new_data;
+        Ok(remap)
     }
 }
