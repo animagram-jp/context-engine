@@ -1,9 +1,6 @@
 // --- file global ---
 
-// --- StoreClient (draft) ----
-
-// pub trait StoreError {}
-
+use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
 pub trait Store {
@@ -13,23 +10,24 @@ pub trait Store {
     type Schema;    // the structure that maps values to indices
     type Delegate;  // store delegated to: memory reference or TCP endpoint
     type Error;
+    type Value: ?Sized;  // the element type stored
 
-    fn get<V>(
+    fn get(
         &self,
         identity: &Self::Identity,
         index: &Self::Index,
         schema: &Self::Schema,
         delegate: &Self::Delegate,
-    ) -> Result<&V, Self::Error>;
+    ) -> Result<&Self::Value, Self::Error>;
 
     /// intern: if true, returns existing idx for matching content instead of allocating a new one
-    fn set<V>(
+    fn set(
         &mut self,
         identity: &Self::Identity,
         index: &Self::Index,
         schema: &Self::Schema,
         delegate: &Self::Delegate,
-        value: &V,
+        value: &Self::Value,
         intern: bool,
     ) -> Result<SetOutcome, Self::Error>;
 
@@ -347,5 +345,127 @@ pub mod variable_list {
         *index = new_index;
         *data  = new_data;
         Ok(remap)
+    }
+}
+
+// --- List struct (Store impl) ---
+
+/// Fixed-width slot store backed by a flat Vec<usize>.
+/// Identity, Schema, Delegate are unused (pass `&()`).
+/// Index is the slot index (1-based; 0 is the null sentinel).
+/// The unit (slot width) is fixed at construction time.
+pub struct List {
+    pub data: Vec<usize>,
+    pub unit: usize,
+}
+
+impl List {
+    pub fn new(unit: usize) -> Self {
+        Self { data: Vec::new(), unit }
+    }
+}
+
+impl Store for List {
+    type Identity = ();
+    type Index    = usize;
+    type Schema   = ();
+    type Delegate = ();
+    type Error    = ListError;
+    type Value    = [usize];
+
+    fn get(
+        &self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+    ) -> Result<&[usize], ListError> {
+        list::get(&self.data, *index, self.unit)
+    }
+
+    fn set(
+        &mut self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+        value: &[usize],
+        reuse_vacant: bool,
+    ) -> Result<SetOutcome, ListError> {
+        let idx = if *index == 0 { None } else { Some(*index) };
+        list::set(&mut self.data, idx, self.unit, value, reuse_vacant)
+    }
+
+    fn delete(
+        &mut self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+    ) -> Result<(), ListError> {
+        list::delete(&mut self.data, *index, self.unit)
+    }
+}
+
+// --- VariableList struct (Store impl) ---
+
+/// Variable-width slot store backed by an index Vec and a data Vec.
+/// Identity, Schema, Delegate are unused (pass `&()`).
+/// Index is the slot index (1-based; 0 is the null sentinel).
+/// set with index=0 appends a new entry; set with index>0 updates in-place or re-appends.
+pub struct VariableList {
+    pub index: Vec<usize>,
+    pub data:  Vec<usize>,
+}
+
+impl VariableList {
+    pub fn new() -> Self {
+        Self { index: Vec::new(), data: Vec::new() }
+    }
+
+    pub fn compact(&mut self) -> Result<BTreeMap<usize, usize>, VariableListError> {
+        variable_list::compact(&mut self.index, &mut self.data)
+    }
+}
+
+impl Store for VariableList {
+    type Identity = ();
+    type Index    = usize;
+    type Schema   = ();
+    type Delegate = ();
+    type Error    = ListError;
+    type Value    = [usize];
+
+    fn get(
+        &self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+    ) -> Result<&[usize], ListError> {
+        variable_list::get(&self.index, &self.data, *index)
+    }
+
+    fn set(
+        &mut self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+        value: &[usize],
+        intern: bool,
+    ) -> Result<SetOutcome, ListError> {
+        let idx = if *index == 0 { None } else { Some(*index) };
+        variable_list::set(&mut self.index, &mut self.data, idx, value, intern)
+    }
+
+    fn delete(
+        &mut self,
+        _identity: &(),
+        index: &usize,
+        _schema: &(),
+        _delegate: &(),
+    ) -> Result<(), ListError> {
+        variable_list::delete(&mut self.index, *index)
     }
 }
