@@ -1,27 +1,57 @@
+// required.rs: modules required to implement
+
+use core::primitive::{
+    usize,
+    str
+};
 use alloc::collections::BTreeMap;
 use crate::provided::Tree;
 
-/// Outcome of a `StoreClient::set` call.
+/// Outcome of a `Store::set` call.
+#[derive(Debug)]
 pub enum SetOutcome {
-    Created,
+    Created(usize),
     Updated,
 }
 
-/// Single-store adapter. Implemented by the library user per backing store.
-///
-/// - `key`:  the value of `_load.key` / `_store.key` from the manifest. Reserved arg.
-/// - `map`:  ordered list of `(dst_path, src_column)` pairs from `map:` in the manifest.
-///           Empty slice if `map:` is not defined.
-/// - `args`: all other manifest args (ttl, connection, headers, etc.) as a flat map.
-///           The implementor defines and reads whatever keys it needs.
-/// - Thread-safety and internal mutability are the implementor's responsibility.
-pub trait StoreClient: Send + Sync {
-    fn get(&self, key: &str, map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<Tree>;
-    fn set(&self, key: &str, map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome>;
-    fn delete(&self, key: &str, map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> bool;
+/// Dispatches keyword → Store.
+pub trait StoreRegistry {
+    fn client_for(&self, keyword: &str) -> Option<&dyn Store>;
 }
 
-/// Dispatches keyword → StoreClient. Implemented by the library user.
-pub trait StoreRegistry {
-    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient>;
+/// A store provides addressed access to values.
+pub trait Store<
+    Identity,      // declares what the caller is addressing within the store
+    Index,         // resolves which element within the addressed set
+    Schema,        // defines how indices are interpreted
+    Delegate,      // store delegated to: memory reference or TCP endpoint
+    Error,
+    Value: ?Sized, // the value type stored
+> {
+    fn get<'a>(
+        &self,
+        identity: &Identity,
+        index: &Index,
+        schema: &Schema,
+        delegate: &'a Delegate,
+    ) -> Result<&'a Value, Error>;
+
+    /// intern: if true, returns existing index for matching content instead of allocating a new one
+    fn set(
+        &mut self,
+        identity: &Identity,
+        index: &Index,
+        schema: &mut Schema,
+        delegate: &mut Delegate,
+        value: &Value,
+        intern: bool,
+    ) -> Result<SetOutcome, Error>;
+
+    fn delete(
+        &mut self,
+        identity: &Identity,
+        index: &Index,
+        schema: &mut Schema,
+        delegate: &mut Delegate,
+    ) -> Result<(), Error>;
 }

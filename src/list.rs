@@ -1,42 +1,15 @@
-// --- file global ---
-
-pub trait Store<
-    Identity,   // declares what the caller is addressing within the store
-    Index,      // resolves which element within the addressed set
-    Schema,     // the structure that maps values to indices
-    Delegate,   // store delegated to: memory reference or TCP endpoint
-    Error,
-    Value: ?Sized,  // the element type stored
-> {
-    fn get<'a>(
-        &self,
-        identity: &Identity,
-        index: &Index,
-        schema: &Schema,
-        delegate: &'a Delegate,
-    ) -> Result<&'a Value, Error>;
-
-    /// intern: if true, returns existing idx for matching content instead of allocating a new one
-    fn set(
-        &mut self,
-        identity: &Identity,
-        index: &Index,
-        schema: &mut Schema,
-        delegate: &mut Delegate,
-        value: &Value,
-        intern: bool,
-    ) -> Result<SetOutcome, Error>;
-
-    fn delete(
-        &mut self,
-        identity: &Identity,
-        index: &Index,
-        schema: &mut Schema,
-        delegate: &mut Delegate,
-    ) -> Result<(), Error>;
+use core::{
+    primitive::{
+        usize,
+        bool
+    },
+    result::Result
+};
+use alloc::vec::Vec;
+use crate::required::{
+    Store, 
+    SetOutcome
 }
-
-// --- List ---
 
 #[derive(Debug)]
 pub enum ListError {
@@ -44,21 +17,19 @@ pub enum ListError {
     NotExist,
 }
 #[derive(Debug)]
-pub enum SetOutcome {
-    Created(usize),
-    Updated,
+pub enum VariableListError {
+    List(ListError),
+    Compact,
 }
 
-/// Fixed-width slot store.
-/// Identity: unused (pass `&()`)
-/// Index:    slot number (1-based; 0 is the null sentinel)
-/// Schema:   usize — slot width (unit)
-/// Delegate: Vec<usize> — the flat data line
+/// A list provides usize width store.
+///
+/// Index: usize - 1-based integer (0 is the null sentinel)
+/// Schema: usize - width unit
+/// Delegate: Vec<usize> - flat data line
+/// Error: ListError
+/// Value: [usize]
 pub mod list {
-    use alloc::vec::Vec;
-    use core::result::Result;
-    use super::{ListError, SetOutcome, Store};
-
     fn is_vacant(slot: &[usize]) -> bool {
         slot.iter().all(|&x| x == 0)
     }
@@ -67,9 +38,6 @@ pub mod list {
 
     impl Store<(), usize, usize, Vec<usize>, ListError, [usize]> for List {
 
-        /// delegate: line
-        /// index:    slot number of target
-        /// schema:   slot width (unit)
         fn get<'a>(
             &self,
             _identity: &(),
@@ -86,15 +54,7 @@ pub mod list {
             Ok(slot)
         }
 
-
-        /// delegate:   line
-        /// index:      slot number of target (1-based; 0 appends)
-        /// schema:     slot width (unit)
-        /// value:
-        /// intern(reuse_vacant): write to first match 00...00 slice (skips idx=0 sentinel)
-        ///
-        /// On first use, call with index=0 to initialise: it reserves idx=0 as the
-        /// null sentinel and returns Created(1) for the first real entry.
+        /// intern: if true and index=0, return first match value index(i)
         fn set(
             &mut self,
             _identity: &(),
@@ -144,9 +104,6 @@ pub mod list {
             }
         }
 
-        /// delegate: line
-        /// index:    slot number of target
-        /// schema:   slot width (unit)
         fn delete(
             &mut self,
             _identity: &(),
@@ -166,17 +123,11 @@ pub mod list {
     }
 }
 
-// --- Variable List  ---
-
-#[derive(Debug)]
-pub enum VariableListError {
-    List(ListError),
-    Compact,
-}
-
-/// Variable-width slot store.
-/// Identity: unused (pass `&()`)
-/// Index:    slot number (1-based; 0 is the null sentinel; 0 on set appends)
+/// A variable list provides variable size store.
+///
+/// Index: <usize> - 1-based integer (0 is the null sentinel). 0 on set appends
+/// Schema: Vec<usize> - the range index line
+/// Delegate([usize]): flat data line
 /// Schema:   Vec<usize> — the range index line
 /// Delegate: Vec<usize> — the data line
 pub mod variable_list {
