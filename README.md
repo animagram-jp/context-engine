@@ -118,19 +118,19 @@ let user_name = context.get("session.user.name")?;
 ## Architecture
 
 ```
-┌─────────────┐       ┌────────────────────────────────┐
-│ DSL YAMLs   │------>│ Manifest (app global instance) │
-└─────────────┘compile└───────────┬────────────────────┘
+┌─────────────┐        ┌────────────────────────────────┐
+│ DSL YAMLs   │------->│ Manifest (app global instance) │
+└─────────────┘compile └──────────┬─────────────────────┘
                                   │
                                   ▼
-┌─────────────┐       ┌────────────────────────────────┐
-│ Application │<------│ Context(request scope instance)│
-└─────────────┘provide└────────────────────────────────┘
+┌─────────────┐        ┌────────────────────────────────┐
+│ Application │<-------│ Context(request scope instance)│
+└─────────────┘ provide└────────────────────────────────┘
                                   ▲
                                   │
-┌─────────────┐       ┌───────────┴────────────────────┐
-│ ClientImpls │------>│ StoreRegistry (required port)  │
-└─────────────┘regist └────────────────────────────────┘
+┌─────────────┐        ┌──────────┴─────────────────────┐
+│ StoreImpls  │------->│ StoreRegistry (required port)  │
+└─────────────┘register└────────────────────────────────┘
 ```
 
 See for details [Architecture.md](./docs/Architecture.md)
