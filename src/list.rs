@@ -22,7 +22,7 @@ pub enum VariableListError {
     Compact,
 }
 
-pub fn is_null(slot: &[usize]) -> bool {
+fn is_null(slot: &[usize]) -> bool {
     slot.iter().all(|&x| x == 0)
 }
 
@@ -134,9 +134,8 @@ impl Store<(), usize, Vec<usize>, Vec<usize>, ListError, [usize]> for VariableLi
 
     /// example:
     /// ```
-    /// use context_engine::list::variable_list::VariableList;
-    /// use context_engine::list::Store;
-    /// // idx=0 is the null sentinel (2 zeros); real entries start at idx=1
+    /// use crate::list::VariableList;
+    /// use crate::required::Store;
     /// let mut schema   = vec![0, 0, 0, 3, 3, 6];
     /// let delegate = vec![1, 2, 3, 4, 5, 6];
     /// let s = VariableList;
@@ -169,8 +168,8 @@ impl Store<(), usize, Vec<usize>, Vec<usize>, ListError, [usize]> for VariableLi
     ///
     /// example:
     /// ```
-    /// use context_engine::list::variable_list::VariableList;
-    /// use context_engine::list::{Store, SetOutcome};
+    /// use crate::list::VariableList;
+    /// use crate::required::{Store, SetOutcome};
     /// let mut schema   = vec![];
     /// let mut delegate = vec![];
     /// let mut s = VariableList;
