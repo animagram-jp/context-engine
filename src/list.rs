@@ -4,26 +4,43 @@
 
 // pub trait StoreError {}
 
-// pub trait StoreClient {
-//     type Error: StoreError;
+use alloc::collections::BTreeMap;
 
-    /// data:     the stored values
-    /// schema:   the structure that maps values to indices
-    /// identity: declares what the caller is addressing within the store
-    /// index:    resolves which element within the addressed set
-    fn get(&mut self, data: &T, schema: &T, identity: &T, index: &T) -> Result<&[usize], Self::Error>;
-//     /// store: physical data store 
-//     /// schema: store schema
-//     /// key:   identity to select a certain range in schema (optional)
-//     /// value:
-//     /// intern: when idx: null, search data and return first-match idx or not
-//     fn set(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>, idx: Option<usize>, value: &[usize], intern: bool) -> Result<SetOutcome, Self::Error>;
-//     /// index: line that has ranges
-//     /// data:  line that has values
-//     /// idx:   index number of target
-//     fn delete(&mut self, index: &mut Vec<usize>, idx: usize) -> Result<(), Self::Error>;
-//     fn compact(&mut self, index: &mut Vec<usize>, data: &mut Vec<usize>) -> Result<(), Self::Error>;
-// }
+pub trait Store {
+
+    type Identity;  // declares what the caller is addressing within the store
+    type Index;     // resolves which element within the addressed set
+    type Schema;    // the structure that maps values to indices
+    type Delegate;  // store delegated to: memory reference or TCP endpoint
+    type Error;
+
+    fn get<V>(
+        &self,
+        identity: &Self::Identity,
+        index: &Self::Index,
+        schema: &Self::Schema,
+        delegate: &Self::Delegate,
+    ) -> Result<&V, Self::Error>;
+
+    /// intern: if true, returns existing idx for matching content instead of allocating a new one
+    fn set<V>(
+        &mut self,
+        identity: &Self::Identity,
+        index: &Self::Index,
+        schema: &Self::Schema,
+        delegate: &Self::Delegate,
+        value: &V,
+        intern: bool,
+    ) -> Result<SetOutcome, Self::Error>;
+
+    fn delete(
+        &mut self,
+        identity: &Self::Identity,
+        index: &Self::Index,
+        schema: &Self::Schema,
+        delegate: &Self::Delegate,
+    ) -> Result<(), Self::Error>;
+}
 
 // --- List ---
 
