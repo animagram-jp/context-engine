@@ -6,10 +6,11 @@ use core::{
     result::Result
 };
 use alloc::vec::Vec;
+use alloc::vec;
 use crate::required::{
-    Store, 
+    Store,
     SetOutcome
-}
+};
 
 #[derive(Debug)]
 pub enum ListError {

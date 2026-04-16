@@ -15,7 +15,6 @@ pub mod context;
 pub mod provided;
 
 pub use required::{
-    StoreClient,
     StoreRegistry,
     SetOutcome,
 };

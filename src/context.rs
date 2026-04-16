@@ -124,7 +124,7 @@ impl<'r> ContextTrait for Context<'r> {
         args_ref.insert("value", value.clone());
 
         match client.set(store_key, &map, &args_ref) {
-            Some(SetOutcome::Created) | Some(SetOutcome::Updated) => {
+            Some(SetOutcome::Created(_)) | Some(SetOutcome::Updated) => {
                 self.cache_set(leaf.path_idx, value);
                 Ok(true)
             }
