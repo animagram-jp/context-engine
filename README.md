@@ -119,7 +119,7 @@ let user_name = context.get("session.user.name")?;
 
 ```
 ┌─────────────┐        ┌────────────────────────────────┐
-│ DSL YAMLs   │------->│ Manifest (app global instance) │
+│ DSL YAMLs   │------->│ Index (app global instance) │
 └─────────────┘compile └──────────┬─────────────────────┘
                                   │
                                   ▼
