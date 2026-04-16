@@ -98,21 +98,13 @@
 
 単一ストアの操作を提供するtrait。`key`は予約引数として明示し、追加の任意引数は`args`のflatなBTreeMapで渡す。
 
-```rust
-pub trait StoreClient: Send + Sync {
-    fn get(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<Tree>;
-    fn set(&self, key: &str, args: &BTreeMap<&str, Tree>) -> Option<SetOutcome>;
-    fn delete(&self, key: &str, args: &BTreeMap<&str, Tree>) -> bool;
-}
-```
-
-- `key`: DSL の `_load.key` / `_store.key` の値。予約引数。
+- `identity`,`index`: DSL の `_get.{identity,index}` / `_set.{identity,index}` の値。予約引数。
 - `args`: ttl・connection・map 等、ストア種別ごとの任意引数。利用者がimpl内で定義・参照する。
 - 内部可変性・スレッド安全性はimplementor側の責任。
 
 ### StoreRegistry
 
-YAMLの`client:`名称とStoreClientの対応を管理するtrait。利用者がimplし、Contextに渡す。
+YAMLの`store:`名称とStoreの対応を管理するtrait。利用者がimplし、Contextに渡す。
 
 ```rust
 pub trait StoreRegistry {
