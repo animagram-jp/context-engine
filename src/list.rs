@@ -198,9 +198,6 @@ impl Store<(), usize, Vec<usize>, Vec<usize>, ListError, [usize]> for VariableLi
         intern: bool,
     ) -> Result<SetOutcome, ListError> {
         if *index != 0 {
-            if *index == 0 {
-                return Err(ListError::NotExist);
-            }
             let idx_start = index * 2;
             let idx_end = idx_start + 2;
             if idx_end > schema.len() {
