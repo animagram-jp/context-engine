@@ -107,7 +107,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (keyword, map, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.set_args(leaf);
         let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
@@ -139,7 +139,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
         let leaf = &leaves[0];
 
-        let (keyword, map, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.set_args(leaf);
         let client = self.registry.client_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
@@ -172,7 +172,7 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(!matches!(v, Tree::Null));
         }
 
-        let (keyword, map, args) = self.index.store_args(leaf);
+        let (keyword, map, args) = self.index.set_args(leaf);
         let Some(client) = self.registry.client_for(keyword) else {
             return Ok(false);
         };
@@ -201,19 +201,19 @@ impl<'r> Context<'r> {
 
         let leaf_ref = crate::index::LeafRef { path_idx, parent_idx: 0, leaf_offset };
 
-        // 2. _store
-        let (store_name, store_map, store_args) = self.index.store_args(&leaf_ref);
-        if !store_name.is_empty() {
-            if let Some(client) = self.registry.client_for(store_name) {
+        // 2. _set
+        let (set_name, set_map, set_args) = self.index.set_args(&leaf_ref);
+        if !set_name.is_empty() {
+            if let Some(client) = self.registry.client_for(set_name) {
                 // DSL key省略時はpath_idxを文字列化してstore keyとする（compile時確定・一意）
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
-                let store_key = store_args.get("key")
+                let store_key = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
                     .unwrap_or(&idx_str);
-                let args_ref: BTreeMap<&str, Tree> = store_args.iter()
+                let args_ref: BTreeMap<&str, Tree> = set_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                if let Some(value) = client.get(store_key, &store_map, &args_ref) {
+                if let Some(value) = client.get(store_key, &set_map, &args_ref) {
                     self.cache_set(path_idx, value.clone());
                     return Ok(Some(value));
                 }
@@ -273,40 +273,40 @@ impl<'r> Context<'r> {
             return Ok(Some(value));
         }
 
-        // 4. _load
-        let (load_name, load_map, load_args) = self.index.load_args(&leaf_ref);
-        if load_name.is_empty() {
+        // 4. _get
+        let (get_name, get_map, get_args) = self.index.get_args(&leaf_ref);
+        if get_name.is_empty() {
             return Ok(None);
         }
-        let client = self.registry.client_for(load_name)
+        let client = self.registry.client_for(get_name)
             .ok_or_else(|| ContextError::LoadFailed(
-                LoadError::ClientNotFound(load_name.to_string())
+                LoadError::ClientNotFound(get_name.to_string())
             ))?;
-        let key = load_args.get("key").and_then(|v| {
+        let key = get_args.get("key").and_then(|v| {
             if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None }
         }).ok_or_else(|| ContextError::LoadFailed(
             LoadError::ConfigMissing("key".to_string())
         ))?;
-        let args_ref: BTreeMap<&str, Tree> = load_args.iter()
+        let args_ref: BTreeMap<&str, Tree> = get_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
-        let value = client.get(key, &load_map, &args_ref)
+        let value = client.get(key, &get_map, &args_ref)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
 
         // write-through to _store if configured
-        if !store_name.is_empty() {
-            if let Some(store_client) = self.registry.client_for(store_name) {
+        if !set_name.is_empty() {
+            if let Some(store_client) = self.registry.client_for(set_name) {
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
-                let sk = store_args.get("key")
+                let sk = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
                     .unwrap_or(&idx_str);
-                let mut sargs: BTreeMap<&str, Tree> = store_args.iter()
+                let mut sargs: BTreeMap<&str, Tree> = set_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 sargs.insert("value", value.clone());
-                store_client.set(sk, &store_map, &sargs);
+                store_client.set(sk, &set_map, &sargs);
             }
         }
 

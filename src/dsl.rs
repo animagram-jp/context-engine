@@ -3,13 +3,13 @@ use crate::provided::Tree;
 
 // ── meta_key keywords ─────────────────────────────────────────────────────────
 
-pub const META_LOAD:  &[u8] = b"_load";
-pub const META_STORE: &[u8] = b"_store";
+pub const META_GET: &[u8] = b"_get";
+pub const META_SET: &[u8] = b"_set";
 pub const META_STATE: &[u8] = b"_state";
 
-// ── prop keywords (within _load / _store) ────────────────────────────────────
+// ── prop keywords (within _get / _set) ───────────────────────────────────────
 
-pub const PROP_CLIENT: &[u8] = b"client";
+pub const PROP_STORE: &[u8] = b"store";
 pub const PROP_KEY:    &[u8] = b"key";
 pub const PROP_MAP:    &[u8] = b"map";
 
@@ -131,12 +131,12 @@ impl Dsl {
 
 // ── MetaBlock ─────────────────────────────────────────────────────────────────
 //
-// Intermediate representation of a resolved _load or _store block.
+// Intermediate representation of a resolved _get or _set block.
 // Carried down the recursion for inheritance.
 
 #[derive(Clone)]
 struct MetaBlock {
-    client_idx:  u32,              // interning_idx of client keyword
+    store_idx:   u32,              // interning_idx of store keyword
     key_idx:     u32,              // interning_idx of key value
     map_entries: Vec<(u32, u32)>,  // (dst_interning_idx, src_interning_idx) from map:
     scalar_args: Vec<(u32, u32)>,  // (key_interning_idx, value_interning_idx) other args
@@ -171,8 +171,8 @@ impl Compiler {
         keyword:    &[u8],
         value:      &Tree,
         parent_idx: u32,
-        inh_load:   Option<&MetaBlock>,
-        inh_store:  Option<&MetaBlock>,
+        inh_get:   Option<&MetaBlock>,
+        inh_set:  Option<&MetaBlock>,
     ) {
         let path_idx = self.paths.len() as u32;
         self.paths.push(0u64); // placeholder, filled below
@@ -181,9 +181,9 @@ impl Compiler {
 
         match value {
             Tree::Mapping(pairs) => {
-                // Extract _load / _store from this node, merging with inherited.
-                let load  = self.resolve_meta(pairs, META_LOAD,  inh_load);
-                let store = self.resolve_meta(pairs, META_STORE, inh_store);
+                // Extract _get / _set from this node, merging with inherited.
+                let get = self.resolve_meta(pairs, META_GET, inh_get);
+                let set = self.resolve_meta(pairs, META_SET, inh_set);
 
                 // Collect child field_keys.
                 // Reserve children slots first so they are contiguous, then walk.
@@ -203,12 +203,12 @@ impl Compiler {
                 for (i, (k, v)) in field_pairs.iter().enumerate() {
                     let child_idx = self.paths.len() as u16;
                     self.children[children_offset as usize + i] = child_idx;
-                    self.walk_field_key(k, v, path_idx, load.as_ref(), store.as_ref());
+                    self.walk_field_key(k, v, path_idx, get.as_ref(), set.as_ref());
                 }
 
                 if child_count == 0 {
                     // No child field_keys → treat as leaf.
-                    self.write_leaf(path_idx, keyword_idx, parent_idx, &Tree::Null, load.as_ref(), store.as_ref());
+                    self.write_leaf(path_idx, keyword_idx, parent_idx, &Tree::Null, get.as_ref(), set.as_ref());
                 } else {
                     let count_bits = (child_count as u64) & 0xf;
                     self.paths[path_idx as usize] =
@@ -220,14 +220,14 @@ impl Compiler {
             }
             // Scalar or Null → leaf with optional hardcoded value.
             _ => {
-                self.write_leaf(path_idx, keyword_idx, parent_idx, value, inh_load, inh_store);
+                self.write_leaf(path_idx, keyword_idx, parent_idx, value, inh_get, inh_set);
             }
         }
     }
 
     // ── meta resolution ───────────────────────────────────────────────────────
 
-    /// Resolve a _load or _store block from this node's pairs, merging with inherited.
+    /// Resolve a _get or _set block from this node's pairs, merging with inherited.
     /// Returns None if neither this node nor ancestors define the block.
     fn resolve_meta(
         &mut self,
@@ -241,15 +241,15 @@ impl Compiler {
             (None, Some(inh)) => Some(inh.clone()),
             (Some((_, Tree::Mapping(meta_pairs))), inh) => {
                 // Start from inherited, overwrite with local fields.
-                let mut client_idx  = inh.map(|b| b.client_idx).unwrap_or(0);
+                let mut store_idx   = inh.map(|b| b.store_idx).unwrap_or(0);
                 let mut key_idx     = inh.map(|b| b.key_idx).unwrap_or(0);
                 let mut map_entries: Vec<(u32, u32)> = inh.map(|b| b.map_entries.clone()).unwrap_or_default();
                 let mut scalar_args: Vec<(u32, u32)> = inh.map(|b| b.scalar_args.clone()).unwrap_or_default();
 
                 for (k, v) in meta_pairs {
-                    if k.as_slice() == PROP_CLIENT {
+                    if k.as_slice() == PROP_STORE {
                         if let Tree::Scalar(b) = v {
-                            client_idx = self.intern(b);
+                            store_idx = self.intern(b);
                         }
                     } else if k.as_slice() == PROP_KEY {
                         key_idx = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
@@ -263,8 +263,8 @@ impl Compiler {
                                 map_entries.push((mk_idx, mv_idx));
                             }
                         }
-                    } else if k.as_slice() != META_LOAD
-                           && k.as_slice() != META_STORE
+                    } else if k.as_slice() != META_GET
+                           && k.as_slice() != META_SET
                            && k.as_slice() != META_STATE {
                         // arbitrary scalar arg: overwrite if key present, otherwise append
                         let ak = self.intern(k);
@@ -276,7 +276,7 @@ impl Compiler {
                         }
                     }
                 }
-                Some(MetaBlock { client_idx, key_idx, map_entries, scalar_args })
+                Some(MetaBlock { store_idx, key_idx, map_entries, scalar_args })
             }
             _ => inherited.cloned(),
         }
@@ -292,8 +292,8 @@ impl Compiler {
         keyword_idx: u32,
         parent_idx:  u32,
         value:       &Tree,
-        load:        Option<&MetaBlock>,
-        store:       Option<&MetaBlock>,
+        get:         Option<&MetaBlock>,
+        set:         Option<&MetaBlock>,
     ) {
         let leaf_offset = self.leaves.len() as u32;
 
@@ -325,32 +325,32 @@ impl Compiler {
             }
         }
 
-        let load_map_count   = load.map(|b| b.map_entries.len()).unwrap_or(0);
-        let load_args_count  = load.map(|b| b.scalar_args.len()).unwrap_or(0);
-        let store_map_count  = store.map(|b| b.map_entries.len()).unwrap_or(0);
-        let store_args_count = store.map(|b| b.scalar_args.len()).unwrap_or(0);
+        let get_map_count  = get.map(|b| b.map_entries.len()).unwrap_or(0);
+        let get_args_count = get.map(|b| b.scalar_args.len()).unwrap_or(0);
+        let set_map_count  = set.map(|b| b.map_entries.len()).unwrap_or(0);
+        let set_args_count = set.map(|b| b.scalar_args.len()).unwrap_or(0);
 
-        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
+        // header u32[0]: keyword_idx(16) | fragment_count(8) | get_map_count(8)
         self.leaves.push(
             ((keyword_idx & 0xffff) << 16)
             | ((fragments.len() as u32 & 0xff) << 8)
-            | (load_map_count as u32 & 0xff)
+            | (get_map_count as u32 & 0xff)
         );
-        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
+        // header u32[1]: get_args_count(8) | set_map_count(8) | set_args_count(8) | padding(8)
         self.leaves.push(
-            ((load_args_count as u32 & 0xff) << 24)
-            | ((store_map_count as u32 & 0xff) << 16)
-            | ((store_args_count as u32 & 0xff) << 8)
+            ((get_args_count as u32 & 0xff) << 24)
+            | ((set_map_count as u32 & 0xff) << 16)
+            | ((set_args_count as u32 & 0xff) << 8)
         );
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
+        // header u32[2]: get_store_idx(16) | get_key_idx(16)
         self.leaves.push(
-            ((load.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
-            | (load.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
+            ((get.map(|b| b.store_idx).unwrap_or(0) & 0xffff) << 16)
+            | (get.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
         );
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
+        // header u32[3]: set_store_idx(16) | set_key_idx(16)
         self.leaves.push(
-            ((store.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
-            | (store.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
+            ((set.map(|b| b.store_idx).unwrap_or(0) & 0xffff) << 16)
+            | (set.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
         );
 
         // fragment×F: padding(15) | is_placeholder(1) | idx(16)
@@ -358,29 +358,29 @@ impl Compiler {
             self.leaves.push(((is_ph & 0x1) << 16) | (idx & 0xffff));
         }
 
-        // load.map×M0: dst_idx(16) | src_idx(16)
-        if let Some(b) = load {
+        // get.map×M0: dst_idx(16) | src_idx(16)
+        if let Some(b) = get {
             for &(dst, src) in &b.map_entries {
                 self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
             }
         }
 
-        // load.args×A0: key_idx(16) | val_idx(16)
-        if let Some(b) = load {
+        // get.args×A0: key_idx(16) | val_idx(16)
+        if let Some(b) = get {
             for &(ak, av) in &b.scalar_args {
                 self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
             }
         }
 
-        // store.map×M1: dst_idx(16) | src_idx(16)
-        if let Some(b) = store {
+        // set.map×M1: dst_idx(16) | src_idx(16)
+        if let Some(b) = set {
             for &(dst, src) in &b.map_entries {
                 self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
             }
         }
 
-        // store.args×A1: key_idx(16) | val_idx(16)
-        if let Some(b) = store {
+        // set.args×A1: key_idx(16) | val_idx(16)
+        if let Some(b) = set {
             for &(ak, av) in &b.scalar_args {
                 self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
             }
@@ -571,7 +571,7 @@ mod tests {
     fn meta_key_excluded_from_paths() {
         let (paths, ..) = compile(&mapping(vec![
             ("user", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
@@ -588,7 +588,7 @@ mod tests {
     fn load_client_stored_in_leaf() {
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("user", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
@@ -596,7 +596,7 @@ mod tests {
             ])),
         ]));
         // root(0), user(1), id(2)
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
+        // header u32[2]: get_store_idx(16) | get_key_idx(16)
         let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h2 = leaves[leaf_offset + 2];
         let client_idx = ((h2 >> 16) & 0xffff) as usize;
@@ -611,7 +611,7 @@ mod tests {
     fn store_inherited_to_child_leaf() {
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("session", mapping(vec![
-                ("_store", mapping(vec![
+                ("_set", mapping(vec![
                     ("client", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
@@ -621,7 +621,7 @@ mod tests {
             ])),
         ]));
         // root(0), session(1), user(2), id(3)
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
+        // header u32[3]: set_store_idx(16) | set_key_idx(16)
         let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h3 = leaves[leaf_offset + 3];
         let client_idx = ((h3 >> 16) & 0xffff) as usize;
@@ -703,12 +703,12 @@ mod tests {
         // parent defines _load with client="A", child overrides with client="B"
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("parent", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("ClientA")),
                     ("key",    scalar("k")),
                 ])),
                 ("child", mapping(vec![
-                    ("_load", mapping(vec![
+                    ("_get", mapping(vec![
                         ("client", scalar("ClientB")),
                         ("key",    scalar("k")),
                     ])),
@@ -730,7 +730,7 @@ mod tests {
         // parent defines _load with client="Inherited", child has no _load
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("parent", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("Inherited")),
                     ("key",    scalar("k")),
                 ])),

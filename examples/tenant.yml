@@ -1,16 +1,16 @@
 session:
   user:
-    _store:
-      client: Kvs
+    _set:
+      store: Kvs
       ttl:    3600 # seconds
       
     id:
-      _load:
-        client: Memory
+      _get:
+        store: Memory
         key:    "request.authorization.user"
 
-    _load:
-      client:     TenantDb
+    _get:
+      store:     TenantDb
       key:        "users.id.${session.user.id}"
       connection: ${connection.tenant_db}
       map:
@@ -30,11 +30,11 @@ session:
 
     tenant:
       id:
-        _load:
-          client: Memory
+        _get:
+          store: Memory
           key:    "request.authorization.tenant"
-      _load:
-        client:       CommonDb
+      _get:
+        store:       CommonDb
         connection:   ${connection.common_db}
         key:          "tenants.id.${session.user.tenant.id}"
         map:
@@ -52,8 +52,8 @@ session:
 
 connection:
   common_db:
-    _load:
-      client: Env
+    _get:
+      store: Env
       map:
         host:     "COMMON_DB_HOST"
         port:     "COMMON_DB_PORT"
@@ -70,8 +70,8 @@ connection:
     charset: "UTF8"
 
   tenant_db:
-    _load:
-      client:     CommonDb
+    _get:
+      store:     CommonDb
       connection: ${connection.common_db}
       key:        "tenants.id.${session.user.tenant.id}"
       map:
@@ -80,8 +80,8 @@ connection:
         database: "database"
         username: "username"
         password: "password"
-    _store:
-      client: Kvs
+    _set:
+      store: Kvs
       ttl:    36000 # seconds
         
     host:

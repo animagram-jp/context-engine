@@ -84,16 +84,16 @@ impl Index {
         self.interning_str(interning_idx)
     }
 
-    /// Extract _load client keyword, map entries, and args for the given leaf.
-    /// Returns ("", empty, empty) if no _load is configured.
-    pub fn load_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
-        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Load)
+    /// Extract _get store keyword, map entries, and args for the given leaf.
+    /// Returns ("", empty, empty) if no _get is configured.
+    pub fn get_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Get)
     }
 
-    /// Extract _store client keyword, map entries, and args for the given leaf.
-    /// Returns ("", empty, empty) if no _store is configured.
-    pub fn store_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
-        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)
+    /// Extract _set store keyword, map entries, and args for the given leaf.
+    /// Returns ("", empty, empty) if no _set is configured.
+    pub fn set_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Set)
     }
 
     /// Return the value fragments encoded in the leaf.
@@ -136,7 +136,7 @@ impl Index {
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-enum MetaKind { Load, Store }
+enum MetaKind { Get, Set }
 
 impl Index {
     /// Walk dot-separated `path` from the virtual root (paths[0]).
@@ -179,7 +179,7 @@ impl Index {
         }
     }
 
-    /// Decode _load or _store from `leaves` at `leaf_offset`.
+    /// Decode _get or _set from `leaves` at `leaf_offset`.
     /// Leaf layout: Architecture.md #leaf 参照
     fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
         let base  = leaf_offset as usize;
@@ -188,40 +188,40 @@ impl Index {
 
         if path_idx as usize >= self.paths.len() { return ("", empty_map, empty_args); }
 
-        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
+        // header u32[0]: keyword_idx(16) | fragment_count(8) | get_map_count(8)
         let h0 = self.leaves[base];
-        let fragment_count  = ((h0 >> 8) & 0xff) as usize;
-        let load_map_count  = (h0 & 0xff) as usize;
+        let fragment_count = ((h0 >> 8) & 0xff) as usize;
+        let get_map_count  = (h0 & 0xff) as usize;
 
-        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
+        // header u32[1]: get_args_count(8) | set_map_count(8) | set_args_count(8) | padding(8)
         let h1 = self.leaves[base + 1];
-        let load_args_count  = ((h1 >> 24) & 0xff) as usize;
-        let store_map_count  = ((h1 >> 16) & 0xff) as usize;
-        let store_args_count = ((h1 >> 8)  & 0xff) as usize;
+        let get_args_count = ((h1 >> 24) & 0xff) as usize;
+        let set_map_count  = ((h1 >> 16) & 0xff) as usize;
+        let set_args_count = ((h1 >> 8)  & 0xff) as usize;
 
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
+        // header u32[2]: get_store_idx(16) | get_key_idx(16)
         let h2 = self.leaves[base + 2];
-        let load_client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let load_key_idx    = (h2 & 0xffff) as usize;
+        let get_store_idx = ((h2 >> 16) & 0xffff) as usize;
+        let get_key_idx   = (h2 & 0xffff) as usize;
 
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
+        // header u32[3]: set_store_idx(16) | set_key_idx(16)
         let h3 = self.leaves[base + 3];
-        let store_client_idx = ((h3 >> 16) & 0xffff) as usize;
-        let store_key_idx    = (h3 & 0xffff) as usize;
+        let set_store_idx = ((h3 >> 16) & 0xffff) as usize;
+        let set_key_idx   = (h3 & 0xffff) as usize;
 
         // variable section offsets
-        let frag_start      = base + 4;
-        let lmap_start      = frag_start + fragment_count;
-        let largs_start     = lmap_start + load_map_count;
-        let smap_start      = largs_start + load_args_count;
-        let sargs_start     = smap_start + store_map_count;
+        let frag_start  = base + 4;
+        let gmap_start  = frag_start + fragment_count;
+        let gargs_start = gmap_start + get_map_count;
+        let smap_start  = gargs_start + get_args_count;
+        let sargs_start = smap_start + set_map_count;
 
-        let (client_idx, key_idx, map_start, map_count, args_start, args_count) = match kind {
-            MetaKind::Load  => (load_client_idx,  load_key_idx,  lmap_start,  load_map_count,  largs_start, load_args_count),
-            MetaKind::Store => (store_client_idx, store_key_idx, smap_start,  store_map_count, sargs_start, store_args_count),
+        let (store_idx, key_idx, map_start, map_count, args_start, args_count) = match kind {
+            MetaKind::Get => (get_store_idx, get_key_idx, gmap_start, get_map_count, gargs_start, get_args_count),
+            MetaKind::Set => (set_store_idx, set_key_idx, smap_start, set_map_count, sargs_start, set_args_count),
         };
 
-        let client_name = from_utf8(self.interning_str(client_idx)).unwrap_or("");
+        let client_name = from_utf8(self.interning_str(store_idx)).unwrap_or("");
         if client_name.is_empty() {
             return ("", empty_map, empty_args);
         }
@@ -352,7 +352,7 @@ mod tests {
     fn load_args_client_name() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
@@ -362,7 +362,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.load_args(&leaves[0]);
+        let (client, _, _) = idx.get_args(&leaves[0]);
         assert_eq!(client, "Memory");
     }
 
@@ -370,7 +370,7 @@ mod tests {
     fn load_args_key() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
-                ("_load", mapping(vec![
+                ("_get", mapping(vec![
                     ("client", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
@@ -380,7 +380,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (_, _, args) = idx.load_args(&leaves[0]);
+        let (_, _, args) = idx.get_args(&leaves[0]);
         assert_eq!(args.get("key"), Some(&Tree::Scalar(b"session:1".to_vec())));
     }
 
@@ -392,7 +392,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.load_args(&leaves[0]);
+        let (client, _, args) = idx.get_args(&leaves[0]);
         assert!(client.is_empty() && args.is_empty());
     }
 
@@ -449,7 +449,7 @@ mod tests {
     fn store_args_client_name() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
-                ("_store", mapping(vec![
+                ("_set", mapping(vec![
                     ("client", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
@@ -459,7 +459,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.store_args(&leaves[0]);
+        let (client, _, _) = idx.set_args(&leaves[0]);
         assert_eq!(client, "Kvs");
     }
 
@@ -471,7 +471,7 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.store_args(&leaves[0]);
+        let (client, _, args) = idx.set_args(&leaves[0]);
         assert!(client.is_empty() && args.is_empty());
     }
 }
