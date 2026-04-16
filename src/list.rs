@@ -248,7 +248,7 @@ impl Store<(), usize, Vec<usize>, Vec<usize>, ListError, [usize]> for VariableLi
 
     /// example:
     /// ```
-    /// use context_engine::list::variable_list::VariableList;
+    /// use context_engine::list::VariableList;
     /// use context_engine::list::{Store, ListError};
     /// // idx=0 sentinel, idx=1 -> [1,2,3], idx=2 -> [4,5,6]
     /// let mut schema   = vec![0, 0, 0, 3, 3, 6];
@@ -286,7 +286,7 @@ impl VariableList {
     ///
     /// example:
     /// ```
-    /// use context_engine::list::variable_list::VariableList;
+    /// use context_engine::list::VariableList;
     /// // idx=0 sentinel, idx=1 -> [1,2,3], idx=2 is vacant, idx=3 -> [4,5,6]
     /// let mut schema   = vec![0, 0, 0, 3, 0, 0, 3, 6];
     /// let mut delegate = vec![1, 2, 3, 4, 5, 6];
