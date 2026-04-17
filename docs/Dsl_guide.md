@@ -1,4 +1,4 @@
-// This file includes contents that untranslated expressions (ja).
+// This file includes untranslated text (ja).
 
 # DSL guide
 
