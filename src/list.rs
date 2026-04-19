@@ -84,7 +84,6 @@ impl<T: Copy + Default + PartialEq> List<T> {
     /// intern: if true and identity=0, return first match value identity(i)
     pub fn set(
         &mut self,
-        
         identity: &usize,
         schema: &mut usize,
         value: &[T],
@@ -132,7 +131,6 @@ impl<T: Copy + Default + PartialEq> List<T> {
 
     pub fn delete(
         &mut self,
-        
         identity: &usize,
         schema: &mut usize,
     ) -> Result<(), ListError> {
