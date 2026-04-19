@@ -108,7 +108,7 @@ impl<'r> ContextTrait for Context<'r> {
         let leaf = &leaves[0];
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let client = self.registry.client_for(keyword)
+        let client = self.registry.store_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
@@ -140,7 +140,7 @@ impl<'r> ContextTrait for Context<'r> {
         let leaf = &leaves[0];
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let client = self.registry.client_for(keyword)
+        let client = self.registry.store_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
@@ -173,7 +173,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let Some(client) = self.registry.client_for(keyword) else {
+        let Some(client) = self.registry.store_for(keyword) else {
             return Ok(false);
         };
 
@@ -204,7 +204,7 @@ impl<'r> Context<'r> {
         // 2. _set
         let (set_name, set_map, set_args) = self.index.set_args(&leaf_ref);
         if !set_name.is_empty() {
-            if let Some(client) = self.registry.client_for(set_name) {
+            if let Some(client) = self.registry.store_for(set_name) {
                 // DSL key省略時はpath_idxを文字列化してstore keyとする（compile時確定・一意）
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
                 let store_key = set_args.get("key")
@@ -278,7 +278,7 @@ impl<'r> Context<'r> {
         if get_name.is_empty() {
             return Ok(None);
         }
-        let client = self.registry.client_for(get_name)
+        let client = self.registry.store_for(get_name)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::ClientNotFound(get_name.to_string())
             ))?;
@@ -297,7 +297,7 @@ impl<'r> Context<'r> {
 
         // write-through to _store if configured
         if !set_name.is_empty() {
-            if let Some(store_client) = self.registry.client_for(set_name) {
+            if let Some(store_client) = self.registry.store_for(set_name) {
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
                 let sk = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })

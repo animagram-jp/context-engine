@@ -49,7 +49,7 @@ impl fmt::Display for DslError {
 /// Errors from `_load` client resolution during `Context::get`.
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
-    /// StoreRegistry::client_for() returned None for the given keyword.
+    /// StoreRegistry::store_for() returned None for the given keyword.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
@@ -73,7 +73,7 @@ impl fmt::Display for LoadError {
 /// Errors from `_store` client operations during `Context::set` / `Context::delete`.
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
-    /// StoreRegistry::client_for() returned None for the given keyword.
+    /// StoreRegistry::store_for() returned None for the given keyword.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),

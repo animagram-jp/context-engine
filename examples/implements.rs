@@ -1,10 +1,10 @@
 fn main() {}
 
-// Example StoreClient implementations.
-// These are minimal stubs showing how to implement StoreClient and StoreRegistry
+// Example Store implementations.
+// These are minimal stubs showing how to implement Store and StoreRegistry
 // for common backing stores under the new unified interface.
 
-use context_engine::required::{StoreClient, StoreRegistry, SetOutcome};
+use context_engine::required::{Store, StoreRegistry, SetOutcome};
 use context_engine::provided::Tree;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,7 @@ impl MemoryClient {
     }
 }
 
-impl StoreClient for MemoryClient {
+impl Store for MemoryClient {
     fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
@@ -51,7 +51,7 @@ impl KvsClient {
     }
 }
 
-impl StoreClient for KvsClient {
+impl Store for KvsClient {
     fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         let bytes = self.data.lock().unwrap().get(key).cloned()?;
         // In real impl: unwire bytes → Tree
@@ -77,7 +77,7 @@ impl StoreClient for KvsClient {
 
 pub struct EnvClient;
 
-impl StoreClient for EnvClient {
+impl Store for EnvClient {
     fn get(&self, _key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         let pairs: Vec<(Vec<u8>, Tree)> = args.iter()
             .filter_map(|(&k, v)| {
@@ -109,7 +109,7 @@ impl CommonDbClient {
     }
 }
 
-impl StoreClient for CommonDbClient {
+impl Store for CommonDbClient {
     fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
@@ -137,7 +137,7 @@ impl TenantDbClient {
     }
 }
 
-impl StoreClient for TenantDbClient {
+impl Store for TenantDbClient {
     fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
         self.data.lock().unwrap().get(key).cloned()
     }
@@ -184,7 +184,7 @@ impl MyRegistry {
 }
 
 impl StoreRegistry for MyRegistry {
-    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient> {
+    fn store_for(&self, keyword: &str) -> Option<&dyn Store> {
         match keyword {
             "Memory"   => Some(self.memory.as_ref()),
             "Kvs"      => Some(self.kvs.as_ref()),

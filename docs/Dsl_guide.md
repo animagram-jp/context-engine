@@ -67,7 +67,7 @@ user:
 | `_store` | meta_key      | store destination definition |
 | `_state` | meta_key      | reserved |
 | `client` | _load / _store prop | StoreRegistry keyword |
-| `key`    | _load / _store prop | reserved arg passed to StoreClient |
+| `key`    | _load / _store prop | reserved arg passed to Store |
 | `map`    | _load / _store prop | field mapping definition |
 
 ### 4. _store / _load args

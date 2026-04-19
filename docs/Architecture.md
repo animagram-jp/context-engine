@@ -20,7 +20,7 @@
 |--------|------|-----------|-------------|----------|
 | - | `debug_log!` | `(class, fn $(, arg)*)` | `feature=logging` ログマクロ | debug_log.rs |
 | - | `Tree` | - | n次元scalar map型 | provided.rs |
-| - | `SetOutcome` | - | `StoreClient::set`が返すCreatedかUpdated | required.rs |
+| - | `SetOutcome` | - | `Store::set`が返すCreatedかUpdated | required.rs |
 | Tree | `wire` | `(&self) -> Vec<u8>` | Treeをワイヤフォーマットに変換 | tree.rs |
 |      | `unwire` | `(bytes: &[u8]) -> Option<Tree>` | ワイヤフォーマットからTreeへ変換 | tree.rs |
 | Dsl | `compile` | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから静的list(paths/children/leaves/interning/interning_idx) を返す | dsl.rs |
@@ -35,10 +35,10 @@
 |         | `set` | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | 値から_storeに書き込み、cacheも更新 | context.rs |
 |         | `delete` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスから_storeの値を削除し、cacheもnullで更新 | context.rs |
 |         | `exists` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスからcacheか_storeに値が存在するか確認し、cacheを更新 | context.rs |
-| StoreClient | `get` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<Tree>` | keyとdsl記載のmapから値をlistで返す | required.rs |
+| Store | `get` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<Tree>` | keyとdsl記載のmapから値をlistで返す | required.rs |
 |             | `set` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<SetOutcome>` | keyとdsl記載のマップから値を保存しSetOutcomeを返す | required.rs |
 |             | `delete` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> bool` | keyとdsl記載のマップから値を削除し成否を返す | required.rs |
-| StoreRegistry | `client_for` | `&self, keyword: &str -> Option<&dyn StoreClient>` | StoreClientのkeywordからStoreClientを返す | required.rs |
+| StoreRegistry | `store_for` | `&self, keyword: &str -> Option<&dyn Store>` | StoreのkeywordからStoreを返す | required.rs |
 | DslError | `fmt` | `&self, f: &mut fmt::Formatter<'_> -> fmt::Result` | Dslのエラーを返す | provided.rs |
 | LoadError | `fmt` |  | _loadクライアント呼び出しエラーを返す | provided.rs |
 | StoreError | `fmt` |  | _storeクライアント呼び出しエラーを返す | provided.rs |
@@ -94,7 +94,7 @@
 
 ## モジュール仕様
 
-### StoreClient
+### Store
 
 単一ストアの操作を提供するtrait。`key`は予約引数として明示し、追加の任意引数は`args`のflatなBTreeMapで渡す。
 
@@ -108,16 +108,16 @@ YAMLの`store:`名称とStoreの対応を管理するtrait。利用者がimplし
 
 ```rust
 pub trait StoreRegistry {
-    fn client_for(&self, keyword: &str) -> Option<&dyn StoreClient>;
+    fn store_for(&self, keyword: &str) -> Option<&dyn Store>;
 }
 ```
 
-- ライブラリはYAML名称の文字列をそのまま`client_for()`に渡してmatchを回す。
+- ライブラリはYAML名称の文字列をそのまま`store_for()`に渡してmatchを回す。
 - YAML上の名義（`"Memory"`, `"Kvs"`, `"TenantDb"`等）は利用者が自由に定義する。
 
 ### Instance Cache
 
-Contextインスタンス固有のキャッシュ。StoreClientとは独立。
+Contextインスタンス固有のキャッシュ。Storeとは独立。
 
 - Context生成時: 空
 - Context生存中: get/setに応じて蓄積
@@ -245,13 +245,13 @@ leaf 1つ分のレイアウト（u32単位）:
 - `ParseError(String)`
 
 **LoadError** (`ports/provided.rs`):
-- `ClientNotFound(String)` — `StoreRegistry::client_for()` が None を返した
+- `ClientNotFound(String)` — `StoreRegistry::store_for()` が None を返した
 - `ConfigMissing(String)` — DSL内に必須のconfigキーが欠落
 - `NotFound(String)` — clientの呼び出しは成功したがデータが存在しなかった
 - `ParseError(String)` — clientレスポンスのパースエラー
 
 **StoreError** (`ports/provided.rs`):
-- `ClientNotFound(String)` — `StoreRegistry::client_for()` が None を返した
+- `ClientNotFound(String)` — `StoreRegistry::store_for()` が None を返した
 - `ConfigMissing(String)` — DSL内に必須のconfigキーが欠落
 - `SerializeError(String)` — シリアライズエラー
 

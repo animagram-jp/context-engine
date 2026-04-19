@@ -8,14 +8,14 @@ extern crate std;
 #[cfg(test)]
 extern crate std;
 
-// pub(crate) mod debug_log;
+pub(crate) mod debug_log;
 pub mod required;
 pub mod list;
-// pub mod tree;
-// pub mod dsl;
-// pub mod index;
-// pub mod context;
-// pub mod provided;
+pub mod tree;
+pub mod dsl;
+pub mod index;
+pub mod context;
+pub mod provided;
 
 pub use required::{
     Store,
@@ -25,9 +25,9 @@ pub use list::{
     List,
     VariableList,
 };
-// pub use index::Index;
-// pub use provided::{
-//     Tree,
-//     DslError, LoadError, StoreError, ContextError,
-//     Context,
-// };
+pub use index::Index;
+pub use provided::{
+    Tree,
+    DslError, LoadError, StoreError, ContextError,
+    Context,
+};

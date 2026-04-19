@@ -74,12 +74,12 @@ session:
 |-------------------|---------|
 | multi-tenant app  | [tenant.yml](./examples/tenant.yml) |
 
-3. Implement `StoreClient` and `StoreRegistry` for your stores.
+3. Implement `Store` and `StoreRegistry` for your stores.
 
 | Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
-| `StoreClient`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
-| `StoreRegistry` | maps YAML client names to `StoreClient`s | [MyRegistry](./examples/implements.rs) |
+| `Store`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
+| `StoreRegistry` | maps YAML client names to `Store`s | [MyRegistry](./examples/implements.rs) |
 
 4. Precompile your yaml to a rs file.
 
