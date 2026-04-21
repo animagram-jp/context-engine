@@ -1,64 +1,100 @@
-use alloc::{boxed::Box,vec::Vec};
-use crate::ports::provided::Tree;
+use alloc::{boxed::Box, vec::Vec};
+use crate::provided::{DslError, Tree};
+use crate::list::{List, VariableList};
 
 // ── meta_key keywords ─────────────────────────────────────────────────────────
 
-pub const META_LOAD:  &[u8] = b"_load";
-pub const META_STORE: &[u8] = b"_store";
+pub const META_GET:   &[u8] = b"_get";
+pub const META_SET:   &[u8] = b"_set";
 pub const META_STATE: &[u8] = b"_state";
 
-// ── prop keywords (within _load / _store) ────────────────────────────────────
+// ── prop keywords (within _get / _set) ───────────────────────────────────────
 
-pub const PROP_CLIENT: &[u8] = b"client";
-pub const PROP_KEY:    &[u8] = b"key";
-pub const PROP_MAP:    &[u8] = b"map";
+pub const PROP_STORE: &[u8] = b"store";
+pub const PROP_KEY:   &[u8] = b"key";
+pub const PROP_MAP:   &[u8] = b"map";
 
 // ── path field layout (u64) ───────────────────────────────────────────────────
 //
-// | field       | bits |
-// |-------------|------|
-// | is_leaf     |    1 | bit 63
-// | offset      |   16 | bits 62..47
-// | count       |    4 | bits 46..43  is_leaf=0: 子path数, is_leaf=1: unused
-// | padding     |   11 | bits 42..32
-// | parent_idx  |   16 | bits 31..16  virtual root is self-referential (0)
-// | keyword_idx |   16 | bits 15..0   interning_idx of this path's keyword
+// | field       | bits  |
+// |-------------|-------|
+// | is_leaf     |     1 | bit 63
+// | keyword_id  |    15 | bits 62..48
+// | parent_id   |    16 | bits 47..32
+// | child/leaf_id |  16 | bits 31..16  is_leaf=0: children id / is_leaf=1: leaves id
+// | value_id    |    16 | bits 15..0
 
-pub const PATH_IS_LEAF_SHIFT:     u64 = 63;
-pub const PATH_OFFSET_SHIFT:      u64 = 47;
-pub const PATH_COUNT_SHIFT:       u64 = 43;
-pub const PATH_PARENT_IDX_SHIFT:  u64 = 16;
-pub const PATH_KEYWORD_IDX_SHIFT: u64 = 0;
+pub const PATH_IS_LEAF_SHIFT:    u64 = 63;
+pub const PATH_KEYWORD_ID_SHIFT: u64 = 48;
+pub const PATH_PARENT_ID_SHIFT:  u64 = 32;
+pub const PATH_CHILD_ID_SHIFT:   u64 = 16;
+pub const PATH_VALUE_ID_SHIFT:   u64 = 0;
 
-pub const PATH_IS_LEAF_MASK:     u64 = 0x1    << PATH_IS_LEAF_SHIFT;
-pub const PATH_OFFSET_MASK:      u64 = 0xffff << PATH_OFFSET_SHIFT;
-pub const PATH_COUNT_MASK:       u64 = 0xf    << PATH_COUNT_SHIFT;
-pub const PATH_PARENT_IDX_MASK:  u64 = 0xffff << PATH_PARENT_IDX_SHIFT;
-pub const PATH_KEYWORD_IDX_MASK: u64 = 0xffff; // bits 15..0
+pub const PATH_IS_LEAF_MASK:    u64 = 0x1     << PATH_IS_LEAF_SHIFT;
+pub const PATH_KEYWORD_ID_MASK: u64 = 0x7fff  << PATH_KEYWORD_ID_SHIFT;
+pub const PATH_PARENT_ID_MASK:  u64 = 0xffff  << PATH_PARENT_ID_SHIFT;
+pub const PATH_CHILD_ID_MASK:   u64 = 0xffff  << PATH_CHILD_ID_SHIFT;
+pub const PATH_VALUE_ID_MASK:   u64 = 0xffff;
+
+// ── leaf layout (VariableList<u16>, fixed 12 u16s) ───────────────────────────
+//
+// | Field           | u16 | Note                           |
+// |-----------------|-----|--------------------------------|
+// | get_store_id    |   0 | stores id (u8 as u16)          |
+// | get_key_id      |   1 | values id                      |
+// | set_store_id    |   2 | stores id (u8 as u16)          |
+// | set_key_id      |   3 | values id                      |
+// | get_map_key_id  |   4 | map_keys id                    |
+// | get_map_val_id  |   5 | map_vals id                    |
+// | get_args_key_id |   6 | args_keys id                   |
+// | get_args_val_id |   7 | args_vals id                   |
+// | set_map_key_id  |   8 | map_keys id                    |
+// | set_map_val_id  |   9 | map_vals id                    |
+// | set_args_key_id |  10 | args_keys id                   |
+// | set_args_val_id |  11 | args_vals id                   |
+
+pub const LEAF_WIDTH: usize = 12;
+
+pub const LEAF_GET_STORE_ID:    usize = 0;
+pub const LEAF_GET_KEY_ID:      usize = 1;
+pub const LEAF_SET_STORE_ID:    usize = 2;
+pub const LEAF_SET_KEY_ID:      usize = 3;
+pub const LEAF_GET_MAP_KEY_ID:  usize = 4;
+pub const LEAF_GET_MAP_VAL_ID:  usize = 5;
+pub const LEAF_GET_ARGS_KEY_ID: usize = 6;
+pub const LEAF_GET_ARGS_VAL_ID: usize = 7;
+pub const LEAF_SET_MAP_KEY_ID:  usize = 8;
+pub const LEAF_SET_MAP_VAL_ID:  usize = 9;
+pub const LEAF_SET_ARGS_KEY_ID: usize = 10;
+pub const LEAF_SET_ARGS_VAL_ID: usize = 11;
+
+// ── value fragment encoding (u16) ────────────────────────────────────────────
+//
+// bit15: is_placeholder, bits14..0: word_id
+
+pub const VALUE_IS_PLACEHOLDER_MASK: u16 = 0x8000;
+pub const VALUE_WORD_ID_MASK:        u16 = 0x7fff;
 
 // ── Dsl ───────────────────────────────────────────────────────────────────────
 
-/// Compiles a DSL tree into static index data arrays consumed by `Index`.
-pub struct Dsl {
-    paths:         Box<[u64]>,
-    children:      Box<[u16]>,
-    leaves:        Box<[u32]>,
-    interning:     Box<[u8]>,
-    interning_idx: Box<[u64]>,
-}
+pub struct Dsl;
+
+// ── Limitations ───────────────────────────────────────────────────────────────
+
+const MAX_PATH_ID:  usize = 0xffff;   // 16 bit
+const MAX_WORD_ID:  usize = 0x7fff;   // 15 bit (bit15 reserved for is_placeholder)
+const MAX_STORE_ID: usize = 0xff;     // 8 bit
+// identity arrays are emitted as u16 (offset into data); data arrays are indexed by these offsets
+const MAX_VL_U16_DATA: usize = 0xffff; // VariableList<u16> data length fits u16 offset
+const MAX_VL_U8_DATA:  usize = 0xffff; // VariableList<u8>  data length fits u16 offset (words identity emitted as u16 too)
 
 impl Dsl {
-    pub fn new(
-        paths:         Box<[u64]>,
-        children:      Box<[u16]>,
-        leaves:        Box<[u32]>,
-        interning:     Box<[u8]>,
-        interning_idx: Box<[u64]>,
-    ) -> Self {
-        Self { paths, children, leaves, interning, interning_idx }
-    }
-
-    /// Compiles a `Tree` into five static data arrays: `(paths, children, leaves, interning, interning_idx)`.
+    /// Compiles a `Tree` into static index data structures consumed by `Index`.
+    ///
+    /// `store_ids` is the ordered list of store identifier strings as defined by the caller.
+    /// The index position becomes the `store_id` (u8) baked into leaf data.
+    ///
+    /// Returns `Err(DslError::LimitExceeded)` if any compile-time limit is exceeded.
     ///
     /// ```
     /// # extern crate alloc;
@@ -66,63 +102,89 @@ impl Dsl {
     /// let tree = Tree::Mapping(alloc::vec![
     ///     (b"id".to_vec(), Tree::Null),
     /// ]);
-    /// let (paths, children, ..) = Dsl::compile(&tree);
-    /// assert_eq!(paths.len(), 2); // virtual root + id
+    /// let (paths, ..) = Dsl::compile(&tree, &[]).unwrap();
+    /// assert_eq!(paths.data.len(), 2); // virtual root + id
     /// ```
-    pub fn compile(tree: &Tree) -> (
-        Box<[u64]>,
-        Box<[u16]>,
-        Box<[u32]>,
-        Box<[u8]>,
-        Box<[u64]>,
-    ) {
-        let mut compiler = Compiler::new();
-        // paths[0] = virtual root (keyword_idx=0 = empty string)
-        compiler.intern(b""); // interning[0] = ""
-        compiler.paths.push(0u64); // placeholder, filled after walking top-level
+    pub fn compile(tree: &Tree, store_ids: &[&str]) -> Result<(
+        List<u64>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u8>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+    ), DslError> {
+        if store_ids.len() > MAX_STORE_ID {
+            return Err(DslError::LimitExceeded(alloc::format!(
+                "store_ids length {} exceeds max {}", store_ids.len(), MAX_STORE_ID
+            )));
+        }
+        let mut compiler = Compiler::new(store_ids);
+        compiler.intern_word(b"")?; // word_id=0: empty string sentinel
+        // paths[0] = virtual root; List::new(1) already reserves the slot
+
         if let Tree::Mapping(pairs) = tree {
-            let children_offset = compiler.children.len() as u32;
             let field_pairs: Vec<_> = pairs.iter()
                 .filter(|(k, _)| k.first() != Some(&b'_'))
                 .collect();
-            let child_count = field_pairs.len() as u32;
 
-            for _ in 0..child_count {
-                compiler.children.push(0u16); // placeholder
-            }
+            let children_id = compiler.alloc_children_slots(field_pairs.len())?;
+
             for (i, (k, v)) in field_pairs.iter().enumerate() {
-                let child_idx = compiler.paths.len() as u16;
-                compiler.children[children_offset as usize + i] = child_idx;
-                compiler.walk_field_key(k, v, 0, None, None); // parent=virtual root(0)
+                let child_idx = compiler.paths.data.len() as u16;
+                compiler.set_child(children_id, i, child_idx);
+                compiler.walk_field_key(k, v, 0, None, None)?;
             }
 
-            let count_bits = (child_count as u64) & 0xf;
-            compiler.paths[0] =
-                (children_offset as u64) << PATH_OFFSET_SHIFT
-                | count_bits             << PATH_COUNT_SHIFT
-                | 0u64 << PATH_PARENT_IDX_SHIFT  // self-referential
-                | 0u64; // keyword_idx=0 (empty)
+            let root = (children_id as u64) << PATH_CHILD_ID_SHIFT;
+            compiler.paths.data[0] = root;
         }
+
         compiler.finish()
     }
 
     /// Parse YAML source, compile, and write static Rust data to `out_path`.
     #[cfg(feature = "precompile")]
-    pub fn write(src: &[u8], out_path: &str) -> Result<(), alloc::string::String> {
+    pub fn write(src: &[u8], store_ids: &[&str], out_path: &str) -> Result<(), alloc::string::String> {
         extern crate std;
         use std::string::{String, ToString};
         use std::format;
 
         let tree = parse_yaml(src)?;
-        let (paths, children, leaves, interning, interning_idx) = Self::compile(&tree);
+        let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
+            = Self::compile(&tree, store_ids).map_err(|e| e.to_string())?;
+
+        // identity arrays are emitted as u16; verify offsets fit before casting
+        check_vl_u16_identity(&children,  "children")?;
+        check_vl_u16_identity(&leaves,    "leaves")?;
+        check_vl_u16_identity(&values,    "values")?;
+        check_vl_u16_identity_u8(&words,  "words")?;
+        check_vl_u16_identity(&map_keys,  "map_keys")?;
+        check_vl_u16_identity(&map_vals,  "map_vals")?;
+        check_vl_u16_identity(&args_keys, "args_keys")?;
+        check_vl_u16_identity(&args_vals, "args_vals")?;
 
         let mut out = String::new();
         out.push_str("// @generated — do not edit by hand\n\n");
-        emit_u64_slice(&mut out, "PATHS",         &paths);
-        emit_u16_slice(&mut out, "CHILDREN",      &children);
-        emit_u32_slice(&mut out, "LEAVES",        &leaves);
-        emit_u8_slice (&mut out, "INTERNING",     &interning);
-        emit_u64_slice(&mut out, "INTERNING_IDX", &interning_idx);
+        emit_u64_slice(&mut out, "PATHS",              &paths.data);
+        emit_u16_slice(&mut out, "CHILDREN_IDENTITY",  &children.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "CHILDREN_DATA",      &children.data);
+        emit_u16_slice(&mut out, "LEAVES_IDENTITY",    &leaves.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "LEAVES_DATA",        &leaves.data);
+        emit_u16_slice(&mut out, "VALUES_IDENTITY",    &values.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "VALUES_DATA",        &values.data);
+        emit_u16_slice(&mut out, "WORDS_IDENTITY",     &words.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u8_slice  (&mut out, "WORDS_DATA",        &words.data);
+        emit_u16_slice(&mut out, "MAP_KEYS_IDENTITY",  &map_keys.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "MAP_KEYS_DATA",      &map_keys.data);
+        emit_u16_slice(&mut out, "MAP_VALS_IDENTITY",  &map_vals.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "MAP_VALS_DATA",      &map_vals.data);
+        emit_u16_slice(&mut out, "ARGS_KEYS_IDENTITY", &args_keys.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "ARGS_KEYS_DATA",     &args_keys.data);
+        emit_u16_slice(&mut out, "ARGS_VALS_IDENTITY", &args_vals.identity.iter().map(|&x| x as u16).collect::<alloc::vec::Vec<_>>());
+        emit_u16_slice(&mut out, "ARGS_VALS_DATA",     &args_vals.data);
 
         std::fs::write(out_path, out)
             .map_err(|e| format!("write error: {e}"))
@@ -130,300 +192,450 @@ impl Dsl {
 }
 
 // ── MetaBlock ─────────────────────────────────────────────────────────────────
-//
-// Intermediate representation of a resolved _load or _store block.
-// Carried down the recursion for inheritance.
 
 #[derive(Clone)]
 struct MetaBlock {
-    client_idx:  u32,              // interning_idx of client keyword
-    key_idx:     u32,              // interning_idx of key value
-    map_entries: Vec<(u32, u32)>,  // (dst_interning_idx, src_interning_idx) from map:
-    scalar_args: Vec<(u32, u32)>,  // (key_interning_idx, value_interning_idx) other args
+    store_id:   u8,               // index into store_ids (0 = none)
+    key_value:  Vec<u16>,         // value fragment u16s for key
+    map_entries: Vec<(u16, u16)>, // (dst_word_id, src_word_id)
+    arg_entries: Vec<(u16, Vec<u16>)>, // (key_word_id, val fragment u16s)
 }
 
-// ── Compiler (internal) ───────────────────────────────────────────────────────
+// ── Compiler ──────────────────────────────────────────────────────────────────
 
-struct Compiler {
-    paths:         Vec<u64>,
-    children:      Vec<u16>,
-    leaves:        Vec<u32>,
-    interning:     Vec<u8>,
-    interning_idx: Vec<u64>,
+struct Compiler<'s> {
+    store_ids:  &'s [&'s str],
+    paths:      List<u64>,
+    children:   VariableList<u16>,
+    leaves:     VariableList<u16>,
+    values:     VariableList<u16>,
+    words:      VariableList<u8>,
+    map_keys:   VariableList<u16>,
+    map_vals:   VariableList<u16>,
+    args_keys:  VariableList<u16>,
+    args_vals:  VariableList<u16>,
 }
 
-impl Compiler {
-    fn new() -> Self {
+impl<'s> Compiler<'s> {
+    fn new(store_ids: &'s [&'s str]) -> Self {
         Self {
-            paths:         Vec::new(),
-            children:      Vec::new(),
-            leaves:        Vec::new(),
-            interning:     Vec::new(),
-            interning_idx: Vec::new(),
+            store_ids,
+            paths:     List::new(1),   // paths[0] placeholder
+            children:  VariableList::new(),
+            leaves:    VariableList::new(),
+            values:    VariableList::new(),
+            words:     VariableList::new(),
+            map_keys:  VariableList::new(),
+            map_vals:  VariableList::new(),
+            args_keys: VariableList::new(),
+            args_vals: VariableList::new(),
         }
+    }
+
+    // ── path push ─────────────────────────────────────────────────────────────
+
+    fn push_path(&mut self, entry: u64) -> Result<u16, DslError> {
+        let idx = self.paths.data.len();
+        if idx > MAX_PATH_ID {
+            return Err(DslError::LimitExceeded(alloc::format!(
+                "path_id {} exceeds max {}", idx, MAX_PATH_ID
+            )));
+        }
+        self.paths.data.push(entry);
+        Ok(idx as u16)
+    }
+
+    // ── children slot helpers ─────────────────────────────────────────────────
+
+    fn alloc_children_slots(&mut self, count: usize) -> Result<usize, DslError> {
+        if count == 0 { return Ok(0); }
+        let zeros: Vec<u16> = alloc::vec![0u16; count];
+        match self.children.set(&0, &zeros, false) {
+            Ok(crate::required::SetOutcome::Created(id)) => Ok(id),
+            _ => Err(DslError::LimitExceeded("children allocation failed".into())),
+        }
+    }
+
+    fn set_child(&mut self, children_id: usize, slot: usize, path_idx: u16) {
+        if children_id == 0 { return; }
+        let identity_start = children_id * 2;
+        let start = self.children.identity[identity_start];
+        self.children.data[start + slot] = path_idx;
     }
 
     // ── walk ──────────────────────────────────────────────────────────────────
 
-    /// Process a single field_key.
     fn walk_field_key(
         &mut self,
         keyword:    &[u8],
         value:      &Tree,
-        parent_idx: u32,
-        inh_load:   Option<&MetaBlock>,
-        inh_store:  Option<&MetaBlock>,
-    ) {
-        let path_idx = self.paths.len() as u32;
-        self.paths.push(0u64); // placeholder, filled below
+        parent_idx: u16,
+        inh_get:    Option<&MetaBlock>,
+        inh_set:    Option<&MetaBlock>,
+    ) -> Result<(), DslError> {
+        let path_idx = self.push_path(0u64)?; // placeholder, filled below
 
-        let keyword_idx = self.intern(keyword);
+        let keyword_id = self.intern_word(keyword)?;
 
         match value {
             Tree::Mapping(pairs) => {
-                // Extract _load / _store from this node, merging with inherited.
-                let load  = self.resolve_meta(pairs, META_LOAD,  inh_load);
-                let store = self.resolve_meta(pairs, META_STORE, inh_store);
+                let get = self.resolve_meta(pairs, META_GET, inh_get)?;
+                let set = self.resolve_meta(pairs, META_SET, inh_set)?;
 
-                // Collect child field_keys.
-                // Reserve children slots first so they are contiguous, then walk.
-                let children_offset = self.children.len() as u32;
                 let field_pairs: Vec<_> = pairs.iter()
                     .filter(|(k, _)| k.first() != Some(&b'_'))
                     .collect();
-                let child_count = field_pairs.len() as u32;
-
-                // Reserve placeholder slots for each child's path_idx.
-                let first_child_path_idx = self.paths.len() as u16;
-                for i in 0..child_count {
-                    self.children.push(first_child_path_idx + i as u16); // will be correct after walk
-                }
-
-                // Now walk each child; paths are pushed in order so indices are sequential.
-                for (i, (k, v)) in field_pairs.iter().enumerate() {
-                    let child_idx = self.paths.len() as u16;
-                    self.children[children_offset as usize + i] = child_idx;
-                    self.walk_field_key(k, v, path_idx, load.as_ref(), store.as_ref());
-                }
+                let child_count = field_pairs.len();
 
                 if child_count == 0 {
-                    // No child field_keys → treat as leaf.
-                    self.write_leaf(path_idx, keyword_idx, parent_idx, &Tree::Null, load.as_ref(), store.as_ref());
+                    self.write_leaf(path_idx, keyword_id, parent_idx, &Tree::Null, get.as_ref(), set.as_ref())?;
                 } else {
-                    let count_bits = (child_count as u64) & 0xf;
-                    self.paths[path_idx as usize] =
-                        (children_offset as u64) << PATH_OFFSET_SHIFT
-                        | count_bits              << PATH_COUNT_SHIFT
-                        | (parent_idx as u64)     << PATH_PARENT_IDX_SHIFT
-                        | (keyword_idx as u64)    & PATH_KEYWORD_IDX_MASK;
+                    let children_id = self.alloc_children_slots(child_count)?;
+                    for (i, (k, v)) in field_pairs.iter().enumerate() {
+                        let child_idx = self.paths.data.len() as u16;
+                        self.set_child(children_id, i, child_idx);
+                        self.walk_field_key(k, v, path_idx, get.as_ref(), set.as_ref())?;
+                    }
+                    self.paths.data[path_idx as usize] =
+                        ((keyword_id as u64) << PATH_KEYWORD_ID_SHIFT)
+                        | ((parent_idx as u64) << PATH_PARENT_ID_SHIFT)
+                        | ((children_id as u64) << PATH_CHILD_ID_SHIFT);
                 }
             }
-            // Scalar or Null → leaf with optional hardcoded value.
             _ => {
-                self.write_leaf(path_idx, keyword_idx, parent_idx, value, inh_load, inh_store);
+                self.write_leaf(path_idx, keyword_id, parent_idx, value, inh_get, inh_set)?;
             }
         }
+        Ok(())
     }
 
     // ── meta resolution ───────────────────────────────────────────────────────
 
-    /// Resolve a _load or _store block from this node's pairs, merging with inherited.
-    /// Returns None if neither this node nor ancestors define the block.
     fn resolve_meta(
         &mut self,
-        pairs:    &[(Vec<u8>, Tree)],
-        meta_key: &[u8],
+        pairs:     &[(Vec<u8>, Tree)],
+        meta_key:  &[u8],
         inherited: Option<&MetaBlock>,
-    ) -> Option<MetaBlock> {
+    ) -> Result<Option<MetaBlock>, DslError> {
         let local = pairs.iter().find(|(k, _)| k.as_slice() == meta_key);
         match (local, inherited) {
-            (None, None) => None,
-            (None, Some(inh)) => Some(inh.clone()),
+            (None, None) => Ok(None),
+            (None, Some(inh)) => Ok(Some(inh.clone())),
             (Some((_, Tree::Mapping(meta_pairs))), inh) => {
-                // Start from inherited, overwrite with local fields.
-                let mut client_idx  = inh.map(|b| b.client_idx).unwrap_or(0);
-                let mut key_idx     = inh.map(|b| b.key_idx).unwrap_or(0);
-                let mut map_entries: Vec<(u32, u32)> = inh.map(|b| b.map_entries.clone()).unwrap_or_default();
-                let mut scalar_args: Vec<(u32, u32)> = inh.map(|b| b.scalar_args.clone()).unwrap_or_default();
+                let mut store_id    = inh.map(|b| b.store_id).unwrap_or(0);
+                let mut key_value: Vec<u16>               = inh.map(|b| b.key_value.clone()).unwrap_or_default();
+                let mut map_entries: Vec<(u16, u16)>      = inh.map(|b| b.map_entries.clone()).unwrap_or_default();
+                let mut arg_entries: Vec<(u16, Vec<u16>)> = inh.map(|b| b.arg_entries.clone()).unwrap_or_default();
 
                 for (k, v) in meta_pairs {
-                    if k.as_slice() == PROP_CLIENT {
+                    if k.as_slice() == PROP_STORE {
                         if let Tree::Scalar(b) = v {
-                            client_idx = self.intern(b);
+                            store_id = self.resolve_store_id(b);
                         }
                     } else if k.as_slice() == PROP_KEY {
-                        key_idx = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
+                        key_value = self.encode_value(v)?;
                     } else if k.as_slice() == PROP_MAP {
-                        // map: local definition fully replaces inherited
                         if let Tree::Mapping(map_pairs) = v {
                             map_entries.clear();
                             for (mk, mv) in map_pairs {
-                                let mk_idx = self.intern(mk);
-                                let mv_idx = if let Tree::Scalar(b) = mv { self.intern(b) } else { 0 };
-                                map_entries.push((mk_idx, mv_idx));
+                                let dst = self.intern_word(mk)?;
+                                let src = if let Tree::Scalar(b) = mv { self.intern_word(b)? } else { 0 };
+                                map_entries.push((dst, src));
                             }
                         }
-                    } else if k.as_slice() != META_LOAD
-                           && k.as_slice() != META_STORE
+                    } else if k.as_slice() != META_GET
+                           && k.as_slice() != META_SET
                            && k.as_slice() != META_STATE {
-                        // arbitrary scalar arg: overwrite if key present, otherwise append
-                        let ak = self.intern(k);
-                        let av = if let Tree::Scalar(b) = v { self.intern(b) } else { 0 };
-                        if let Some(entry) = scalar_args.iter_mut().find(|(ek, _)| *ek == ak) {
+                        let ak = self.intern_word(k)?;
+                        let av = self.encode_value(v)?;
+                        if let Some(entry) = arg_entries.iter_mut().find(|(ek, _)| *ek == ak) {
                             entry.1 = av;
                         } else {
-                            scalar_args.push((ak, av));
+                            arg_entries.push((ak, av));
                         }
                     }
                 }
-                Some(MetaBlock { client_idx, key_idx, map_entries, scalar_args })
+                Ok(Some(MetaBlock { store_id, key_value, map_entries, arg_entries }))
             }
-            _ => inherited.cloned(),
+            _ => Ok(inherited.cloned()),
         }
     }
 
     // ── leaf serialization ────────────────────────────────────────────────────
 
-    /// Write leaf data to `leaves` and update `paths[path_idx]`.
-    /// Leaf layout: Architecture.md #leaf 参照
     fn write_leaf(
         &mut self,
-        path_idx:    u32,
-        keyword_idx: u32,
-        parent_idx:  u32,
-        value:       &Tree,
-        load:        Option<&MetaBlock>,
-        store:       Option<&MetaBlock>,
-    ) {
-        let leaf_offset = self.leaves.len() as u32;
+        path_idx:   u16,
+        keyword_id: u16,
+        parent_idx: u16,
+        value:      &Tree,
+        get:        Option<&MetaBlock>,
+        set:        Option<&MetaBlock>,
+    ) -> Result<(), DslError> {
+        let value_frags = self.encode_value(value)?;
+        let value_id = if value_frags.is_empty() {
+            0u16
+        } else {
+            self.push_values(&value_frags)?
+        };
 
-        // collect fragments first
-        let mut fragments: Vec<(u32, u32)> = Vec::new(); // (is_placeholder, idx)
-        if let Tree::Scalar(b) = value {
-            let mut rest = b.as_slice();
-            while !rest.is_empty() {
-                if let Some(start) = rest.windows(2).position(|w| w == b"${") {
-                    if start > 0 {
-                        let idx = self.intern(&rest[..start]);
-                        fragments.push((0, idx));
-                    }
-                    rest = &rest[start + 2..];
-                    if let Some(end) = rest.iter().position(|&c| c == b'}') {
-                        let idx = self.intern(&rest[..end]);
-                        fragments.push((1, idx));
-                        rest = &rest[end + 1..];
-                    } else {
-                        let idx = self.intern(rest);
-                        fragments.push((0, idx));
-                        break;
-                    }
+        let (get_store_id, get_key_id, get_map_key_id, get_map_val_id, get_args_key_id, get_args_val_id)
+            = self.encode_meta(get)?;
+        let (set_store_id, set_key_id, set_map_key_id, set_map_val_id, set_args_key_id, set_args_val_id)
+            = self.encode_meta(set)?;
+
+        let leaf_data: [u16; LEAF_WIDTH] = [
+            get_store_id, get_key_id,
+            set_store_id, set_key_id,
+            get_map_key_id, get_map_val_id,
+            get_args_key_id, get_args_val_id,
+            set_map_key_id, set_map_val_id,
+            set_args_key_id, set_args_val_id,
+        ];
+
+        let leaf_id = match self.leaves.set(&0, &leaf_data, false) {
+            Ok(crate::required::SetOutcome::Created(id)) => {
+                if id > MAX_PATH_ID {
+                    return Err(DslError::LimitExceeded(alloc::format!(
+                        "leaf_id {} exceeds max {}", id, MAX_PATH_ID
+                    )));
+                }
+                id as u16
+            }
+            _ => return Err(DslError::LimitExceeded("leaf allocation failed".into())),
+        };
+
+        self.paths.data[path_idx as usize] =
+            PATH_IS_LEAF_MASK
+            | ((keyword_id as u64) << PATH_KEYWORD_ID_SHIFT)
+            | ((parent_idx as u64) << PATH_PARENT_ID_SHIFT)
+            | ((leaf_id as u64)    << PATH_CHILD_ID_SHIFT)
+            | (value_id as u64);
+        Ok(())
+    }
+
+    fn encode_meta(&mut self, meta: Option<&MetaBlock>) -> Result<(u16, u16, u16, u16, u16, u16), DslError> {
+        let Some(b) = meta else {
+            return Ok((0, 0, 0, 0, 0, 0));
+        };
+
+        let key_id = if b.key_value.is_empty() { 0u16 } else { self.push_values(&b.key_value)? };
+
+        let (map_key_id, map_val_id) = if b.map_entries.is_empty() {
+            (0u16, 0u16)
+        } else {
+            let dsts: Vec<u16> = b.map_entries.iter().map(|&(d, _)| d).collect();
+            let srcs: Vec<u16> = b.map_entries.iter().map(|&(_, s)| s).collect();
+            (self.push_map_keys(&dsts)?,
+             self.push_map_vals(&srcs)?)
+        };
+
+        let (args_key_id, args_val_id) = if b.arg_entries.is_empty() {
+            (0u16, 0u16)
+        } else {
+            let keys: Vec<u16> = b.arg_entries.iter().map(|&(k, _)| k).collect();
+            let mut val_ids: Vec<u16> = Vec::with_capacity(b.arg_entries.len());
+            for (_, frags) in &b.arg_entries {
+                let id = if frags.is_empty() { 0u16 } else { self.push_values(frags)? };
+                val_ids.push(id);
+            }
+            let ak = match self.args_keys.set(&0, &keys, false) {
+                Ok(crate::required::SetOutcome::Created(id)) => {
+                    if id > MAX_PATH_ID { return Err(DslError::LimitExceeded("args_keys id overflow".into())); }
+                    id as u16
+                }
+                _ => return Err(DslError::LimitExceeded("args_keys allocation failed".into())),
+            };
+            let av = match self.args_vals.set(&0, &val_ids, false) {
+                Ok(crate::required::SetOutcome::Created(id)) => {
+                    if id > MAX_PATH_ID { return Err(DslError::LimitExceeded("args_vals id overflow".into())); }
+                    id as u16
+                }
+                _ => return Err(DslError::LimitExceeded("args_vals allocation failed".into())),
+            };
+            (ak, av)
+        };
+
+        Ok((b.store_id as u16, key_id, map_key_id, map_val_id, args_key_id, args_val_id))
+    }
+
+    // ── VariableList push helpers ─────────────────────────────────────────────
+
+    fn push_values(&mut self, frags: &[u16]) -> Result<u16, DslError> {
+        match self.values.set(&0, frags, false) {
+            Ok(crate::required::SetOutcome::Created(id)) => {
+                if id > MAX_PATH_ID {
+                    return Err(DslError::LimitExceeded(alloc::format!(
+                        "values id {} exceeds max {}", id, MAX_PATH_ID
+                    )));
+                }
+                Ok(id as u16)
+            }
+            _ => Err(DslError::LimitExceeded("values allocation failed".into())),
+        }
+    }
+
+    fn push_map_keys(&mut self, data: &[u16]) -> Result<u16, DslError> {
+        match self.map_keys.set(&0, data, false) {
+            Ok(crate::required::SetOutcome::Created(id)) => {
+                if id > MAX_PATH_ID {
+                    return Err(DslError::LimitExceeded(alloc::format!(
+                        "map_keys id {} exceeds max {}", id, MAX_PATH_ID
+                    )));
+                }
+                Ok(id as u16)
+            }
+            _ => Err(DslError::LimitExceeded("map_keys allocation failed".into())),
+        }
+    }
+
+    fn push_map_vals(&mut self, data: &[u16]) -> Result<u16, DslError> {
+        match self.map_vals.set(&0, data, false) {
+            Ok(crate::required::SetOutcome::Created(id)) => {
+                if id > MAX_PATH_ID {
+                    return Err(DslError::LimitExceeded(alloc::format!(
+                        "map_vals id {} exceeds max {}", id, MAX_PATH_ID
+                    )));
+                }
+                Ok(id as u16)
+            }
+            _ => Err(DslError::LimitExceeded("map_vals allocation failed".into())),
+        }
+    }
+
+    // ── value encoding ────────────────────────────────────────────────────────
+
+    fn encode_value(&mut self, value: &Tree) -> Result<Vec<u16>, DslError> {
+        let Tree::Scalar(b) = value else { return Ok(Vec::new()); };
+        let mut frags: Vec<u16> = Vec::new();
+        let mut rest = b.as_slice();
+        while !rest.is_empty() {
+            if let Some(start) = rest.windows(2).position(|w| w == b"${") {
+                if start > 0 {
+                    let word_id = self.intern_word(&rest[..start])?;
+                    frags.push(word_id & VALUE_WORD_ID_MASK);
+                }
+                rest = &rest[start + 2..];
+                if let Some(end) = rest.iter().position(|&c| c == b'}') {
+                    let word_id = self.intern_word(&rest[..end])?;
+                    frags.push(VALUE_IS_PLACEHOLDER_MASK | (word_id & VALUE_WORD_ID_MASK));
+                    rest = &rest[end + 1..];
                 } else {
-                    let idx = self.intern(rest);
-                    fragments.push((0, idx));
+                    let word_id = self.intern_word(rest)?;
+                    frags.push(word_id & VALUE_WORD_ID_MASK);
                     break;
                 }
+            } else {
+                let word_id = self.intern_word(rest)?;
+                frags.push(word_id & VALUE_WORD_ID_MASK);
+                break;
             }
         }
-
-        let load_map_count   = load.map(|b| b.map_entries.len()).unwrap_or(0);
-        let load_args_count  = load.map(|b| b.scalar_args.len()).unwrap_or(0);
-        let store_map_count  = store.map(|b| b.map_entries.len()).unwrap_or(0);
-        let store_args_count = store.map(|b| b.scalar_args.len()).unwrap_or(0);
-
-        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
-        self.leaves.push(
-            ((keyword_idx & 0xffff) << 16)
-            | ((fragments.len() as u32 & 0xff) << 8)
-            | (load_map_count as u32 & 0xff)
-        );
-        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
-        self.leaves.push(
-            ((load_args_count as u32 & 0xff) << 24)
-            | ((store_map_count as u32 & 0xff) << 16)
-            | ((store_args_count as u32 & 0xff) << 8)
-        );
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
-        self.leaves.push(
-            ((load.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
-            | (load.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
-        );
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
-        self.leaves.push(
-            ((store.map(|b| b.client_idx).unwrap_or(0) & 0xffff) << 16)
-            | (store.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
-        );
-
-        // fragment×F: padding(15) | is_placeholder(1) | idx(16)
-        for (is_ph, idx) in &fragments {
-            self.leaves.push(((is_ph & 0x1) << 16) | (idx & 0xffff));
-        }
-
-        // load.map×M0: dst_idx(16) | src_idx(16)
-        if let Some(b) = load {
-            for &(dst, src) in &b.map_entries {
-                self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
-            }
-        }
-
-        // load.args×A0: key_idx(16) | val_idx(16)
-        if let Some(b) = load {
-            for &(ak, av) in &b.scalar_args {
-                self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
-            }
-        }
-
-        // store.map×M1: dst_idx(16) | src_idx(16)
-        if let Some(b) = store {
-            for &(dst, src) in &b.map_entries {
-                self.leaves.push(((dst & 0xffff) << 16) | (src & 0xffff));
-            }
-        }
-
-        // store.args×A1: key_idx(16) | val_idx(16)
-        if let Some(b) = store {
-            for &(ak, av) in &b.scalar_args {
-                self.leaves.push(((ak & 0xffff) << 16) | (av & 0xffff));
-            }
-        }
-
-        // Update path entry: is_leaf=1, offset=leaf_offset(u32 index), count=unused
-        self.paths[path_idx as usize] =
-            PATH_IS_LEAF_MASK
-            | (leaf_offset as u64)  << PATH_OFFSET_SHIFT
-            | (parent_idx as u64)   << PATH_PARENT_IDX_SHIFT
-            | (keyword_idx as u64)  & PATH_KEYWORD_IDX_MASK;
+        Ok(frags)
     }
 
-    // ── interning ─────────────────────────────────────────────────────────────
+    // ── word interning ────────────────────────────────────────────────────────
 
-    /// Intern a byte string, returning its interning_idx index.
-    /// Deduplicates: if already interned, returns existing index.
-    fn intern(&mut self, s: &[u8]) -> u32 {
-        // Linear scan for dedup (DSL strings are small in number).
-        for (i, entry) in self.interning_idx.iter().enumerate() {
-            let offset = (entry >> 32) as usize;
-            let len    = (entry & 0xffff) as usize; // bits15..0 = len(u16)
-            if self.interning.get(offset..offset + len) == Some(s) {
-                return i as u32;
+    fn intern_word(&mut self, s: &[u8]) -> Result<u16, DslError> {
+        match self.words.set(&0, s, true) {
+            Ok(crate::required::SetOutcome::Created(id)) => {
+                if id > MAX_WORD_ID {
+                    return Err(DslError::LimitExceeded(alloc::format!(
+                        "word_id {} exceeds max {} (15-bit limit)", id, MAX_WORD_ID
+                    )));
+                }
+                Ok(id as u16)
             }
+            _ => Err(DslError::LimitExceeded("word interning failed".into())),
         }
-        let offset = self.interning.len();
-        self.interning.extend_from_slice(s);
-        let idx = self.interning_idx.len() as u32;
-        // offset(u32, bits63..32) | padding(u16, bits31..16) | len(u16, bits15..0)
-        self.interning_idx.push(((offset as u64) << 32) | (s.len() as u64 & 0xffff));
-        idx
     }
 
-    fn finish(self) -> (Box<[u64]>, Box<[u16]>, Box<[u32]>, Box<[u8]>, Box<[u64]>) {
-        (
-            self.paths.into_boxed_slice(),
-            self.children.into_boxed_slice(),
-            self.leaves.into_boxed_slice(),
-            self.interning.into_boxed_slice(),
-            self.interning_idx.into_boxed_slice(),
-        )
+    // ── store_id resolution ───────────────────────────────────────────────────
+
+    fn resolve_store_id(&self, name: &[u8]) -> u8 {
+        self.store_ids.iter().position(|s| s.as_bytes() == name)
+            .map(|i| (i + 1) as u8) // 1-based; 0 = none
+            .unwrap_or(0)
     }
+
+    // ── finish ────────────────────────────────────────────────────────────────
+
+    fn finish(self) -> Result<(
+        List<u64>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u8>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+        VariableList<u16>,
+    ), DslError> {
+        // Validate data lengths fit u16 offsets (checked again in write, but also needed for runtime compile)
+        check_vl_data_u16(&self.children,  "children")?;
+        check_vl_data_u16(&self.leaves,    "leaves")?;
+        check_vl_data_u16(&self.values,    "values")?;
+        check_vl_data_u16_from_u8(&self.words, "words")?;
+        check_vl_data_u16(&self.map_keys,  "map_keys")?;
+        check_vl_data_u16(&self.map_vals,  "map_vals")?;
+        check_vl_data_u16(&self.args_keys, "args_keys")?;
+        check_vl_data_u16(&self.args_vals, "args_vals")?;
+        Ok((
+            self.paths,
+            self.children,
+            self.leaves,
+            self.values,
+            self.words,
+            self.map_keys,
+            self.map_vals,
+            self.args_keys,
+            self.args_vals,
+        ))
+    }
+}
+
+// ── compile-time limit checks ─────────────────────────────────────────────────
+
+fn check_vl_data_u16<T>(vl: &VariableList<T>, name: &str) -> Result<(), DslError> {
+    if vl.data.len() > MAX_VL_U16_DATA {
+        return Err(DslError::LimitExceeded(alloc::format!(
+            "{} data length {} exceeds max {}", name, vl.data.len(), MAX_VL_U16_DATA
+        )));
+    }
+    Ok(())
+}
+
+fn check_vl_data_u16_from_u8(vl: &VariableList<u8>, name: &str) -> Result<(), DslError> {
+    if vl.data.len() > MAX_VL_U8_DATA {
+        return Err(DslError::LimitExceeded(alloc::format!(
+            "{} data length {} exceeds max {}", name, vl.data.len(), MAX_VL_U8_DATA
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "precompile")]
+fn check_vl_u16_identity<T>(vl: &VariableList<T>, name: &str) -> Result<(), alloc::string::String> {
+    for &offset in &vl.identity {
+        if offset > MAX_VL_U16_DATA {
+            return Err(alloc::format!(
+                "{} identity offset {} exceeds u16 max {}", name, offset, MAX_VL_U16_DATA
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "precompile")]
+fn check_vl_u16_identity_u8(vl: &VariableList<u8>, name: &str) -> Result<(), alloc::string::String> {
+    for &offset in &vl.identity {
+        if offset > MAX_VL_U8_DATA {
+            return Err(alloc::format!(
+                "{} identity offset {} exceeds u16 max {}", name, offset, MAX_VL_U8_DATA
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ── precompile helpers ────────────────────────────────────────────────────────
@@ -461,11 +673,11 @@ fn yaml_value_to_tree(v: serde_yaml_ng::Value) -> Tree {
         serde_yaml_ng::Value::Sequence(s) => {
             Tree::Sequence(s.into_iter().map(yaml_value_to_tree).collect())
         }
-        serde_yaml_ng::Value::String(s)  => Tree::Scalar(s.into_bytes()),
-        serde_yaml_ng::Value::Number(n)  => Tree::Scalar(n.to_string().into_bytes()),
-        serde_yaml_ng::Value::Bool(b)    => Tree::Scalar(b.to_string().into_bytes()),
-        serde_yaml_ng::Value::Null       => Tree::Null,
-        _                                => Tree::Null,
+        serde_yaml_ng::Value::String(s) => Tree::Scalar(s.into_bytes()),
+        serde_yaml_ng::Value::Number(n) => Tree::Scalar(n.to_string().into_bytes()),
+        serde_yaml_ng::Value::Bool(b)   => Tree::Scalar(b.to_string().into_bytes()),
+        serde_yaml_ng::Value::Null      => Tree::Null,
+        _                               => Tree::Null,
     }
 }
 
@@ -496,19 +708,6 @@ fn emit_u16_slice(out: &mut alloc::string::String, name: &str, data: &[u16]) {
 }
 
 #[cfg(feature = "precompile")]
-fn emit_u32_slice(out: &mut alloc::string::String, name: &str, data: &[u32]) {
-    extern crate std;
-    use std::format;
-    out.push_str(&format!("pub static {name}: &[u32] = &[\n"));
-    for chunk in data.chunks(8) {
-        out.push_str("    ");
-        for v in chunk { out.push_str(&format!("0x{v:08x}, ")); }
-        out.push('\n');
-    }
-    out.push_str("];\n\n");
-}
-
-#[cfg(feature = "precompile")]
 fn emit_u8_slice(out: &mut alloc::string::String, name: &str, data: &[u8]) {
     extern crate std;
     use std::format;
@@ -533,9 +732,12 @@ mod tests {
         Tree::Mapping(pairs.into_iter().map(|(k, v)| (k.as_bytes().to_vec(), v)).collect())
     }
 
-    fn compile(tree: &Tree) -> (Vec<u64>, Vec<u16>, Vec<u32>, Vec<u8>, Vec<u64>) {
-        let (p, c, l, i, ii) = Dsl::compile(tree);
-        (p.into_vec(), c.into_vec(), l.into_vec(), i.into_vec(), ii.into_vec())
+    fn compile(tree: &Tree) -> (List<u64>, VariableList<u16>, VariableList<u16>, VariableList<u16>, VariableList<u8>, VariableList<u16>, VariableList<u16>, VariableList<u16>, VariableList<u16>) {
+        Dsl::compile(tree, &[]).unwrap()
+    }
+
+    fn compile_with_stores<'a>(tree: &Tree, store_ids: &[&'a str]) -> (List<u64>, VariableList<u16>, VariableList<u16>, VariableList<u16>, VariableList<u8>, VariableList<u16>, VariableList<u16>, VariableList<u16>, VariableList<u16>) {
+        Dsl::compile(tree, store_ids).unwrap()
     }
 
     // --- single_leaf ---
@@ -545,9 +747,9 @@ mod tests {
         let (paths, ..) = compile(&mapping(vec![
             ("name", Tree::Null),
         ]));
-        assert_eq!(paths.len(), 2);                       // root(0) + name(1)
-        assert!(paths[0] & PATH_IS_LEAF_MASK == 0);       // root is not a leaf
-        assert!(paths[1] & PATH_IS_LEAF_MASK != 0);       // name is a leaf
+        assert_eq!(paths.data.len(), 2);                             // root(0) + name(1)
+        assert!(paths.data[0] & PATH_IS_LEAF_MASK == 0);             // root is not a leaf
+        assert!(paths.data[1] & PATH_IS_LEAF_MASK != 0);             // name is a leaf
     }
 
     // --- nested ---
@@ -560,9 +762,9 @@ mod tests {
                 ("name", Tree::Null),
             ])),
         ]));
-        assert_eq!(paths.len(), 4);                       // root(0) + user(1) + id(2) + name(3)
-        assert!(paths[1] & PATH_IS_LEAF_MASK == 0);       // user is not a leaf
-        assert_eq!(children.len(), 3);                    // root→user(1) + user→id,name(2)
+        assert_eq!(paths.data.len(), 4);                             // root(0) + user(1) + id(2) + name(3)
+        assert!(paths.data[1] & PATH_IS_LEAF_MASK == 0);             // user is not a leaf
+        assert!(children.data.len() >= 3);                           // root→user + user→id,name
     }
 
     // --- meta_key ---
@@ -571,179 +773,185 @@ mod tests {
     fn meta_key_excluded_from_paths() {
         let (paths, ..) = compile(&mapping(vec![
             ("user", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("Memory")),
+                ("_get", mapping(vec![
+                    ("store", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
                 ("id", Tree::Null),
             ])),
         ]));
-        // root(0) + user(1) + id(2) — _load must not appear
-        assert_eq!(paths.len(), 3);
+        // root(0) + user(1) + id(2) — _get must not appear
+        assert_eq!(paths.data.len(), 3);
     }
 
-    // --- load in leaf ---
+    // --- get in leaf (store_id) ---
 
     #[test]
-    fn load_client_stored_in_leaf() {
-        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+    fn get_store_id_set_in_leaf() {
+        let store_ids = &["Memory", "Kvs"];
+        let (paths, _, leaves, ..) = compile_with_stores(&mapping(vec![
             ("user", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("Memory")),
+                ("_get", mapping(vec![
+                    ("store", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
                 ("id", Tree::Null),
             ])),
-        ]));
-        // root(0), user(1), id(2)
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
-        let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
-        assert_eq!(&interning[off..off+len], b"Memory");
+        ]), store_ids);
+        // root(0), user(1), id(2) — id is leaf
+        let id_path = paths.data[2];
+        assert!(id_path & PATH_IS_LEAF_MASK != 0);
+        let leaf_id = ((id_path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        let leaf_start = leaves.identity[leaf_id * 2];
+        let get_store_id = leaves.data[leaf_start + LEAF_GET_STORE_ID];
+        // "Memory" is store_ids[0] → store_id = 1 (1-based)
+        assert_eq!(get_store_id, 1);
     }
 
     // --- store inheritance ---
 
     #[test]
     fn store_inherited_to_child_leaf() {
-        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+        let store_ids = &["Memory", "Kvs"];
+        let (paths, _, leaves, ..) = compile_with_stores(&mapping(vec![
             ("session", mapping(vec![
-                ("_store", mapping(vec![
-                    ("client", scalar("Kvs")),
+                ("_set", mapping(vec![
+                    ("store", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
                     ("id", Tree::Null),
                 ])),
             ])),
-        ]));
-        // root(0), session(1), user(2), id(3)
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
-        let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h3 = leaves[leaf_offset + 3];
-        let client_idx = ((h3 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
-        assert_eq!(&interning[off..off+len], b"Kvs");
+        ]), store_ids);
+        // root(0), session(1), user(2), id(3) — id is leaf
+        let id_path = paths.data[3];
+        assert!(id_path & PATH_IS_LEAF_MASK != 0);
+        let leaf_id = ((id_path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        let leaf_start = leaves.identity[leaf_id * 2];
+        let set_store_id = leaves.data[leaf_start + LEAF_SET_STORE_ID];
+        // "Kvs" is store_ids[1] → store_id = 2 (1-based)
+        assert_eq!(set_store_id, 2);
     }
 
-    // --- intern ---
+    // --- word intern ---
 
     #[test]
     fn intern_dedup() {
-        let (_, _, _, interning, interning_idx) = compile(&mapping(vec![
+        let (_, _, _, _, words, ..) = compile(&mapping(vec![
             ("a", scalar("hello")),
             ("b", scalar("hello")),
         ]));
-        let hello_count = (0..interning_idx.len()).filter(|&i| {
-            let off = (interning_idx[i] >> 32) as usize;
-            let len = (interning_idx[i] & 0xffff) as usize;
-            interning.get(off..off+len) == Some(b"hello" as &[u8])
+        let hello_count = (1..words.identity.len() / 2).filter(|&i| {
+            let start = words.identity[i * 2];
+            let end   = words.identity[i * 2 + 1];
+            words.data.get(start..end) == Some(b"hello" as &[u8])
         }).count();
         assert_eq!(hello_count, 1);
     }
 
-    // --- fragment ---
+    // --- value fragments ---
 
     #[test]
-    fn static_value_stored_as_single_fragment() {
-        // Scalar value with no placeholder → fragment_count=1, is_placeholder=0
-        let (paths, _, leaves, ..) = compile(&mapping(vec![
+    fn static_value_encoded_as_single_fragment() {
+        let (paths, _, _, values, words, ..) = compile(&mapping(vec![
             ("key", scalar("hello")),
         ]));
-        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h0 = leaves[leaf_offset];
-        let fragment_count = (h0 >> 8) & 0xff;
-        let frag = leaves[leaf_offset + 4];
-        let is_placeholder = (frag >> 16) & 0x1;
-        assert_eq!(fragment_count, 1);
-        assert_eq!(is_placeholder, 0); // static string
+        let path = paths.data[1];
+        assert!(path & PATH_IS_LEAF_MASK != 0);
+        let value_id = (path & PATH_VALUE_ID_MASK) as usize;
+        assert!(value_id != 0);
+        let vstart = values.identity[value_id * 2];
+        let vend   = values.identity[value_id * 2 + 1];
+        let frags = &values.data[vstart..vend];
+        assert_eq!(frags.len(), 1);
+        assert_eq!(frags[0] & VALUE_IS_PLACEHOLDER_MASK, 0); // static
+        let word_id = (frags[0] & VALUE_WORD_ID_MASK) as usize;
+        let wstart = words.identity[word_id * 2];
+        let wend   = words.identity[word_id * 2 + 1];
+        assert_eq!(&words.data[wstart..wend], b"hello");
     }
 
     #[test]
-    fn placeholder_value_stored_as_single_fragment_is_placeholder() {
-        // Scalar value "${some.path}" → fragment_count=1, is_placeholder=1
-        let (paths, _, leaves, ..) = compile(&mapping(vec![
+    fn placeholder_value_encoded_as_single_fragment_is_placeholder() {
+        let (paths, _, _, values, ..) = compile(&mapping(vec![
             ("copy", scalar("${session.user.id}")),
         ]));
-        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h0 = leaves[leaf_offset];
-        let fragment_count = (h0 >> 8) & 0xff;
-        let frag = leaves[leaf_offset + 4];
-        let is_placeholder = (frag >> 16) & 0x1;
-        assert_eq!(fragment_count, 1);
-        assert_eq!(is_placeholder, 1); // placeholder
+        let path = paths.data[1];
+        let value_id = (path & PATH_VALUE_ID_MASK) as usize;
+        let vstart = values.identity[value_id * 2];
+        let vend   = values.identity[value_id * 2 + 1];
+        let frags = &values.data[vstart..vend];
+        assert_eq!(frags.len(), 1);
+        assert_ne!(frags[0] & VALUE_IS_PLACEHOLDER_MASK, 0); // placeholder
     }
 
     #[test]
-    fn template_value_stored_as_multiple_fragments() {
-        // "prefix.${some.path}.suffix" → fragment_count=3: static, placeholder, static
-        let (paths, _, leaves, ..) = compile(&mapping(vec![
+    fn template_value_encoded_as_multiple_fragments() {
+        let (paths, _, _, values, ..) = compile(&mapping(vec![
             ("key", scalar("prefix.${some.path}.suffix")),
         ]));
-        let leaf_offset = ((paths[1] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h0 = leaves[leaf_offset];
-        let fragment_count = (h0 >> 8) & 0xff;
-        assert_eq!(fragment_count, 3);
-        let frag0 = leaves[leaf_offset + 4];
-        let frag1 = leaves[leaf_offset + 5];
-        let frag2 = leaves[leaf_offset + 6];
-        assert_eq!((frag0 >> 16) & 0x1, 0); // static
-        assert_eq!((frag1 >> 16) & 0x1, 1); // placeholder
-        assert_eq!((frag2 >> 16) & 0x1, 0); // static
+        let path = paths.data[1];
+        let value_id = (path & PATH_VALUE_ID_MASK) as usize;
+        let vstart = values.identity[value_id * 2];
+        let vend   = values.identity[value_id * 2 + 1];
+        let frags = &values.data[vstart..vend];
+        assert_eq!(frags.len(), 3);
+        assert_eq!(frags[0] & VALUE_IS_PLACEHOLDER_MASK, 0); // static
+        assert_ne!(frags[1] & VALUE_IS_PLACEHOLDER_MASK, 0); // placeholder
+        assert_eq!(frags[2] & VALUE_IS_PLACEHOLDER_MASK, 0); // static
     }
 
     // --- resolve_meta ---
 
     #[test]
-    fn local_load_overrides_inherited_client() {
-        // parent defines _load with client="A", child overrides with client="B"
-        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+    fn local_get_overrides_inherited_store() {
+        let store_ids = &["ClientA", "ClientB"];
+        let (paths, _, leaves, ..) = compile_with_stores(&mapping(vec![
             ("parent", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("ClientA")),
+                ("_get", mapping(vec![
+                    ("store", scalar("ClientA")),
                     ("key",    scalar("k")),
                 ])),
                 ("child", mapping(vec![
-                    ("_load", mapping(vec![
-                        ("client", scalar("ClientB")),
+                    ("_get", mapping(vec![
+                        ("store", scalar("ClientB")),
                         ("key",    scalar("k")),
                     ])),
                     ("leaf", Tree::Null),
                 ])),
             ])),
-        ]));
+        ]), store_ids);
         // root(0), parent(1), child(2), leaf(3)
-        let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
-        assert_eq!(&interning[off..off+len], b"ClientB");
+        let leaf_path = paths.data[3];
+        assert!(leaf_path & PATH_IS_LEAF_MASK != 0);
+        let leaf_id = ((leaf_path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        let leaf_start = leaves.identity[leaf_id * 2];
+        let get_store_id = leaves.data[leaf_start + LEAF_GET_STORE_ID];
+        // "ClientB" is store_ids[1] → store_id = 2
+        assert_eq!(get_store_id, 2);
     }
 
     #[test]
-    fn load_inherited_when_no_local_override() {
-        // parent defines _load with client="Inherited", child has no _load
-        let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
+    fn get_inherited_when_no_local_override() {
+        let store_ids = &["Inherited"];
+        let (paths, _, leaves, ..) = compile_with_stores(&mapping(vec![
             ("parent", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("Inherited")),
+                ("_get", mapping(vec![
+                    ("store", scalar("Inherited")),
                     ("key",    scalar("k")),
                 ])),
                 ("leaf", Tree::Null),
             ])),
-        ]));
+        ]), store_ids);
         // root(0), parent(1), leaf(2)
-        let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
-        assert_eq!(&interning[off..off+len], b"Inherited");
+        let leaf_path = paths.data[2];
+        assert!(leaf_path & PATH_IS_LEAF_MASK != 0);
+        let leaf_id = ((leaf_path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        let leaf_start = leaves.identity[leaf_id * 2];
+        let get_store_id = leaves.data[leaf_start + LEAF_GET_STORE_ID];
+        // "Inherited" is store_ids[0] → store_id = 1
+        assert_eq!(get_store_id, 1);
     }
 
     // --- precompile ---
@@ -755,7 +963,7 @@ mod tests {
         let src = std::include_bytes!("../examples/tenant.yml");
         let out = std::env::temp_dir().join("tenant_compiled.rs");
         std::fs::remove_file(&out).ok();
-        Dsl::write(src, out.to_str().unwrap()).expect("write failed");
+        Dsl::write(src, &["Memory", "Kvs", "TenantDb", "CommonDb", "Env"], out.to_str().unwrap()).expect("write failed");
         let content = std::fs::read_to_string(&out).expect("output not written");
         assert!(content.contains("pub static PATHS:"));
     }

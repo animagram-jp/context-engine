@@ -1,49 +1,63 @@
 use alloc::{
-    boxed::Box,
     collections::BTreeMap,
     string::String,
-    vec::Vec
+    vec::Vec,
 };
 use core::str::from_utf8;
 
 use crate::dsl::{
     PATH_IS_LEAF_MASK,
-    PATH_OFFSET_SHIFT, PATH_OFFSET_MASK,
-    PATH_COUNT_SHIFT,  PATH_COUNT_MASK,
-    PATH_PARENT_IDX_SHIFT, PATH_PARENT_IDX_MASK,
-    PATH_KEYWORD_IDX_MASK,
+    PATH_KEYWORD_ID_SHIFT, PATH_KEYWORD_ID_MASK,
+    PATH_PARENT_ID_SHIFT,  PATH_PARENT_ID_MASK,
+    PATH_CHILD_ID_SHIFT,   PATH_CHILD_ID_MASK,
+    PATH_VALUE_ID_MASK,
+    VALUE_IS_PLACEHOLDER_MASK, VALUE_WORD_ID_MASK,
+    LEAF_WIDTH,
+    LEAF_GET_STORE_ID,    LEAF_GET_KEY_ID,
+    LEAF_SET_STORE_ID,    LEAF_SET_KEY_ID,
+    LEAF_GET_MAP_KEY_ID,  LEAF_GET_MAP_VAL_ID,
+    LEAF_GET_ARGS_KEY_ID, LEAF_GET_ARGS_VAL_ID,
+    LEAF_SET_MAP_KEY_ID,  LEAF_SET_MAP_VAL_ID,
+    LEAF_SET_ARGS_KEY_ID, LEAF_SET_ARGS_VAL_ID,
 };
-use crate::ports::provided::Tree;
+use crate::list::{List, VariableList};
+use crate::provided::Tree;
 
 // ── LeafRef ───────────────────────────────────────────────────────────────────
 
-/// Reference to a leaf path entry returned by `Index::traverse`.
 pub struct LeafRef {
-    pub path_idx:    u32,
-    pub parent_idx:  u32,
-    pub leaf_offset: u32,
+    pub path_idx: u16,
+    pub leaf_id:  u16,
+    pub value_id: u16,
 }
 
 // ── Index ─────────────────────────────────────────────────────────────────────
 
-/// Compiled DSL index. Holds the five static arrays produced by `Dsl::compile` and supports path traversal.
 pub struct Index {
-    paths:         Box<[u64]>,
-    children:      Box<[u16]>,
-    leaves:        Box<[u32]>,
-    interning:     Box<[u8]>,
-    interning_idx: Box<[u64]>,
+    paths:     List<u64>,
+    children:  VariableList<u16>,
+    leaves:    VariableList<u16>,
+    values:    VariableList<u16>,
+    words:     VariableList<u8>,
+    map_keys:  VariableList<u16>,
+    map_vals:  VariableList<u16>,
+    args_keys: VariableList<u16>,
+    args_vals: VariableList<u16>,
 }
 
 impl Index {
     pub fn new(
-        paths:         Box<[u64]>,
-        children:      Box<[u16]>,
-        leaves:        Box<[u32]>,
-        interning:     Box<[u8]>,
-        interning_idx: Box<[u64]>,
+        paths:     List<u64>,
+        children:  VariableList<u16>,
+        leaves:    VariableList<u16>,
+        values:    VariableList<u16>,
+        words:     VariableList<u8>,
+        map_keys:  VariableList<u16>,
+        map_vals:  VariableList<u16>,
+        args_keys: VariableList<u16>,
+        args_vals: VariableList<u16>,
     ) -> Self {
-        Self { paths, children, leaves, interning, interning_idx }
+        Self { paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals }
     }
 
     /// Traverse to the path node matching `path` (dot-separated keywords),
@@ -53,12 +67,12 @@ impl Index {
     /// # extern crate alloc;
     /// use context_engine::{Tree, Index, dsl::Dsl};
     /// let tree = Tree::Mapping(alloc::vec![(b"id".to_vec(), Tree::Null)]);
-    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
-    /// let idx = Index::new(p, c, l, i, ii);
+    /// let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals) = Dsl::compile(&tree, &[]).unwrap();
+    /// let idx = Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals);
     /// assert_eq!(idx.traverse("id").len(), 1);
     /// assert!(idx.traverse("missing").is_empty());
     /// ```
-    pub fn traverse(&self, path: &str) -> Box<[LeafRef]> {
+    pub fn traverse(&self, path: &str) -> alloc::boxed::Box<[LeafRef]> {
         let mut result = Vec::new();
         let Some(path_idx) = self.find(path) else {
             return result.into_boxed_slice();
@@ -67,40 +81,39 @@ impl Index {
         result.into_boxed_slice()
     }
 
-    /// Resolve the keyword bytes of a path node from the interning list.
+    /// Return the keyword bytes for a path node.
     ///
     /// ```
     /// # extern crate alloc;
     /// use context_engine::{Tree, Index, dsl::Dsl};
     /// let tree = Tree::Mapping(alloc::vec![(b"name".to_vec(), Tree::Null)]);
-    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
-    /// let idx = Index::new(p, c, l, i, ii);
-    /// // paths[1] = "name" leaf (paths[0] = virtual root)
+    /// let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals) = Dsl::compile(&tree, &[]).unwrap();
+    /// let idx = Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals);
     /// assert_eq!(idx.keyword_of(1), b"name");
     /// ```
-    pub fn keyword_of(&self, path_idx: u32) -> &[u8] {
-        let path = self.paths[path_idx as usize];
-        let interning_idx = (path & PATH_KEYWORD_IDX_MASK) as usize;
-        self.interning_str(interning_idx)
+    pub fn keyword_of(&self, path_idx: u16) -> &[u8] {
+        let path = self.paths.data[path_idx as usize];
+        let word_id = ((path & PATH_KEYWORD_ID_MASK) >> PATH_KEYWORD_ID_SHIFT) as usize;
+        self.word_bytes(word_id)
     }
 
-    /// Extract _load client keyword, map entries, and args for the given leaf.
-    /// Returns ("", empty, empty) if no _load is configured.
-    pub fn load_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
-        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Load)
+    /// Extract `_get` store_id and args for the given leaf.
+    /// Returns (0, empty) if no `_get` is configured.
+    pub fn get_args(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf, MetaKind::Get)
     }
 
-    /// Extract _store client keyword, map entries, and args for the given leaf.
-    /// Returns ("", empty, empty) if no _store is configured.
-    pub fn store_args(&self, leaf: &LeafRef) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
-        self.decode_meta(leaf.path_idx, leaf.leaf_offset, MetaKind::Store)
+    /// Extract `_set` store_id and args for the given leaf.
+    /// Returns (0, empty) if no `_set` is configured.
+    pub fn set_args(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>) {
+        self.decode_meta(leaf, MetaKind::Set)
     }
 
     /// Return the value fragments encoded in the leaf.
     ///
     /// Each element is `(is_placeholder, bytes)`:
-    /// - `is_placeholder = false` — static string literal
-    /// - `is_placeholder = true`  — `${path}` reference whose bytes are the path string
+    /// - `false` — static string literal
+    /// - `true`  — `${path}` reference whose bytes are the path string
     ///
     /// An empty slice means the leaf has no value (`Null`).
     ///
@@ -110,8 +123,8 @@ impl Index {
     /// let tree = Tree::Mapping(alloc::vec![
     ///     (b"driver".to_vec(), Tree::Scalar(b"postgres".to_vec())),
     /// ]);
-    /// let (p, c, l, i, ii) = Dsl::compile(&tree);
-    /// let idx = Index::new(p, c, l, i, ii);
+    /// let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals) = Dsl::compile(&tree, &[]).unwrap();
+    /// let idx = Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals);
     /// let leaves = idx.traverse("driver");
     /// let frags = idx.leaf_fragments(&leaves[0]);
     /// assert_eq!(frags.len(), 1);
@@ -119,147 +132,198 @@ impl Index {
     /// assert_eq!(frags[0].1, b"postgres");
     /// ```
     pub fn leaf_fragments(&self, leaf: &LeafRef) -> Vec<(bool, &[u8])> {
-        let base = leaf.leaf_offset as usize;
-        let h0 = self.leaves[base];
-        let fragment_count = ((h0 >> 8) & 0xff) as usize;
-        let frag_start = base + 4;
-        let mut result = Vec::with_capacity(fragment_count);
-        for i in 0..fragment_count {
-            let word = self.leaves[frag_start + i];
-            let is_placeholder = ((word >> 16) & 0x1) != 0;
-            let idx = (word & 0xffff) as usize;
-            result.push((is_placeholder, self.interning_str(idx)));
-        }
-        result
+        let value_id = leaf.value_id as usize;
+        if value_id == 0 { return Vec::new(); }
+        let Some(frags) = self.values_slice(value_id) else { return Vec::new(); };
+        frags.iter().map(|&f| {
+            let is_ph  = (f & VALUE_IS_PLACEHOLDER_MASK) != 0;
+            let word_id = (f & VALUE_WORD_ID_MASK) as usize;
+            (is_ph, self.word_bytes(word_id))
+        }).collect()
     }
 }
 
 // ── private ───────────────────────────────────────────────────────────────────
 
-enum MetaKind { Load, Store }
+enum MetaKind { Get, Set }
 
 impl Index {
-    /// Walk dot-separated `path` from the virtual root (paths[0]).
-    fn find(&self, path: &str) -> Option<u32> {
-        let mut current: u32 = 0; // paths[0] = virtual root
+    fn find(&self, path: &str) -> Option<u16> {
+        let mut current: u16 = 0;
         for segment in path.split('.') {
             current = self.find_child(current, segment.as_bytes())?;
         }
         Some(current)
     }
 
-    /// Among the children of `path_idx`, find the one whose keyword matches.
-    fn find_child(&self, path_idx: u32, keyword: &[u8]) -> Option<u32> {
-        let path   = self.paths[path_idx as usize];
-        let offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let count  = (((path & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) & 0xf) as usize;
-
-        for i in 0..count {
-            let child_idx = self.children[offset + i] as u32;
-            if self.keyword_of(child_idx) == keyword {
-                return Some(child_idx);
-            }
-        }
-        None
+    fn find_child(&self, path_idx: u16, keyword: &[u8]) -> Option<u16> {
+        let path = self.paths.data[path_idx as usize];
+        if path & PATH_IS_LEAF_MASK != 0 { return None; }
+        let children_id = ((path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        if children_id == 0 { return None; }
+        let Some(children) = self.children_slice(children_id) else { return None; };
+        children.iter().copied().find(|&child_idx| self.keyword_of(child_idx) == keyword)
     }
 
-    /// Recursively collect all leaf descendants of `path_idx`.
-    fn collect_leaves(&self, path_idx: u32, out: &mut Vec<LeafRef>) {
-        let path = self.paths[path_idx as usize];
+    fn collect_leaves(&self, path_idx: u16, out: &mut Vec<LeafRef>) {
+        let path = self.paths.data[path_idx as usize];
         if path & PATH_IS_LEAF_MASK != 0 {
-            let leaf_offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as u32;
-            let parent_idx  = ((path & PATH_PARENT_IDX_MASK) >> PATH_PARENT_IDX_SHIFT) as u32;
-            out.push(LeafRef { path_idx, parent_idx, leaf_offset });
+            let leaf_id  = ((path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as u16;
+            let value_id = (path & PATH_VALUE_ID_MASK) as u16;
+            out.push(LeafRef { path_idx, leaf_id, value_id });
             return;
         }
-        let offset = ((path & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
-        let count  = (((path & PATH_COUNT_MASK) >> PATH_COUNT_SHIFT) & 0xf) as usize;
-        for i in 0..count {
-            self.collect_leaves(self.children[offset + i] as u32, out);
+        let children_id = ((path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        if children_id == 0 { return; }
+        let children: Vec<u16> = match self.children_slice(children_id) {
+            Some(s) => s.to_vec(),
+            None    => return,
+        };
+        for child_idx in children {
+            self.collect_leaves(child_idx, out);
         }
     }
 
-    /// Decode _load or _store from `leaves` at `leaf_offset`.
-    /// Leaf layout: Architecture.md #leaf 参照
-    fn decode_meta(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, Vec<(Tree, Tree)>, BTreeMap<String, Tree>) {
-        let base  = leaf_offset as usize;
-        let empty_map  = Vec::new();
-        let empty_args = BTreeMap::new();
+    fn decode_meta(&self, leaf: &LeafRef, kind: MetaKind) -> (u8, BTreeMap<String, Tree>) {
+        let leaf_id = leaf.leaf_id as usize;
+        if leaf_id == 0 { return (0, BTreeMap::new()); }
+        let Some(leaf_data) = self.leaves_slice(leaf_id) else { return (0, BTreeMap::new()); };
+        if leaf_data.len() < LEAF_WIDTH { return (0, BTreeMap::new()); }
 
-        if path_idx as usize >= self.paths.len() { return ("", empty_map, empty_args); }
-
-        // header u32[0]: keyword_idx(16) | fragment_count(8) | load_map_count(8)
-        let h0 = self.leaves[base];
-        let fragment_count  = ((h0 >> 8) & 0xff) as usize;
-        let load_map_count  = (h0 & 0xff) as usize;
-
-        // header u32[1]: load_args_count(8) | store_map_count(8) | store_args_count(8) | padding(8)
-        let h1 = self.leaves[base + 1];
-        let load_args_count  = ((h1 >> 24) & 0xff) as usize;
-        let store_map_count  = ((h1 >> 16) & 0xff) as usize;
-        let store_args_count = ((h1 >> 8)  & 0xff) as usize;
-
-        // header u32[2]: load_client_idx(16) | load_key_idx(16)
-        let h2 = self.leaves[base + 2];
-        let load_client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let load_key_idx    = (h2 & 0xffff) as usize;
-
-        // header u32[3]: store_client_idx(16) | store_key_idx(16)
-        let h3 = self.leaves[base + 3];
-        let store_client_idx = ((h3 >> 16) & 0xffff) as usize;
-        let store_key_idx    = (h3 & 0xffff) as usize;
-
-        // variable section offsets
-        let frag_start      = base + 4;
-        let lmap_start      = frag_start + fragment_count;
-        let largs_start     = lmap_start + load_map_count;
-        let smap_start      = largs_start + load_args_count;
-        let sargs_start     = smap_start + store_map_count;
-
-        let (client_idx, key_idx, map_start, map_count, args_start, args_count) = match kind {
-            MetaKind::Load  => (load_client_idx,  load_key_idx,  lmap_start,  load_map_count,  largs_start, load_args_count),
-            MetaKind::Store => (store_client_idx, store_key_idx, smap_start,  store_map_count, sargs_start, store_args_count),
+        let (store_id_raw, key_id, map_key_id, map_val_id, args_key_id, args_val_id) = match kind {
+            MetaKind::Get => (
+                leaf_data[LEAF_GET_STORE_ID],
+                leaf_data[LEAF_GET_KEY_ID],
+                leaf_data[LEAF_GET_MAP_KEY_ID],
+                leaf_data[LEAF_GET_MAP_VAL_ID],
+                leaf_data[LEAF_GET_ARGS_KEY_ID],
+                leaf_data[LEAF_GET_ARGS_VAL_ID],
+            ),
+            MetaKind::Set => (
+                leaf_data[LEAF_SET_STORE_ID],
+                leaf_data[LEAF_SET_KEY_ID],
+                leaf_data[LEAF_SET_MAP_KEY_ID],
+                leaf_data[LEAF_SET_MAP_VAL_ID],
+                leaf_data[LEAF_SET_ARGS_KEY_ID],
+                leaf_data[LEAF_SET_ARGS_VAL_ID],
+            ),
         };
 
-        let client_name = from_utf8(self.interning_str(client_idx)).unwrap_or("");
-        if client_name.is_empty() {
-            return ("", empty_map, empty_args);
+        let store_id = store_id_raw as u8;
+        if store_id == 0 { return (0, BTreeMap::new()); }
+
+        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
+
+        // key
+        if key_id != 0 {
+            if let Some(frags) = self.values_slice(key_id as usize) {
+                let key_str = self.resolve_static_frags(frags);
+                if !key_str.is_empty() {
+                    args.insert(String::from("key"), Tree::Scalar(key_str.into_bytes()));
+                }
+            }
         }
 
-        // map entries
-        let mut map: Vec<(Tree, Tree)> = Vec::with_capacity(map_count);
-        for i in 0..map_count {
-            let entry = self.leaves[map_start + i];
-            let dst = self.interning_str((entry >> 16) as usize).to_vec();
-            let src = self.interning_str((entry & 0xffff) as usize).to_vec();
-            map.push((Tree::Scalar(dst), Tree::Scalar(src)));
+        // map entries: parallel map_keys / map_vals lists
+        if map_key_id != 0 && map_val_id != 0 {
+            if let (Some(dsts), Some(srcs)) = (
+                self.map_keys_slice(map_key_id as usize),
+                self.map_vals_slice(map_val_id as usize),
+            ) {
+                let mut map_pairs: Vec<(Vec<u8>, Tree)> = Vec::new();
+                for (&dst_word_id, &src_word_id) in dsts.iter().zip(srcs.iter()) {
+                    let dst = self.word_bytes(dst_word_id as usize).to_vec();
+                    let src = self.word_bytes(src_word_id as usize).to_vec();
+                    map_pairs.push((dst, Tree::Scalar(src)));
+                }
+                if !map_pairs.is_empty() {
+                    args.insert(String::from("map"), Tree::Mapping(map_pairs));
+                }
+            }
         }
 
         // scalar args
-        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
-        let key_str = from_utf8(self.interning_str(key_idx)).unwrap_or("");
-        if !key_str.is_empty() {
-            args.insert(String::from("key"), Tree::Scalar(key_str.as_bytes().to_vec()));
-        }
-        for i in 0..args_count {
-            let entry = self.leaves[args_start + i];
-            let ak = from_utf8(self.interning_str((entry >> 16) as usize)).unwrap_or("");
-            let av = self.interning_str((entry & 0xffff) as usize);
-            if !ak.is_empty() {
-                args.insert(String::from(ak), Tree::Scalar(av.to_vec()));
+        if args_key_id != 0 && args_val_id != 0 {
+            if let (Some(keys), Some(vals)) = (
+                self.args_keys_slice(args_key_id as usize),
+                self.args_vals_slice(args_val_id as usize),
+            ) {
+                for (&key_word_id, &val_values_id) in keys.iter().zip(vals.iter()) {
+                    let k = from_utf8(self.word_bytes(key_word_id as usize)).unwrap_or("");
+                    if k.is_empty() { continue; }
+                    let v = if val_values_id == 0 {
+                        Tree::Null
+                    } else if let Some(frags) = self.values_slice(val_values_id as usize) {
+                        Tree::Scalar(self.resolve_static_frags(frags).into_bytes())
+                    } else {
+                        Tree::Null
+                    };
+                    args.insert(String::from(k), v);
+                }
             }
         }
 
-        (client_name, map, args)
+        (store_id, args)
     }
 
-    /// Resolve interning bytes by interning_idx index.
-    fn interning_str(&self, idx: usize) -> &[u8] {
-        if idx >= self.interning_idx.len() { return b""; }
-        let entry  = self.interning_idx[idx];
-        let offset = (entry >> 32) as usize;
-        let len    = (entry & 0xffff) as usize; // bits15..0 = len(u16)
-        self.interning.get(offset..offset + len).unwrap_or(b"")
+    /// Resolve a fragment list that is expected to be purely static (no placeholders at index time).
+    fn resolve_static_frags(&self, frags: &[u16]) -> String {
+        let mut buf = String::new();
+        for &f in frags {
+            let word_id = (f & VALUE_WORD_ID_MASK) as usize;
+            buf.push_str(from_utf8(self.word_bytes(word_id)).unwrap_or(""));
+        }
+        buf
+    }
+
+    // ── slice helpers ─────────────────────────────────────────────────────────
+
+    fn children_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.children, id)
+    }
+
+    fn leaves_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.leaves, id)
+    }
+
+    fn values_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.values, id)
+    }
+
+    fn map_keys_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.map_keys, id)
+    }
+
+    fn map_vals_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.map_vals, id)
+    }
+
+    fn args_keys_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.args_keys, id)
+    }
+
+    fn args_vals_slice(&self, id: usize) -> Option<&[u16]> {
+        self.vl_slice_u16(&self.args_vals, id)
+    }
+
+    fn vl_slice_u16<'a>(&'a self, vl: &'a VariableList<u16>, id: usize) -> Option<&'a [u16]> {
+        let identity_start = id * 2;
+        let start = *vl.identity.get(identity_start)?;
+        let end   = *vl.identity.get(identity_start + 1)?;
+        vl.data.get(start..end)
+    }
+
+    fn word_bytes(&self, id: usize) -> &[u8] {
+        let identity_start = id * 2;
+        let start = match self.words.identity.get(identity_start) {
+            Some(&s) => s,
+            None     => return b"",
+        };
+        let end = match self.words.identity.get(identity_start + 1) {
+            Some(&e) => e,
+            None     => return b"",
+        };
+        self.words.data.get(start..end).unwrap_or(b"")
     }
 }
 
@@ -277,8 +341,15 @@ mod tests {
     }
 
     fn make_index(tree: &Tree) -> Index {
-        let (paths, children, leaves, interning, interning_idx) = Dsl::compile(tree);
-        Index::new(paths, children, leaves, interning, interning_idx)
+        let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
+            = Dsl::compile(tree, &[]).unwrap();
+        Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
+    }
+
+    fn make_index_with_stores<'a>(tree: &Tree, store_ids: &[&'a str]) -> Index {
+        let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
+            = Dsl::compile(tree, store_ids).unwrap();
+        Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
     }
 
     // --- traverse ---
@@ -332,7 +403,6 @@ mod tests {
                 ("id", Tree::Null),
             ])),
         ]));
-        // root(0), user(1), id(2)
         assert_eq!(idx.keyword_of(2), b"id");
     }
 
@@ -346,54 +416,55 @@ mod tests {
         assert_eq!(idx.keyword_of(1), b"user");
     }
 
-    // --- load_args ---
+    // --- get_args ---
 
     #[test]
-    fn load_args_client_name() {
-        let idx = make_index(&mapping(vec![
+    fn get_args_store_id() {
+        let idx = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("Memory")),
+                ("_get", mapping(vec![
+                    ("store", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
                     ("id", Tree::Null),
                 ])),
             ])),
-        ]));
+        ]), &["Memory"]);
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.load_args(&leaves[0]);
-        assert_eq!(client, "Memory");
+        let (store_id, _) = idx.get_args(&leaves[0]);
+        assert_eq!(store_id, 1); // "Memory" is store_ids[0] → id=1
     }
 
     #[test]
-    fn load_args_key() {
-        let idx = make_index(&mapping(vec![
+    fn get_args_key() {
+        let idx = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
-                ("_load", mapping(vec![
-                    ("client", scalar("Memory")),
+                ("_get", mapping(vec![
+                    ("store", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
                     ("id", Tree::Null),
                 ])),
             ])),
-        ]));
+        ]), &["Memory"]);
         let leaves = idx.traverse("session.user.id");
-        let (_, _, args) = idx.load_args(&leaves[0]);
+        let (_, args) = idx.get_args(&leaves[0]);
         assert_eq!(args.get("key"), Some(&Tree::Scalar(b"session:1".to_vec())));
     }
 
     #[test]
-    fn load_args_no_load_returns_empty() {
+    fn get_args_no_get_returns_empty() {
         let idx = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.load_args(&leaves[0]);
-        assert!(client.is_empty() && args.is_empty());
+        let (store_id, args) = idx.get_args(&leaves[0]);
+        assert_eq!(store_id, 0);
+        assert!(args.is_empty());
     }
 
     // --- leaf_fragments ---
@@ -443,35 +514,36 @@ mod tests {
         assert_eq!(frags[2], (false, b".suffix" as &[u8]));
     }
 
-    // --- store_args ---
+    // --- set_args ---
 
     #[test]
-    fn store_args_client_name() {
-        let idx = make_index(&mapping(vec![
+    fn set_args_store_id() {
+        let idx = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
-                ("_store", mapping(vec![
-                    ("client", scalar("Kvs")),
+                ("_set", mapping(vec![
+                    ("store", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
                     ("id", Tree::Null),
                 ])),
             ])),
-        ]));
+        ]), &["Memory", "Kvs"]);
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.store_args(&leaves[0]);
-        assert_eq!(client, "Kvs");
+        let (store_id, _) = idx.set_args(&leaves[0]);
+        assert_eq!(store_id, 2); // "Kvs" is store_ids[1] → id=2
     }
 
     #[test]
-    fn store_args_no_store_returns_empty() {
+    fn set_args_no_set_returns_empty() {
         let idx = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.store_args(&leaves[0]);
-        assert!(client.is_empty() && args.is_empty());
+        let (store_id, args) = idx.set_args(&leaves[0]);
+        assert_eq!(store_id, 0);
+        assert!(args.is_empty());
     }
 }

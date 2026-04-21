@@ -4,16 +4,16 @@ use core::fmt;
 
 /// Request-scoped context handle. Manages state per DSL definition.
 pub trait Context {
-    /// Returns value from instance cache → _store, triggers _load on miss.
+    /// Returns value from instance cache → _set, triggers _get on miss.
     fn get(&mut self, key: &str) -> Result<Option<Tree>, ContextError>;
 
-    /// Writes value to _store. Returns Ok(false) if no _store is configured.
+    /// Writes value to _set. Returns Ok(false) if no _set is configured.
     fn set(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>;
 
-    /// Removes value from _store.
+    /// Removes value from _set.
     fn delete(&mut self, key: &str) -> Result<bool, ContextError>;
 
-    /// Checks existence in cache or _store. Does not trigger _load.
+    /// Checks existence in cache or _set. Does not trigger _get.
     fn exists(&mut self, key: &str) -> Result<bool, ContextError>;
 }
 
@@ -28,34 +28,37 @@ pub enum Tree {
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-/// DSL parse/file errors returned by `Dsl::write`.
+/// DSL parse/compile/file errors returned by `Dsl::compile` and `Dsl::write`.
 #[derive(Debug, PartialEq)]
 pub enum DslError {
     FileNotFound(String),
     AmbiguousFile(String),
     ParseError(String),
+    /// A compile-time limit was exceeded (path_id, word_id, store_id, or data size).
+    LimitExceeded(String),
 }
 
 impl fmt::Display for DslError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DslError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
-            DslError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
-            DslError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
+            DslError::FileNotFound(msg)   => write!(f, "FileNotFound: {}", msg),
+            DslError::AmbiguousFile(msg)  => write!(f, "AmbiguousFile: {}", msg),
+            DslError::ParseError(msg)     => write!(f, "ParseError: {}", msg),
+            DslError::LimitExceeded(msg)  => write!(f, "LimitExceeded: {}", msg),
         }
     }
 }
 
-/// Errors from `_load` client resolution during `Context::get`.
+/// Errors from `_get` store resolution during `Context::get`.
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
-    /// StoreRegistry::client_for() returned None for the given keyword.
+    /// Stores::store_for() returned None for the given store_id.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
-    /// The client call succeeded but returned no data.
+    /// The store call succeeded but returned no data.
     NotFound(String),
-    /// Parse error from client response.
+    /// Parse error from store response.
     ParseError(String),
 }
 
@@ -70,10 +73,10 @@ impl fmt::Display for LoadError {
     }
 }
 
-/// Errors from `_store` client operations during `Context::set` / `Context::delete`.
+/// Errors from `_set` store operations during `Context::set` / `Context::delete`.
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
-    /// StoreRegistry::client_for() returned None for the given keyword.
+    /// Stores::store_for() returned None for the given store_id.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),

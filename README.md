@@ -1,6 +1,6 @@
 # context-engine
 
-Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., `system_context["session.user"]` rather than `users[session[user_id]]`). context-engine processes the data retrieval methods that application developers define as a DSL in YAML files, for each label. This allows server/client differences in `system_context["session.user.preference"]` and multi-tenant differences in `context["session.user.tenant"]` to be resolved appropriately through the methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture (see [Background](#background)).
+Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., `system_context["session.user"]` rather than `users[session[user_id]]`). context-engine processes the data retrieval methods that application developers define as a DSL in YAML files, for each label. This allows server/store differences in `system_context["session.user.preference"]` and multi-tenant differences in `context["session.user.tenant"]` to be resolved appropriately through the methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture (see [Background](#background)).
 
 - [See original text(ja)](#original-text-ja)
 
@@ -61,12 +61,12 @@ context-engine = "0.1"
 session:
   user:
     id:
-      _load:
-        client: Memory
+      _get:
+        store: Memory
         key: "request.authorization.user.id"
     name:
-      _load:
-        client: Db
+      _get:
+        store: Db
         key: "users.${session.user.id}.name"
 ```
 
@@ -74,12 +74,12 @@ session:
 |-------------------|---------|
 | multi-tenant app  | [tenant.yml](./examples/tenant.yml) |
 
-3. Implement `StoreClient` and `StoreRegistry` for your stores.
+3. Implement `Store` and `StoreRegistry` for your stores.
 
 | Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
-| `StoreClient`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
-| `StoreRegistry` | maps YAML client names to `StoreClient`s | [MyRegistry](./examples/implements.rs) |
+| `Store`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
+| `StoreRegistry` | maps YAML store names to `Store`s | [MyRegistry](./examples/implements.rs) |
 
 4. Precompile your yaml to a rs file.
 
@@ -118,50 +118,22 @@ let user_name = context.get("session.user.name")?;
 ## Architecture
 
 ```
-┌─────────────┐       ┌────────────────────────────────┐
-│ DSL YAMLs   │------>│ Manifest (app global instance) │
-└─────────────┘compile└───────────┬────────────────────┘
+┌─────────────┐        ┌─────────────────────────────────┐
+│ DSL YAML    │------->│ Index (app global instance)     │
+└─────────────┘compile └──────────┬──────────────────────┘
                                   │
                                   ▼
-┌─────────────┐       ┌────────────────────────────────┐
-│ Application │<------│ Context(request scope instance)│
-└─────────────┘provide└────────────────────────────────┘
+┌─────────────┐        ┌─────────────────────────────────┐
+│ Application │<-------│ Context (request scope instance)│
+└─────────────┘ provide└─────────────────────────────────┘
                                   ▲
                                   │
-┌─────────────┐       ┌───────────┴────────────────────┐
-│ ClientImpls │------>│ StoreRegistry (required port)  │
-└─────────────┘regist └────────────────────────────────┘
+┌─────────────┐        ┌──────────┴──────────────────────┐
+│ StoreImpls  │------->│ StoreRegistry (required port)   │
+└─────────────┘register└─────────────────────────────────┘
 ```
 
 See for details [Architecture.md](./docs/Architecture.md)
-
-## Tree
-
-```
-./
-  README.md
-  Cargo.toml
-
-  docs/
-    Architecture.md
-    Dsl_guide.md
-
-  src/
-    lib.rs
-    ports.rs
-    ports/
-      provided.rs
-      required.rs
-    debug_log.rs
-    tree.rs
-    dsl.rs
-    index.rs
-    context.rs
-
-  examples/
-    tenant.yml
-    implements.rs
-```
 
 ## Test
 
