@@ -199,14 +199,14 @@ impl Index {
         let set_map_count  = ((h1 >> 16) & 0xff) as usize;
         let set_args_count = ((h1 >> 8)  & 0xff) as usize;
 
-        // header u32[2]: get_store_idx(16) | get_key_idx(16)
+        // header u32[2]: get_set_idx(16) | get_key_idx(16)
         let h2 = self.leaves[base + 2];
-        let get_store_idx = ((h2 >> 16) & 0xffff) as usize;
+        let get_set_idx = ((h2 >> 16) & 0xffff) as usize;
         let get_key_idx   = (h2 & 0xffff) as usize;
 
-        // header u32[3]: set_store_idx(16) | set_key_idx(16)
+        // header u32[3]: set_set_idx(16) | set_key_idx(16)
         let h3 = self.leaves[base + 3];
-        let set_store_idx = ((h3 >> 16) & 0xffff) as usize;
+        let set_set_idx = ((h3 >> 16) & 0xffff) as usize;
         let set_key_idx   = (h3 & 0xffff) as usize;
 
         // variable section offsets
@@ -217,12 +217,12 @@ impl Index {
         let sargs_start = smap_start + set_map_count;
 
         let (store_idx, key_idx, map_start, map_count, args_start, args_count) = match kind {
-            MetaKind::Get => (get_store_idx, get_key_idx, gmap_start, get_map_count, gargs_start, get_args_count),
-            MetaKind::Set => (set_store_idx, set_key_idx, smap_start, set_map_count, sargs_start, set_args_count),
+            MetaKind::Get => (get_set_idx, get_key_idx, gmap_start, get_map_count, gargs_start, get_args_count),
+            MetaKind::Set => (set_set_idx, set_key_idx, smap_start, set_map_count, sargs_start, set_args_count),
         };
 
-        let client_name = from_utf8(self.interning_str(store_idx)).unwrap_or("");
-        if client_name.is_empty() {
+        let store_name = from_utf8(self.interning_str(store_idx)).unwrap_or("");
+        if store_name.is_empty() {
             return ("", empty_map, empty_args);
         }
 
@@ -250,7 +250,7 @@ impl Index {
             }
         }
 
-        (client_name, map, args)
+        (store_name, map, args)
     }
 
     /// Resolve interning bytes by interning_idx index.
@@ -346,14 +346,14 @@ mod tests {
         assert_eq!(idx.keyword_of(1), b"user");
     }
 
-    // --- load_args ---
+    // --- get_args ---
 
     #[test]
-    fn load_args_client_name() {
+    fn get_args_store_name() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("Memory")),
+                    ("store", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
@@ -362,16 +362,16 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.get_args(&leaves[0]);
-        assert_eq!(client, "Memory");
+        let (store, _, _) = idx.get_args(&leaves[0]);
+        assert_eq!(store, "Memory");
     }
 
     #[test]
-    fn load_args_key() {
+    fn get_args_key() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("Memory")),
+                    ("store", scalar("Memory")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
@@ -385,15 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn load_args_no_load_returns_empty() {
+    fn get_args_no_get_returns_empty() {
         let idx = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.get_args(&leaves[0]);
-        assert!(client.is_empty() && args.is_empty());
+        let (store, _, args) = idx.get_args(&leaves[0]);
+        assert!(store.is_empty() && args.is_empty());
     }
 
     // --- leaf_fragments ---
@@ -443,14 +443,14 @@ mod tests {
         assert_eq!(frags[2], (false, b".suffix" as &[u8]));
     }
 
-    // --- store_args ---
+    // --- set_args ---
 
     #[test]
-    fn store_args_client_name() {
+    fn set_args_store_name() {
         let idx = make_index(&mapping(vec![
             ("session", mapping(vec![
                 ("_set", mapping(vec![
-                    ("client", scalar("Kvs")),
+                    ("store", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
@@ -459,19 +459,19 @@ mod tests {
             ])),
         ]));
         let leaves = idx.traverse("session.user.id");
-        let (client, _, _) = idx.set_args(&leaves[0]);
-        assert_eq!(client, "Kvs");
+        let (store, _, _) = idx.set_args(&leaves[0]);
+        assert_eq!(store, "Kvs");
     }
 
     #[test]
-    fn store_args_no_store_returns_empty() {
+    fn set_args_no_set_returns_empty() {
         let idx = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = idx.traverse("user.id");
-        let (client, _, args) = idx.set_args(&leaves[0]);
-        assert!(client.is_empty() && args.is_empty());
+        let (store, _, args) = idx.set_args(&leaves[0]);
+        assert!(store.is_empty() && args.is_empty());
     }
 }

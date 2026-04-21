@@ -4,16 +4,16 @@ use core::fmt;
 
 /// Request-scoped context handle. Manages state per DSL definition.
 pub trait Context {
-    /// Returns value from instance cache → _store, triggers _load on miss.
+    /// Returns value from instance cache → _set, triggers _get on miss.
     fn get(&mut self, key: &str) -> Result<Option<Tree>, ContextError>;
 
-    /// Writes value to _store. Returns Ok(false) if no _store is configured.
+    /// Writes value to _set. Returns Ok(false) if no _set is configured.
     fn set(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>;
 
-    /// Removes value from _store.
+    /// Removes value from _set.
     fn delete(&mut self, key: &str) -> Result<bool, ContextError>;
 
-    /// Checks existence in cache or _store. Does not trigger _load.
+    /// Checks existence in cache or _set. Does not trigger _get.
     fn exists(&mut self, key: &str) -> Result<bool, ContextError>;
 }
 
@@ -46,16 +46,16 @@ impl fmt::Display for DslError {
     }
 }
 
-/// Errors from `_load` client resolution during `Context::get`.
+/// Errors from `_get` store resolution during `Context::get`.
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
     /// StoreRegistry::store_for() returned None for the given keyword.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
-    /// The client call succeeded but returned no data.
+    /// The store call succeeded but returned no data.
     NotFound(String),
-    /// Parse error from client response.
+    /// Parse error from store response.
     ParseError(String),
 }
 
@@ -70,7 +70,7 @@ impl fmt::Display for LoadError {
     }
 }
 
-/// Errors from `_store` client operations during `Context::set` / `Context::delete`.
+/// Errors from `_set` store operations during `Context::set` / `Context::delete`.
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
     /// StoreRegistry::store_for() returned None for the given keyword.

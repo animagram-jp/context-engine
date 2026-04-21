@@ -17,7 +17,7 @@ pub trait Store<
         &'a self,
         key: &[u8],
         map: &Vec<[u8]>,
-        args: &Tree,
+        args: &BTreeMap<&str, Tree>,
     ) -> Result<&'a Value, Error>;
 
     /// intern: if true, returns existing index for matching content instead of allocating a new one
@@ -25,7 +25,7 @@ pub trait Store<
         &mut self,
         key: &[u8],
         map: &Vec<[u8]>,
-        args: &Tree,
+        args: &BTreeMap<&str, Tree>,
         value: &Value,
         intern: bool,
     ) -> Result<SetOutcome, Error>;
@@ -34,6 +34,6 @@ pub trait Store<
         &mut self,
         key: &[u8],
         map: &Vec<[u8]>,
-        args: &Tree,
+        args: &BTreeMap<&str, Tree>,
     ) -> Result<(), Error>;
 }

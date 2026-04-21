@@ -7,7 +7,7 @@
 - key:            n層マップDSLの最末端value以外の要素
 - keyword:        keyの名前文字列
 - field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
+- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_get, _set, _state)
 - leaf_key:       子にkeyを持たず値を持つkey
 - value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
 - path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
@@ -26,10 +26,10 @@
 
 ```yaml
 field_key:
-  _store: # Where to save (inherited by descendants, overridable)
-  _load:  # Where to load from (optional)
+  _set: # Where to save (inherited by descendants, overridable)
+  _get:  # Where to get from (as above)
   child_key:
-    # inherits _store from parent
+    # inherits _set & _get from parent
 ```
 
 ## Core Concepts
@@ -39,19 +39,19 @@ field_key:
 Each field_key inherits parent meta_keys and can override individual fields:
 
 ```yaml
-_store:
-  client: Kvs
+_set:
+  store: Kvs
   key: "root:${id}"
 
 user:
-  _store:
-    key: "user:${user_id}"  # overrides key only; client: Kvs inherited
+  _set:
+    key: "user:${user_id}"  # overrides key only; store: Kvs inherited
 
   name:
-    # inherits _store: { client: Kvs, key: "user:${user_id}" }
+    # inherits _set: { store: Kvs, key: "user:${user_id}" }
 ```
 
-`_store` / `_load` inheritance rule: child's fields overwrite matching keys; unspecified fields are inherited as-is. Inheritance is resolved at compile time — runtime traversal carries no parent state.
+`_set` / `_get` inheritance rule: child's fields overwrite matching keys; unspecified fields are inherited as-is. Inheritance is resolved at compile time — runtime traversal carries no parent state.
 
 ### 2. Placeholder / Template
 
@@ -63,25 +63,25 @@ user:
 
 | keyword  | scope         | description |
 |----------|---------------|-------------|
-| `_load`  | meta_key      | load source definition |
-| `_store` | meta_key      | store destination definition |
+| `_get`  | meta_key      | get source definition |
+| `_set` | meta_key      | store destination definition |
 | `_state` | meta_key      | reserved |
-| `client` | _load / _store prop | StoreRegistry keyword |
-| `key`    | _load / _store prop | reserved arg passed to Store |
-| `map`    | _load / _store prop | field mapping definition |
+| `store` | _get / _set prop | StoreRegistry keyword |
+| `key`    | _get / _set prop | reserved arg passed to Store |
+| `map`    | _get / _set prop | field mapping definition |
 
-### 4. _store / _load args
+### 4. _set / _get args
 
-`client:` と `key:` 以外の全フィールドはimplementor定義の任意args。ライブラリは関知しない。
+`store:` と `key:` 以外の全フィールドはimplementor定義の任意args。ライブラリは関知しない。
 
 ```yaml
-_store:
-  client: Kvs
+_set:
+  store: Kvs
   key:    "user:${user.id}"  # reserved
   ttl:    3600               # implementor-defined
 
-_load:
-  client:     TenantDb
+_get:
+  store:     TenantDb
   key:        "users.id.${session.user.id}"  # reserved
   connection: ${connection.tenant_db}        # implementor-defined
   map:
@@ -91,20 +91,20 @@ _load:
 
 implementorは `args: &BTreeMap<&str, Tree>` から任意キーを取り出して使う。
 
-#### _store.key の省略
+#### _set.key の省略
 
-`_store.key` は省略可能。省略時、ライブラリはそのleafの `path_idx`（compile時確定のu32）を文字列化してstore keyとして使う。
+`_set.key` は省略可能。省略時、ライブラリはそのleafの `path_idx`（compile時確定のu32）を文字列化してstore keyとして使う。
 
 ```yaml
 session:
   user:
-    _store:
-      client: Kvs
+    _set:
+      store: Kvs
       ttl: 3600
       # key: 省略 → path_idxが自動的にstore keyになる
     id:
-      _load:
-        client: Memory
+      _get:
+        store: Memory
         key: "request.authorization.user.id"
 ```
 
@@ -113,17 +113,17 @@ session:
 - qualified_pathを文字列で持たなくてもleaf固有の一意キーとして機能する
 - 中間パス（`session.user`）経由のgetでも各leafが自身の`path_idx`を使うため衝突しない
 
-`_load.key` は省略不可。
+`_get.key` は省略不可。
 
 ### 5. map
 
-`_load.map:` / `_store.map:` でparent field_keyの子fieldにストア列等をマッピングする。
+`_get.map:` / `_set.map:` でparent field_keyの子fieldにストア列等をマッピングする。
 
 ```yaml
 session:
   user:
-    _load:
-      client: TenantDb
+    _get:
+      store: TenantDb
       key:    "users.id.${session.user.id}"
       map:
         name:  "name"
@@ -132,6 +132,6 @@ session:
     email:
 ```
 
-- `map` のvalue（`"name"`, `"email"` 等）がargs経由でclientに渡される
-- clientはその順序通りに値を取得して返す責務を持つ
+- `map` のvalue（`"name"`, `"email"` 等）がargs経由でstoreに渡される
+- storeはその順序通りに値を取得して返す責務を持つ
 - map対象のfield_keyは別途leaf宣言が必要

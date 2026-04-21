@@ -47,11 +47,11 @@ fn main() {
 
     // =========================================================================
     // session.user.id
-    // _load: Memory(key="request.authorization.user"), _store: Kvs(inherited)
+    // _get: Memory(key="request.authorization.user"), _set: Kvs(inherited)
     // =========================================================================
     std::println!("\n[session.user.id]");
 
-    test!("get loads from Memory when key is preset", {
+    test!("get gets from Memory when key is preset", {
         let registry = MyRegistry::new();
         registry.memory_set("request.authorization.user", scalar("42"));
         let mut ctx = make_context(&registry);
@@ -62,7 +62,7 @@ fn main() {
     test!("get returns None when Memory has no key", {
         let registry = MyRegistry::new();
         let mut ctx = make_context(&registry);
-        // _load returns None → LoadFailed(NotFound)
+        // _get returns None → LoadFailed(NotFound)
         let result = ctx.get("session.user.id");
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
@@ -109,13 +109,13 @@ fn main() {
 
     // =========================================================================
     // session.user.name
-    // _load: TenantDb(key="users.id.${session.user.id}") — placeholder依存
-    // _store: Kvs(inherited)
+    // _get: TenantDb(key="users.id.${session.user.id}") — placeholder依存
+    // _set: Kvs(inherited)
     // =========================================================================
     std::println!("\n[session.user.name — placeholder in key]");
 
     test!("set and get without placeholder resolution", {
-        // key contains ${session.user.id} but set bypasses _load
+        // key contains ${session.user.id} but set bypasses _get
         let registry = MyRegistry::new();
         let mut ctx = make_context(&registry);
         assert!(ctx.set("session.user.name", scalar("alice")).unwrap());
@@ -140,18 +140,18 @@ fn main() {
     test!("get returns LoadFailed when referenced path has no value", {
         let registry = MyRegistry::new();
         let mut ctx = make_context(&registry);
-        // session.user.name not set, _load will fail
+        // session.user.name not set, _get will fail
         let result = ctx.get("session.user.name_copy");
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
 
     // =========================================================================
     // session.user.tenant.id
-    // _load: Memory(key="request.authorization.tenant"), _store: Kvs(inherited from session.user)
+    // _get: Memory(key="request.authorization.tenant"), _set: Kvs(inherited from session.user)
     // =========================================================================
     std::println!("\n[session.user.tenant.id]");
 
-    test!("get loads from Memory", {
+    test!("get gets from Memory", {
         let registry = MyRegistry::new();
         registry.memory_set("request.authorization.tenant", scalar("10"));
         let mut ctx = make_context(&registry);
@@ -169,7 +169,7 @@ fn main() {
 
     // =========================================================================
     // connection.common_db — static leaf values
-    // _load: Env, static values: driver="postgres", charset="UTF8"
+    // _get: Env, static values: driver="postgres", charset="UTF8"
     // =========================================================================
     std::println!("\n[connection.common_db — static values]");
 
@@ -190,7 +190,7 @@ fn main() {
     test!("get host returns None when Env not set", {
         let registry = MyRegistry::new();
         let mut ctx = make_context(&registry);
-        // Env has no _load client registered for connection.common_db.host
+        // Env has no _get store registered for connection.common_db.host
         let result = ctx.get("connection.common_db.host");
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
@@ -263,14 +263,14 @@ fn main() {
     // std::println!("\n[RecursionLimitExceeded — >20 leaves under one path]");
 
     // test!("get intermediate path with 21 leaves returns RecursionLimitExceeded", {
-    //     // Build a DSL with 21 leaves under "group", each with a Memory _load.
+    //     // Build a DSL with 21 leaves under "group", each with a Memory _get.
     //     let leaf_names = [
     //         "a","b","c","d","e","f","g","h","i","j",
     //         "k","l","m","n","o","p","q","r","s","t","u",
     //     ];
-    //     let mut yaml = std::string::String::from("group:\n  _store:\n    client: Kvs\n    key: g\n");
+    //     let mut yaml = std::string::String::from("group:\n  _set:\n    store: Kvs\n    key: g\n");
     //     for name in &leaf_names {
-    //         yaml.push_str(&std::format!("  {}:\n    _load:\n      client: Memory\n      key: req.{}\n", name, name));
+    //         yaml.push_str(&std::format!("  {}:\n    _get:\n      store: Memory\n      key: req.{}\n", name, name));
     //     }
     //     let src = yaml.as_bytes();
     //     let tree = context_engine::dsl::parse_yaml(src).expect("parse failed");

@@ -108,7 +108,7 @@ impl<'r> ContextTrait for Context<'r> {
         let leaf = &leaves[0];
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let client = self.registry.store_for(keyword)
+        let store = self.registry.store_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
@@ -123,7 +123,7 @@ impl<'r> ContextTrait for Context<'r> {
             .collect();
         args_ref.insert("value", value.clone());
 
-        match client.set(store_key, &map, &args_ref) {
+        match store.set(store_key, &map, &args_ref) {
             Some(SetOutcome::Created(_)) | Some(SetOutcome::Updated) => {
                 self.cache_set(leaf.path_idx, value);
                 Ok(true)
@@ -140,7 +140,7 @@ impl<'r> ContextTrait for Context<'r> {
         let leaf = &leaves[0];
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let client = self.registry.store_for(keyword)
+        let store = self.registry.store_for(keyword)
             .ok_or_else(|| ContextError::StoreFailed(
                 StoreError::ClientNotFound(keyword.to_string())
             ))?;
@@ -154,7 +154,7 @@ impl<'r> ContextTrait for Context<'r> {
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        let ok = client.delete(store_key, &map, &args_ref);
+        let ok = store.delete(store_key, &map, &args_ref);
         if ok {
             self.cache_remove(leaf.path_idx);
         }
@@ -173,7 +173,7 @@ impl<'r> ContextTrait for Context<'r> {
         }
 
         let (keyword, map, args) = self.index.set_args(leaf);
-        let Some(client) = self.registry.store_for(keyword) else {
+        let Some(store) = self.registry.store_for(keyword) else {
             return Ok(false);
         };
 
@@ -186,7 +186,7 @@ impl<'r> ContextTrait for Context<'r> {
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
 
-        Ok(client.get(store_key, &map, &args_ref).is_some())
+        Ok(store.get(store_key, &map, &args_ref).is_some())
     }
 }
 
@@ -204,7 +204,7 @@ impl<'r> Context<'r> {
         // 2. _set
         let (set_name, set_map, set_args) = self.index.set_args(&leaf_ref);
         if !set_name.is_empty() {
-            if let Some(client) = self.registry.store_for(set_name) {
+            if let Some(store) = self.registry.store_for(set_name) {
                 // DSL key省略時はpath_idxを文字列化してstore keyとする（compile時確定・一意）
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
                 let store_key = set_args.get("key")
@@ -213,7 +213,7 @@ impl<'r> Context<'r> {
                 let args_ref: BTreeMap<&str, Tree> = set_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
-                if let Some(value) = client.get(store_key, &set_map, &args_ref) {
+                if let Some(value) = store.get(store_key, &set_map, &args_ref) {
                     self.cache_set(path_idx, value.clone());
                     return Ok(Some(value));
                 }
@@ -222,7 +222,7 @@ impl<'r> Context<'r> {
 
         // 3. value fragments (static scalar / placeholder / template)
         //
-        // Evaluated after _store so that a runtime set() — which writes to _store and
+        // Evaluated after _set so that a runtime set() — which writes to _set and
         // cache — is always preferred.  Results are cache_set regardless of fragment
         // kind: Context is request-scoped and does not need to track mid-request changes.
         // Collect fragments into owned data to release the immutable borrow on
@@ -278,7 +278,7 @@ impl<'r> Context<'r> {
         if get_name.is_empty() {
             return Ok(None);
         }
-        let client = self.registry.store_for(get_name)
+        let store = self.registry.store_for(get_name)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::ClientNotFound(get_name.to_string())
             ))?;
@@ -290,14 +290,14 @@ impl<'r> Context<'r> {
         let args_ref: BTreeMap<&str, Tree> = get_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
-        let value = client.get(key, &get_map, &args_ref)
+        let value = store.get(key, &get_map, &args_ref)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
 
-        // write-through to _store if configured
+        // write-through to _set if configured
         if !set_name.is_empty() {
-            if let Some(store_client) = self.registry.store_for(set_name) {
+            if let Some(set_store) = self.registry.store_for(set_name) {
                 let idx_str = alloc::string::ToString::to_string(&path_idx);
                 let sk = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
@@ -306,7 +306,7 @@ impl<'r> Context<'r> {
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 sargs.insert("value", value.clone());
-                store_client.set(sk, &set_map, &sargs);
+                set_store.set(sk, &set_map, &sargs);
             }
         }
 

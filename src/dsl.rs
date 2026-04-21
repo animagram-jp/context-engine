@@ -342,12 +342,12 @@ impl Compiler {
             | ((set_map_count as u32 & 0xff) << 16)
             | ((set_args_count as u32 & 0xff) << 8)
         );
-        // header u32[2]: get_store_idx(16) | get_key_idx(16)
+        // header u32[2]: get_set_idx(16) | get_key_idx(16)
         self.leaves.push(
             ((get.map(|b| b.store_idx).unwrap_or(0) & 0xffff) << 16)
             | (get.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
         );
-        // header u32[3]: set_store_idx(16) | set_key_idx(16)
+        // header u32[3]: set_set_idx(16) | set_key_idx(16)
         self.leaves.push(
             ((set.map(|b| b.store_idx).unwrap_or(0) & 0xffff) << 16)
             | (set.map(|b| b.key_idx).unwrap_or(0) & 0xffff)
@@ -572,36 +572,36 @@ mod tests {
         let (paths, ..) = compile(&mapping(vec![
             ("user", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("Memory")),
+                    ("store", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
                 ("id", Tree::Null),
             ])),
         ]));
-        // root(0) + user(1) + id(2) — _load must not appear
+        // root(0) + user(1) + id(2) — _get must not appear
         assert_eq!(paths.len(), 3);
     }
 
-    // --- load in leaf ---
+    // --- get in leaf ---
 
     #[test]
-    fn load_client_stored_in_leaf() {
+    fn get_store_setd_in_leaf() {
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("user", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("Memory")),
+                    ("store", scalar("Memory")),
                     ("key",    scalar("user:1")),
                 ])),
                 ("id", Tree::Null),
             ])),
         ]));
         // root(0), user(1), id(2)
-        // header u32[2]: get_store_idx(16) | get_key_idx(16)
+        // header u32[2]: get_set_idx(16) | get_key_idx(16)
         let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        let store_idx = ((h2 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[store_idx] >> 32) as usize;
+        let len = (interning_idx[store_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"Memory");
     }
 
@@ -612,7 +612,7 @@ mod tests {
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("session", mapping(vec![
                 ("_set", mapping(vec![
-                    ("client", scalar("Kvs")),
+                    ("store", scalar("Kvs")),
                     ("key",    scalar("session:1")),
                 ])),
                 ("user", mapping(vec![
@@ -621,12 +621,12 @@ mod tests {
             ])),
         ]));
         // root(0), session(1), user(2), id(3)
-        // header u32[3]: set_store_idx(16) | set_key_idx(16)
+        // header u32[3]: set_set_idx(16) | set_key_idx(16)
         let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h3 = leaves[leaf_offset + 3];
-        let client_idx = ((h3 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        let store_idx = ((h3 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[store_idx] >> 32) as usize;
+        let len = (interning_idx[store_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"Kvs");
     }
 
@@ -649,7 +649,7 @@ mod tests {
     // --- fragment ---
 
     #[test]
-    fn static_value_stored_as_single_fragment() {
+    fn static_value_setd_as_single_fragment() {
         // Scalar value with no placeholder → fragment_count=1, is_placeholder=0
         let (paths, _, leaves, ..) = compile(&mapping(vec![
             ("key", scalar("hello")),
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_value_stored_as_single_fragment_is_placeholder() {
+    fn placeholder_value_setd_as_single_fragment_is_placeholder() {
         // Scalar value "${some.path}" → fragment_count=1, is_placeholder=1
         let (paths, _, leaves, ..) = compile(&mapping(vec![
             ("copy", scalar("${session.user.id}")),
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn template_value_stored_as_multiple_fragments() {
+    fn template_value_setd_as_multiple_fragments() {
         // "prefix.${some.path}.suffix" → fragment_count=3: static, placeholder, static
         let (paths, _, leaves, ..) = compile(&mapping(vec![
             ("key", scalar("prefix.${some.path}.suffix")),
@@ -699,17 +699,17 @@ mod tests {
     // --- resolve_meta ---
 
     #[test]
-    fn local_load_overrides_inherited_client() {
-        // parent defines _load with client="A", child overrides with client="B"
+    fn local_get_overrides_inherited_store() {
+        // parent defines _get with store="A", child overrides with store="B"
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("parent", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("ClientA")),
+                    ("store", scalar("ClientA")),
                     ("key",    scalar("k")),
                 ])),
                 ("child", mapping(vec![
                     ("_get", mapping(vec![
-                        ("client", scalar("ClientB")),
+                        ("store", scalar("ClientB")),
                         ("key",    scalar("k")),
                     ])),
                     ("leaf", Tree::Null),
@@ -719,19 +719,19 @@ mod tests {
         // root(0), parent(1), child(2), leaf(3)
         let leaf_offset = ((paths[3] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        let store_idx = ((h2 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[store_idx] >> 32) as usize;
+        let len = (interning_idx[store_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"ClientB");
     }
 
     #[test]
-    fn load_inherited_when_no_local_override() {
-        // parent defines _load with client="Inherited", child has no _load
+    fn get_inherited_when_no_local_override() {
+        // parent defines _get with store="Inherited", child has no _get
         let (paths, _, leaves, interning, interning_idx) = compile(&mapping(vec![
             ("parent", mapping(vec![
                 ("_get", mapping(vec![
-                    ("client", scalar("Inherited")),
+                    ("store", scalar("Inherited")),
                     ("key",    scalar("k")),
                 ])),
                 ("leaf", Tree::Null),
@@ -740,9 +740,9 @@ mod tests {
         // root(0), parent(1), leaf(2)
         let leaf_offset = ((paths[2] & PATH_OFFSET_MASK) >> PATH_OFFSET_SHIFT) as usize;
         let h2 = leaves[leaf_offset + 2];
-        let client_idx = ((h2 >> 16) & 0xffff) as usize;
-        let off = (interning_idx[client_idx] >> 32) as usize;
-        let len = (interning_idx[client_idx] & 0xffff) as usize;
+        let store_idx = ((h2 >> 16) & 0xffff) as usize;
+        let off = (interning_idx[store_idx] >> 32) as usize;
+        let len = (interning_idx[store_idx] & 0xffff) as usize;
         assert_eq!(&interning[off..off+len], b"Inherited");
     }
 

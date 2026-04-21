@@ -12,7 +12,7 @@
 - parse: YAMLをパースする
 - compile: dslから、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
 - traversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
-- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンスで行い、リクエストを跨いで保持したい場合は全て_storeにて指示する
+- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンスで行い、リクエストを跨いで保持したい場合は全て_setにて指示する
 
 ## Port
 
@@ -20,28 +20,28 @@
 |--------|------|-----------|-------------|----------|
 | - | `debug_log!` | `(class, fn $(, arg)*)` | `feature=logging` ログマクロ | debug_log.rs |
 | - | `Tree` | - | n次元scalar map型 | provided.rs |
-| - | `SetOutcome` | - | `Store::set`が返すCreatedかUpdated | required.rs |
+| - | `SetOutcome` | - | `Store::set`が返すCreated(usize)かUpdated | required.rs |
 | Tree | `wire` | `(&self) -> Vec<u8>` | Treeをワイヤフォーマットに変換 | tree.rs |
 |      | `unwire` | `(bytes: &[u8]) -> Option<Tree>` | ワイヤフォーマットからTreeへ変換 | tree.rs |
-| Dsl | `compile` | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから静的list(paths/children/leaves/interning/interning_idx) を返す | dsl.rs |
+| Dsl | `compile` | `(tree: &Tree) -> (Box<[u64]>, Box<[u32]>, Box<[u8]>, Box<[u8]>, Box<[u64]>)` | Treeから予約語を基に走査してcompile済みdslを返す | dsl.rs |
 |  | `write` | `(src: &[u8], out_path: &str) -> Result<(), String>` | YAMLファイルパスから.rsを出力[precompile] | dsl.rs |
-| Index | `new` | `(paths, children, leaves, interning, interning_idx) -> Index` | compile済みdslからIndex構築 | index.rs |
+| Index | `new` | `(paths, children, leaves, interning, interning_idx) -> Index` | compile済みdslからIndexを構築 | index.rs |
 |       | `traverse` | `(&self, path: &str) -> Box<[LeafRef]>` | パス文字列からleaf参照リストを返す | index.rs |
 |       | `keyword_of` | `(&self, path_idx: u32) -> &[u8]` | path_idxからkeywordバイト列を返す | index.rs |
-|       | `load_args` | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_load` client名とargsを返す | index.rs |
-|       | `store_args` | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_store` client名とargsを返す | index.rs |
+|       | `get_args` | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_get` store名とargsを返す | index.rs |
+|       | `set_args` | `(&self, leaf: &LeafRef) -> (&str, BTreeMap<String, Tree>)` | leafの`_set` store名とargsを返す | index.rs |
 | Context | `new` | `(index: Arc<Index>, registry: &'r dyn StoreRegistry) -> Context` | IndexとStoreRegistoryからContextを構築 | context.rs |
-|         | `get` | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | パス文字列から値(cache→_store→_load)を取得して返す | context.rs |
-|         | `set` | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | 値から_storeに書き込み、cacheも更新 | context.rs |
-|         | `delete` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスから_storeの値を削除し、cacheもnullで更新 | context.rs |
-|         | `exists` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスからcacheか_storeに値が存在するか確認し、cacheを更新 | context.rs |
-| Store | `get` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<Tree>` | keyとdsl記載のmapから値をlistで返す | required.rs |
-|             | `set` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> Option<SetOutcome>` | keyとdsl記載のマップから値を保存しSetOutcomeを返す | required.rs |
-|             | `delete` | `&self, key: &str, args: &BTreeMap<&str, Tree> -> bool` | keyとdsl記載のマップから値を削除し成否を返す | required.rs |
+|         | `get` | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | パス文字列から値(cache→_set→_get)を取得して返す | context.rs |
+|         | `set` | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | 値から_setに書き込み、cacheも更新 | context.rs |
+|         | `delete` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスから_setの値を削除し、cacheもnullで更新 | context.rs |
+|         | `exists` | `(&mut self, key: &str) -> Result<bool, ContextError>` | パスからcacheか_setに値が存在するか確認し、cacheを更新 | context.rs |
+| Store | `get` | `&self, key: &[u8], map: &Vec<[u8]>, args: &BTreeMap<&str, Tree> -> Option<Tree>` | keyとdsl記載のmapから値をlistで返す | required.rs |
+|             | `set` | `&mut self, key: &[u8], map: &Vec<[u8]>, args: &BTreeMap<&str, Tree> -> Option<SetOutcome>` | keyとdsl記載のマップから値を保存しSetOutcomeを返す | required.rs |
+|             | `delete` | `&self, key: &[u8], map: &Vec<[u8]>, args: &BTreeMap<&str, Tree> -> bool` | keyとdsl記載のマップから値を削除し成否を返す | required.rs |
 | StoreRegistry | `store_for` | `&self, keyword: &str -> Option<&dyn Store>` | StoreのkeywordからStoreを返す | required.rs |
 | DslError | `fmt` | `&self, f: &mut fmt::Formatter<'_> -> fmt::Result` | Dslのエラーを返す | provided.rs |
-| LoadError | `fmt` |  | _loadクライアント呼び出しエラーを返す | provided.rs |
-| StoreError | `fmt` |  | _storeクライアント呼び出しエラーを返す | provided.rs |
+| LoadError | `fmt` |  | _getクライアント呼び出しエラーを返す | provided.rs |
+| StoreError | `fmt` |  | _setクライアント呼び出しエラーを返す | provided.rs |
 | ContextError | `fmt` |  | Contextの出力するエラーを返す | provided.rs |
 
 
@@ -50,9 +50,9 @@
 | Module | fn | Signature | Description | Filename |
 |--------|----|-----------|-------------|----------|
 | Compiler | `new` | `() -> Compiler` | Compiler初期化 | dsl.rs |
-|          | `walk_field_key` | `(&mut self, keyword: &[u8], value: &Tree, inh_load: Option<&MetaBlock>, inh_store: Option<&MetaBlock>)` | field_keyを再帰処理しpaths/children/leavesを構築 | dsl.rs |
-|          | `resolve_meta` | `(&mut self, pairs: &[(Vec<u8>, Tree)], meta_key: &[u8], inherited: Option<&MetaBlock>) -> Option<MetaBlock>` | `_load`/`_store`ブロックを親から継承しつつ現keyで上書きして返す | dsl.rs |
-|          | `write_leaf` | `(&mut self, path_idx: u32, keyword_idx: u32, value_idx: Option<u32>, load: Option<&MetaBlock>, store: Option<&MetaBlock>)` | leavesにleafデータを書き込みpaths[path_idx]をis_leaf=1で更新 | dsl.rs |
+|          | `walk_field_key` | `(&mut self, keyword: &[u8], value: &Tree, inh_get: Option<&MetaBlock>, inh_set: Option<&MetaBlock>)` | field_keyを再帰処理しpaths/children/leavesを構築 | dsl.rs |
+|          | `resolve_meta` | `(&mut self, pairs: &[(Vec<u8>, Tree)], meta_key: &[u8], inherited: Option<&MetaBlock>) -> Option<MetaBlock>` | `_get`/`_set`ブロックを親から継承しつつ現keyで上書きして返す | dsl.rs |
+|          | `write_leaf` | `(&mut self, path_idx: u32, keyword_idx: u32, value_idx: Option<u32>, get: Option<&MetaBlock>, store: Option<&MetaBlock>)` | leavesにleafデータを書き込みpaths[path_idx]をis_leaf=1で更新 | dsl.rs |
 |          | `intern` | `(&mut self, s: &[u8]) -> u32` | バイト列をinterningに追加しinterning_idxを返す（重複排除） | dsl.rs |
 |          | `intern_tree_scalar` | `(&mut self, v: &Tree) -> u32` | TreeスカラーまたはNullをinternしてindexを返す | dsl.rs |
 |          | `push_u32` | `(&mut self, v: u32)` | u32leをleavesに追記 | dsl.rs |
@@ -65,7 +65,7 @@
 | Index | `find` | `(&self, path: &str) -> Option<u32>` | '.'区切りパスをルートからたどりpath_idxを返す | index.rs |
 |       | `find_child` | `(&self, path_idx: u32, keyword: &[u8]) -> Option<u32>` | path_idxの子の中からkeywordに一致するpath_idxを返す | index.rs |
 |       | `collect_leaves` | `(&self, path_idx: u32, out: &mut Vec<LeafRef>)` | path_idx以下の全leafをoutに再帰収集 | index.rs |
-|       | `decode_meta` | `(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, BTreeMap<String, Tree>)` | leavesから`_load`または`_store`のclient名とargsを読み出す | index.rs |
+|       | `decode_meta` | `(&self, path_idx: u32, leaf_offset: u32, kind: MetaKind) -> (&str, BTreeMap<String, Tree>)` | leavesから`_get`または`_set`のstore名とargsを読み出す | index.rs |
 |       | `read_u32` | `(&self, off: usize) -> u32` | leavesのoffからu32leを読む | index.rs |
 |       | `interning_str` | `(&self, idx: usize) -> &[u8]` | interning_idxのidxからinterningのバイト列スライスを返す | index.rs |
 | Tree | `write_value` | `(value: &Tree, buf: &mut Vec<u8>)` | Treeをワイヤフォーマットにシリアライズしbufに追記 | tree.rs |
@@ -76,14 +76,14 @@
 |         | `cache_set` | `(&mut self, path_idx: u32, value: Tree)` | インスタンスキャッシュにpath_idxの値を書き込む（上書き） | context.rs |
 |         | `cache_remove` | `(&mut self, path_idx: u32)` | インスタンスキャッシュのpath_idxエントリをNullで無効化 | context.rs |
 |         | `guard_recursion` | `(&self, path_idx: u32) -> Result<(), ContextError>` | called_pathsの重複・上限超過を検出しエラーを返す | context.rs |
-|         | `resolve_leaf` | `(&mut self, path_idx: u32, leaf_offset: u32) -> Result<Option<Tree>, ContextError>` | cache→_store→_loadの順で値を解決しwrite-throughする | context.rs |
+|         | `resolve_leaf` | `(&mut self, path_idx: u32, leaf_offset: u32) -> Result<Option<Tree>, ContextError>` | cache→_set→_getの順で値を解決しwrite-throughする | context.rs |
 
 ## Terms
 
 - key:            n層マップDSLの最末端value以外の要素
 - keyword:        keyの名前文字列
 - field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_load, _store, _state)
+- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_get, _set, _state)
 - leaf_key:       子にkeyを持たず値を持つkey
 - value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
 - path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
@@ -96,24 +96,12 @@
 
 ### Store
 
-単一ストアの操作を提供するtrait。`key`は予約引数として明示し、追加の任意引数は`args`のflatなBTreeMapで渡す。
+単一ストアの操作を提供するtrait。`key`,`map`は予約引数として明示し、追加の任意引数は`args`のflatなBTreeMapで渡す。
 
-- `identity`,`index`: DSL の `_get.{identity,index}` / `_set.{identity,index}` の値。予約引数。
+- `key`: DSL の `_get.identity` / `_set.identity` の値。予約引数。
 - `args`: ttl・connection・map 等、ストア種別ごとの任意引数。利用者がimpl内で定義・参照する。
 - 内部可変性・スレッド安全性はimplementor側の責任。
-
-### StoreRegistry
-
-YAMLの`store:`名称とStoreの対応を管理するtrait。利用者がimplし、Contextに渡す。
-
-```rust
-pub trait StoreRegistry {
-    fn store_for(&self, keyword: &str) -> Option<&dyn Store>;
-}
-```
-
-- ライブラリはYAML名称の文字列をそのまま`store_for()`に渡してmatchを回す。
-- YAML上の名義（`"Memory"`, `"Kvs"`, `"TenantDb"`等）は利用者が自由に定義する。
+- YAML上のkeyword（`"Memory"`, `"Kvs"`, `"TenantDb"`等）は利用者が自由に定義する。
 
 ### Instance Cache
 
@@ -133,18 +121,30 @@ Contextインスタンス固有のキャッシュ。Storeとは独立。
 1. called チェック（再帰・上限検出）
 2. `Index::traverse(path)` → LeafRef一覧
 3. instance cache をチェック
-4. `_store` client に問い合わせ
-5. miss時、`_load` client で自動ロード → write-through to `_store`
+4. `_set` store に問い合わせ
+5. miss時、`_get` store で自動ロード → write-through to `_set`
 6. `Ok(Some(value))` / `Ok(None)` / `Err(ContextError)` を返却
 
 ## データ構造仕様
 
-### 静的データ配列
+### compile済みdsl
 
-`Dsl::compile`が返す5配列。アプリ起動時に一度だけ構築し、`Index`が保持する。
+`Dsl::compile`が返す5配列。Dsl::compile()が一度だけ構築し、`Index`が保持する。
 **読み込むdslの、全(部分含む)path数は、u16(65535個以下)を充てる。**
 
 ```
+全pathのidx数: u16以下
+
+valueの含む最大word数: 
+```
+
+```rust
+values:       List<>               // 
+words:        VariableList<u8>     // keywords intern=true
+placeholders: VariableList<u8>     // called_path in placeholders intern=true 
+
+
+// 旧設計
 paths:         Box<[u64]>   // pathのlist
 children:      Box<[u16]>   // 各pathの子path_idxを連結したu16列
 leaves:        Box<[u32]>   // leafのlist。u32刻み
@@ -187,28 +187,28 @@ leaf 1つ分のレイアウト（u32単位）:
 |-------------|----------------------|------|---------------------------------|
 | header      | keyword_idx          |   16 | u32[0] bits 31..16              | // interning_idx
 | header      | fragment_count       |    8 | u32[0] bits 15..8               | // valueフラグメント数。0=null
-| header      | load_map_count       |    8 | u32[0] bits 7..0                | // load.mapエントリ数
-| header      | load_args_count      |    8 | u32[1] bits 31..24              | // load.argsエントリ数
-| header      | store_map_count      |    8 | u32[1] bits 23..16              | // store.mapエントリ数
-| header      | store_args_count     |    8 | u32[1] bits 15..8               | // store.argsエントリ数
+| header      | get_map_count       |    8 | u32[0] bits 7..0                | // get.mapエントリ数
+| header      | get_args_count      |    8 | u32[1] bits 31..24              | // get.argsエントリ数
+| header      | set_map_count      |    8 | u32[1] bits 23..16              | // store.mapエントリ数
+| header      | set_args_count     |    8 | u32[1] bits 15..8               | // store.argsエントリ数
 | header      | padding              |    8 | u32[1] bits 7..0                |
-| header      | load_client_idx      |   16 | u32[2] bits 31..16              | // interning_idx
-| header      | load_key_idx         |   16 | u32[2] bits 15..0               | // interning_idx
-| header      | store_client_idx     |   16 | u32[3] bits 31..16              | // interning_idx
+| header      | get_store_idx      |   16 | u32[2] bits 31..16              | // interning_idx
+| header      | get_key_idx         |   16 | u32[2] bits 15..0               | // interning_idx
+| header      | set_store_idx     |   16 | u32[3] bits 31..16              | // interning_idx
 | header      | store_key_idx        |   16 | u32[3] bits 15..0               | // interning_idx
 | fragment×F  | padding              |   15 | u32[4+i] bits 31..17            |
 | fragment×F  | is_placeholder       |    1 | u32[4+i] bit 16                 | // 0=static, 1=placeholder
 | fragment×F  | idx                  |   16 | u32[4+i] bits 15..0             | // is_placeholder=0: interning_idx / 1: path_idx
-| load.map×M0 | dst_idx              |   16 | u32[4+F+i] bits 31..16          | // context path interning_idx
-| load.map×M0 | src_idx              |   16 | u32[4+F+i] bits 15..0           | // store column interning_idx
-| load.args×A0| key_idx              |   16 | u32[4+F+M0+i] bits 31..16       | // interning_idx
-| load.args×A0| val_idx              |   16 | u32[4+F+M0+i] bits 15..0        | // interning_idx
+| get.map×M0 | dst_idx              |   16 | u32[4+F+i] bits 31..16          | // context path interning_idx
+| get.map×M0 | src_idx              |   16 | u32[4+F+i] bits 15..0           | // store column interning_idx
+| get.args×A0| key_idx              |   16 | u32[4+F+M0+i] bits 31..16       | // interning_idx
+| get.args×A0| val_idx              |   16 | u32[4+F+M0+i] bits 15..0        | // interning_idx
 | store.map×M1| dst_idx              |   16 | u32[4+F+M0+A0+i] bits 31..16    | // context path interning_idx
 | store.map×M1| src_idx              |   16 | u32[4+F+M0+A0+i] bits 15..0     | // store column interning_idx
 | store.args×A1| key_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 31..16 | // interning_idx
 | store.args×A1| val_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 15..0  | // interning_idx
 
-// F=fragment_count, M0=load_map_count, A0=load_args_count, M1=store_map_count, A1=store_args_count
+// F=fragment_count, M0=get_map_count, A0=get_args_count, M1=set_map_count, A1=set_args_count
 
 **valueの解釈:**
 - `fragment_count=0`: null
@@ -247,8 +247,8 @@ leaf 1つ分のレイアウト（u32単位）:
 **LoadError** (`ports/provided.rs`):
 - `ClientNotFound(String)` — `StoreRegistry::store_for()` が None を返した
 - `ConfigMissing(String)` — DSL内に必須のconfigキーが欠落
-- `NotFound(String)` — clientの呼び出しは成功したがデータが存在しなかった
-- `ParseError(String)` — clientレスポンスのパースエラー
+- `NotFound(String)` — storeの呼び出しは成功したがデータが存在しなかった
+- `ParseError(String)` — storeレスポンスのパースエラー
 
 **StoreError** (`ports/provided.rs`):
 - `ClientNotFound(String)` — `StoreRegistry::store_for()` が None を返した
