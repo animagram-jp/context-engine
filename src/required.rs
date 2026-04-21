@@ -1,6 +1,8 @@
 // required.rs: modules required to implement
 
 use core::primitive::usize;
+use alloc::collections::BTreeMap;
+use crate::provided::Tree;
 
 #[derive(Debug)]
 pub enum SetOutcome {
@@ -9,31 +11,28 @@ pub enum SetOutcome {
 }
 
 /// A store provides addressed access to values.
-pub trait Store<
-    Error,
-    Value: ?Sized,
-> {
-    fn get<'a>(
-        &'a self,
+pub trait Store {
+    fn get(
+        &self,
         key: &[u8],
-        map: &Vec<[u8]>,
         args: &BTreeMap<&str, Tree>,
-    ) -> Result<&'a Value, Error>;
+    ) -> Option<Tree>;
 
-    /// intern: if true, returns existing index for matching content instead of allocating a new one
     fn set(
-        &mut self,
+        &self,
         key: &[u8],
-        map: &Vec<[u8]>,
         args: &BTreeMap<&str, Tree>,
-        value: &Value,
-        intern: bool,
-    ) -> Result<SetOutcome, Error>;
+    ) -> Option<SetOutcome>;
 
     fn delete(
-        &mut self,
+        &self,
         key: &[u8],
-        map: &Vec<[u8]>,
         args: &BTreeMap<&str, Tree>,
-    ) -> Result<(), Error>;
+    ) -> bool;
+}
+
+/// Maps compile-time store_id (u8) to a `Store` implementation.
+/// The id corresponds to the index position in the `store_ids` slice passed to `Dsl::compile`.
+pub trait Stores {
+    fn store_for(&self, id: u8) -> Option<&dyn Store>;
 }

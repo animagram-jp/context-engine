@@ -1,10 +1,10 @@
 fn main() {}
 
 // Example Store implementations.
-// These are minimal stubs showing how to implement Store and StoreRegistry
+// These are minimal stubs showing how to implement Store and Stores
 // for common backing stores under the new unified interface.
 
-use context_engine::required::{Store, StoreRegistry, SetOutcome};
+use context_engine::required::{Store, Stores, SetOutcome};
 use context_engine::provided::Tree;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -22,18 +22,21 @@ impl MemoryClient {
 }
 
 impl Store for MemoryClient {
-    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        self.data.lock().unwrap().get(key).cloned()
+    fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+        let k = std::str::from_utf8(key).ok()?;
+        self.data.lock().unwrap().get(k).cloned()
     }
-    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+        let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
-        data.insert(key.to_string(), value);
+        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        data.insert(k, value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
-        self.data.lock().unwrap().remove(key).is_some()
+    fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
+        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        self.data.lock().unwrap().remove(k).is_some()
     }
 }
 
@@ -52,49 +55,53 @@ impl KvsClient {
 }
 
 impl Store for KvsClient {
-    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let bytes = self.data.lock().unwrap().get(key).cloned()?;
-        // In real impl: unwire bytes → Tree
-        Some(bytes)
+    fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+        let k = std::str::from_utf8(key).ok()?;
+        self.data.lock().unwrap().get(k).cloned()
     }
-    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+        let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         // args["ttl"] ignored in mock
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
-        data.insert(key.to_string(), value);
+        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        data.insert(k, value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
-        self.data.lock().unwrap().remove(key).is_some()
+    fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
+        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        self.data.lock().unwrap().remove(k).is_some()
     }
 }
 
 // ── Env ───────────────────────────────────────────────────────────────────────
 //
-// args contains map.* values as env var names (in order).
-// Returns a Mapping of { env_var_name → env_var_value }.
+// Returns a Mapping of { field_name → env_var_value } using map entries from args.
 
 pub struct EnvClient;
 
 impl Store for EnvClient {
-    fn get(&self, _key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let pairs: Vec<(Vec<u8>, Tree)> = args.iter()
-            .filter_map(|(&k, v)| {
-                let env_key = match v {
+    fn get(&self, _key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+        let map = match args.get("map") {
+            Some(Tree::Mapping(pairs)) => pairs,
+            _ => return None,
+        };
+        let pairs: Vec<(Vec<u8>, Tree)> = map.iter()
+            .filter_map(|(dst, src)| {
+                let env_key = match src {
                     Tree::Scalar(b) => std::str::from_utf8(b).ok()?,
                     _ => return None,
                 };
                 let value = std::env::var(env_key).ok()
                     .map(|s| Tree::Scalar(s.into_bytes()))
                     .unwrap_or(Tree::Null);
-                Some((k.as_bytes().to_vec(), value))
+                Some((dst.clone(), value))
             })
             .collect();
         if pairs.is_empty() { None } else { Some(Tree::Mapping(pairs)) }
     }
-    fn set(&self, _key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> { None }
-    fn delete(&self, _key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool { false }
+    fn set(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> { None }
+    fn delete(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool { false }
 }
 
 // ── CommonDb (mock) ───────────────────────────────────────────────────────────
@@ -110,18 +117,21 @@ impl CommonDbClient {
 }
 
 impl Store for CommonDbClient {
-    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        self.data.lock().unwrap().get(key).cloned()
+    fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+        let k = std::str::from_utf8(key).ok()?;
+        self.data.lock().unwrap().get(k).cloned()
     }
-    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+        let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
-        data.insert(key.to_string(), value);
+        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        data.insert(k, value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
-        self.data.lock().unwrap().remove(key).is_some()
+    fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
+        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        self.data.lock().unwrap().remove(k).is_some()
     }
 }
 
@@ -138,39 +148,45 @@ impl TenantDbClient {
 }
 
 impl Store for TenantDbClient {
-    fn get(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        self.data.lock().unwrap().get(key).cloned()
+    fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
+        let k = std::str::from_utf8(key).ok()?;
+        self.data.lock().unwrap().get(k).cloned()
     }
-    fn set(&self, key: &str, _map: &[(Tree, Tree)], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+    fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+        let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(key) { SetOutcome::Updated } else { SetOutcome::Created };
-        data.insert(key.to_string(), value);
+        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        data.insert(k, value);
         Some(outcome)
     }
-    fn delete(&self, key: &str, _map: &[(Tree, Tree)], _args: &BTreeMap<&str, Tree>) -> bool {
-        self.data.lock().unwrap().remove(key).is_some()
+    fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
+        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        self.data.lock().unwrap().remove(k).is_some()
     }
 }
 
-// ── StoreRegistry ─────────────────────────────────────────────────────────────
+// ── Stores ────────────────────────────────────────────────────────────────────
+//
+// store_ids passed to Dsl::compile: &["Memory", "Kvs", "Env", "CommonDb", "TenantDb"]
+// → store_id: Memory=1, Kvs=2, Env=3, CommonDb=4, TenantDb=5
 
-pub struct MyRegistry {
-    memory:    Arc<MemoryClient>,
-    kvs:       Arc<KvsClient>,
-    env:       Arc<EnvClient>,
-    common_db: Arc<CommonDbClient>,
-    tenant_db: Arc<TenantDbClient>,
+pub struct MyStores {
+    memory:    MemoryClient,
+    kvs:       KvsClient,
+    env:       EnvClient,
+    common_db: CommonDbClient,
+    tenant_db: TenantDbClient,
 }
 
-impl MyRegistry {
+impl MyStores {
     pub fn new() -> Self {
         Self {
-            memory:    Arc::new(MemoryClient::new()),
-            kvs:       Arc::new(KvsClient::new()),
-            env:       Arc::new(EnvClient),
-            common_db: Arc::new(CommonDbClient::new()),
-            tenant_db: Arc::new(TenantDbClient::new()),
+            memory:    MemoryClient::new(),
+            kvs:       KvsClient::new(),
+            env:       EnvClient,
+            common_db: CommonDbClient::new(),
+            tenant_db: TenantDbClient::new(),
         }
     }
 
@@ -183,15 +199,15 @@ impl MyRegistry {
     }
 }
 
-impl StoreRegistry for MyRegistry {
-    fn store_for(&self, keyword: &str) -> Option<&dyn Store> {
-        match keyword {
-            "Memory"   => Some(self.memory.as_ref()),
-            "Kvs"      => Some(self.kvs.as_ref()),
-            "Env"      => Some(self.env.as_ref()),
-            "CommonDb" => Some(self.common_db.as_ref()),
-            "TenantDb" => Some(self.tenant_db.as_ref()),
-            _          => None,
+impl Stores for MyStores {
+    fn store_for(&self, id: u8) -> Option<&dyn Store> {
+        match id {
+            1 => Some(&self.memory),
+            2 => Some(&self.kvs),
+            3 => Some(&self.env),
+            4 => Some(&self.common_db),
+            5 => Some(&self.tenant_db),
+            _ => None,
         }
     }
 }

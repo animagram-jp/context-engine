@@ -19,6 +19,7 @@ pub mod provided;
 
 pub use required::{
     Store,
+    Stores,
     SetOutcome,
 };
 pub use list::{

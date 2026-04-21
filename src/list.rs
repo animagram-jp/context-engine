@@ -158,22 +158,22 @@ impl<T: Copy + Default + PartialEq> List<T> {
 /// let mut vl: VariableList<u32> = VariableList::new();
 ///
 /// // append: first real entry is id=1
-/// let r = vl.set(&0, &mut (), &[1u32, 2, 3], false).unwrap();
+/// let r = vl.set(&0, &[1u32, 2, 3], false).unwrap();
 /// assert!(matches!(r, SetOutcome::Created(1)));
-/// assert_eq!(vl.get(&1, &()).unwrap(), &[1u32, 2, 3]);
+/// assert_eq!(vl.get(&1).unwrap(), &[1u32, 2, 3]);
 ///
 /// // intern: same value returns existing id
-/// let r = vl.set(&0, &mut (), &[1u32, 2, 3], true).unwrap();
+/// let r = vl.set(&0, &[1u32, 2, 3], true).unwrap();
 /// assert!(matches!(r, SetOutcome::Created(1)));
 ///
 /// // update in-place (value fits)
-/// let r = vl.set(&1, &mut (), &[9u32, 8], false).unwrap();
+/// let r = vl.set(&1, &[9u32, 8], false).unwrap();
 /// assert!(matches!(r, SetOutcome::Updated));
-/// assert_eq!(vl.get(&1, &()).unwrap(), &[9u32, 8]);
+/// assert_eq!(vl.get(&1).unwrap(), &[9u32, 8]);
 ///
 /// // delete
-/// vl.delete(&1, &mut ()).unwrap();
-/// assert!(vl.get(&1, &()).is_err());
+/// vl.delete(&1).unwrap();
+/// assert!(vl.get(&1).is_err());
 /// ```
 pub struct VariableList<T> {
     pub identity: Vec<usize>,
@@ -194,7 +194,6 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     pub fn get<'a>(
         &'a self,
         identity: &usize,
-        _schema: 
     ) -> Result<&'a [T], ListError> {
         let identity_start = identity * 2;
         let identity_end = identity_start + 2;
@@ -215,7 +214,6 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     pub fn set(
         &mut self,
         identity: &usize,
-        _schema: &mut (),
         value: &[T],
         intern: bool,
     ) -> Result<SetOutcome, ListError> {
@@ -273,7 +271,6 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     pub fn delete(
         &mut self,
         identity: &usize,
-        _schema: &mut (),
     ) -> Result<(), ListError> {
         if *identity == 0 {
             return Err(ListError::NotExist);
@@ -299,13 +296,13 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     /// use context_engine::required::SetOutcome;
     ///
     /// let mut vl: VariableList<u32> = VariableList::new();
-    /// vl.set(&0, &mut (), &[1u32, 2, 3], false).unwrap(); // id=1
-    /// vl.set(&0, &mut (), &[4u32, 5, 6], false).unwrap(); // id=2
-    /// vl.delete(&1, &mut ()).unwrap();                     // id=1 vacant
+    /// vl.set(&0, &[1u32, 2, 3], false).unwrap(); // id=1
+    /// vl.set(&0, &[4u32, 5, 6], false).unwrap(); // id=2
+    /// vl.delete(&1).unwrap();                     // id=1 vacant
     ///
     /// let remap = vl.compact().unwrap();
     /// assert_eq!(remap[&2], 1); // old id=2 -> new id=1
-    /// assert_eq!(vl.get(&1, &()).unwrap(), &[4u32, 5, 6]);
+    /// assert_eq!(vl.get(&1).unwrap(), &[4u32, 5, 6]);
     /// ```
     pub fn compact(&mut self) -> Result<alloc::collections::BTreeMap<usize, usize>, VariableListError> {
         let mut new_identity    = vec![0, 0]; // id=0 sentinel
@@ -346,11 +343,11 @@ mod tests {
     fn list_set_update_append_when_value_too_large() {
         // VariableList::set update path: value exceeds existing range → append
         let mut vl: VariableList<u32> = VariableList::new();
-        vl.set(&0, &mut (), &[1u32, 2], false).unwrap(); // id=1, len=2
+        vl.set(&0, &[1u32, 2], false).unwrap(); // id=1, len=2
         // update with larger value: must append instead of in-place
-        let r = vl.set(&1, &mut (), &[10u32, 20, 30], false).unwrap();
+        let r = vl.set(&1, &[10u32, 20, 30], false).unwrap();
         assert!(matches!(r, SetOutcome::Updated));
-        assert_eq!(vl.get(&1, &()).unwrap(), &[10u32, 20, 30]);
+        assert_eq!(vl.get(&1).unwrap(), &[10u32, 20, 30]);
     }
 
     #[test]
@@ -389,19 +386,19 @@ mod tests {
     #[test]
     fn variable_list_delete_sentinel_returns_not_exist() {
         let mut vl: VariableList<u32> = VariableList::new();
-        let err = vl.delete(&0, &mut ()).unwrap_err();
+        let err = vl.delete(&0).unwrap_err();
         assert!(matches!(err, ListError::NotExist));
     }
 
     #[test]
     fn variable_list_compact_invalidates_old_identity() {
         let mut vl: VariableList<u32> = VariableList::new();
-        vl.set(&0, &mut (), &[1u32, 2, 3], false).unwrap(); // id=1
-        vl.set(&0, &mut (), &[4u32, 5, 6], false).unwrap(); // id=2
-        vl.delete(&1, &mut ()).unwrap();
+        vl.set(&0, &[1u32, 2, 3], false).unwrap(); // id=1
+        vl.set(&0, &[4u32, 5, 6], false).unwrap(); // id=2
+        vl.delete(&1).unwrap();
         vl.compact().unwrap();
         // old id=2 is now id=1; old id=1 no longer exists
-        assert!(vl.get(&2, &()).is_err());
-        assert_eq!(vl.get(&1, &()).unwrap(), &[4u32, 5, 6]);
+        assert!(vl.get(&2).is_err());
+        assert_eq!(vl.get(&1).unwrap(), &[4u32, 5, 6]);
     }
 }

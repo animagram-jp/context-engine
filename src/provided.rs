@@ -28,20 +28,23 @@ pub enum Tree {
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-/// DSL parse/file errors returned by `Dsl::write`.
+/// DSL parse/compile/file errors returned by `Dsl::compile` and `Dsl::write`.
 #[derive(Debug, PartialEq)]
 pub enum DslError {
     FileNotFound(String),
     AmbiguousFile(String),
     ParseError(String),
+    /// A compile-time limit was exceeded (path_id, word_id, store_id, or data size).
+    LimitExceeded(String),
 }
 
 impl fmt::Display for DslError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DslError::FileNotFound(msg)  => write!(f, "FileNotFound: {}", msg),
-            DslError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
-            DslError::ParseError(msg)    => write!(f, "ParseError: {}", msg),
+            DslError::FileNotFound(msg)   => write!(f, "FileNotFound: {}", msg),
+            DslError::AmbiguousFile(msg)  => write!(f, "AmbiguousFile: {}", msg),
+            DslError::ParseError(msg)     => write!(f, "ParseError: {}", msg),
+            DslError::LimitExceeded(msg)  => write!(f, "LimitExceeded: {}", msg),
         }
     }
 }
@@ -49,7 +52,7 @@ impl fmt::Display for DslError {
 /// Errors from `_get` store resolution during `Context::get`.
 #[derive(Debug, PartialEq)]
 pub enum LoadError {
-    /// StoreRegistry::store_for() returned None for the given keyword.
+    /// Stores::store_for() returned None for the given store_id.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
@@ -73,7 +76,7 @@ impl fmt::Display for LoadError {
 /// Errors from `_set` store operations during `Context::set` / `Context::delete`.
 #[derive(Debug, PartialEq)]
 pub enum StoreError {
-    /// StoreRegistry::store_for() returned None for the given keyword.
+    /// Stores::store_for() returned None for the given store_id.
     ClientNotFound(String),
     /// A required config key is missing in the manifest.
     ConfigMissing(String),
