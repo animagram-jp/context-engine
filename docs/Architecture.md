@@ -129,113 +129,78 @@ Contextインスタンス固有のキャッシュ。Storeとは独立。
 
 ### compile済みdsl
 
-`Dsl::compile`が返す5配列。Dsl::compile()が一度だけ構築し、`Index`が保持する。
-**読み込むdslの、全(部分含む)path数は、u16(65535個以下)を充てる。**
+`Dsl::compile`が構築し、`Index`が保持する。
+
+### Limitation
 
 ```
-全pathのidx数: u16以下
-
-valueの含む最大word数: 
+path_id:  16 bit (max 65535)
+word_id:  15 bit (max 32767)
+store_id:  8 bit (max   255)
 ```
+
+### データ構造一覧
 
 ```rust
-values:       List<>               // 
-words:        VariableList<u8>     // keywords intern=true
-placeholders: VariableList<u8>     // called_path in placeholders intern=true 
-
-
-// 旧設計
-paths:         Box<[u64]>   // pathのlist
-children:      Box<[u16]>   // 各pathの子path_idxを連結したu16列
-leaves:        Box<[u32]>   // leafのlist。u32刻み
-interning:     Box<[u8]>    // 文字列バイト列を連結したバイト列
-interning_idx: Box<[u64]>   // interningの文字列境界 interning_idx[u64] のlist
+paths:        List<u64>          // path一覧
+children:     VariableList<u16>  // 各pathの子path_id列
+leaves:       VariableList<u16>  // leaf固有データ (固定12u16)
+values:       VariableList<u16>  // value fragments. each u16: is_placeholder(bit15) | word_id(bits14..0)
+words:        VariableList<u8>   // keyword/path/value文字列intern pool. intern=true
+stores:       List<u8>           // store名。store_id(u8)で引く
+get_map_keys: VariableList<u16>  // get.map dst word_id列 // possibly convert to path_id when Dsl::compile()
+get_map_vals: VariableList<u16>  // get.map src word_id列
+get_args_keys:VariableList<u16>  // get.args key word_id列
+get_args_vals:VariableList<u16>  // get.args val values_id列
+set_map_keys: VariableList<u16>  // set.map dst word_id列 // possibly convert to path_id when Dsl::compile()
+set_map_vals: VariableList<u16>  // set.map src word_id列
+set_args_keys:VariableList<u16>  // set.args key word_id列
+set_args_vals:VariableList<u16>  // set.args val values_id列
 ```
 
-### path (u64)
+### path (List<u64>)
 
-**paths[0]は常にvirtual root**
+paths[0]は常にvirtual root（自己参照）。
 
-| Field       | bits | range       |
-|-------------|------|-------------|
-| is_leaf     |    1 | bit 63      |
-| offset      |   16 | bits 62..47 |
-| count       |    4 | bits 46..43 |
-| padding     |   11 | bits 42..32 |
-| parent_idx  |   16 | bits 31..16 |
-| keyword_idx |   16 | bits 15..0  |
+| Field               | Bits | Note                                                                      |
+|---------------------|------|---------------------------------------------------------------------------|
+| is_leaf             |    1 | 0=非leaf, 1=leaf                                                          |
+| keyword_id          |   15 | words id                                                                  |
+| parent_id           |   16 | paths id                                                                  |
+| children_id/leaf_id |   16 | is_leaf=0: children id → 子path_id列 / is_leaf=1: leaves id → leaf data  |
+| value_id            |   16 | values id. 0=null                                                         |
 
-- `is_leaf=0`: 非leaf path。`children[offset..offset+count]`に子path_idxが並ぶ
-- `is_leaf=1`: leaf path。`leaves[offset..]`にleafデータが並ぶ。`count`は未使用
-- `parent_idx`: 親path_idx。virtual root(paths[0])は自己参照(0)
-- `keyword_idx`: このpathのkeywordのinterning_idx
+### leaf (VariableList<u16>、固定12u16)
 
-### child (u16)
+0=none。
 
-| Field     | Bits | Range      |
-|-----------|------|------------|
-| child_idx |   16 | bits 15..0 | // path_idx
+| Field            | u16s | Note                            |
+|------------------|------|---------------------------------|
+| get_store_id     |    1 | stores id (u8 as u16)           |
+| get_key_id       |    1 | values_id                       |
+| set_store_id     |    1 | stores id (u8 as u16)           |
+| set_key_id       |    1 | values_id                       |
+| get_map_key_id   |    1 | get_map_keys id → dst word_id列 |
+| get_map_val_id   |    1 | get_map_vals id → src word_id列 |
+| get_args_key_id  |    1 | get_args_keys id → key word_id列|
+| get_args_val_id  |    1 | get_args_vals id → val values_id列|
+| set_map_key_id   |    1 | set_map_keys id → dst word_id列 |
+| set_map_val_id   |    1 | set_map_vals id → src word_id列 |
+| set_args_key_id  |    1 | set_args_keys id → key word_id列|
+| set_args_val_id  |    1 | set_args_vals id → val values_id列|
 
-各path所属の始端終端は、`path.offset`と`path.count[3:0]`で決まる。
-**1pathあたりの直接子path数は、count[3:0]の4bit制限により最大15。**
+### value (VariableList<u16>)
 
-### leaf
+各u16: `is_placeholder(bit15) | word_id(bits14..0)`
 
-leaf 1つ分のレイアウト（u32単位）:
-
-| Category    | Field                | Bits | Range                           |
-|-------------|----------------------|------|---------------------------------|
-| header      | keyword_idx          |   16 | u32[0] bits 31..16              | // interning_idx
-| header      | fragment_count       |    8 | u32[0] bits 15..8               | // valueフラグメント数。0=null
-| header      | get_map_count       |    8 | u32[0] bits 7..0                | // get.mapエントリ数
-| header      | get_args_count      |    8 | u32[1] bits 31..24              | // get.argsエントリ数
-| header      | set_map_count      |    8 | u32[1] bits 23..16              | // store.mapエントリ数
-| header      | set_args_count     |    8 | u32[1] bits 15..8               | // store.argsエントリ数
-| header      | padding              |    8 | u32[1] bits 7..0                |
-| header      | get_store_idx      |   16 | u32[2] bits 31..16              | // interning_idx
-| header      | get_key_idx         |   16 | u32[2] bits 15..0               | // interning_idx
-| header      | set_store_idx     |   16 | u32[3] bits 31..16              | // interning_idx
-| header      | store_key_idx        |   16 | u32[3] bits 15..0               | // interning_idx
-| fragment×F  | padding              |   15 | u32[4+i] bits 31..17            |
-| fragment×F  | is_placeholder       |    1 | u32[4+i] bit 16                 | // 0=static, 1=placeholder
-| fragment×F  | idx                  |   16 | u32[4+i] bits 15..0             | // is_placeholder=0: interning_idx / 1: path_idx
-| get.map×M0 | dst_idx              |   16 | u32[4+F+i] bits 31..16          | // context path interning_idx
-| get.map×M0 | src_idx              |   16 | u32[4+F+i] bits 15..0           | // store column interning_idx
-| get.args×A0| key_idx              |   16 | u32[4+F+M0+i] bits 31..16       | // interning_idx
-| get.args×A0| val_idx              |   16 | u32[4+F+M0+i] bits 15..0        | // interning_idx
-| store.map×M1| dst_idx              |   16 | u32[4+F+M0+A0+i] bits 31..16    | // context path interning_idx
-| store.map×M1| src_idx              |   16 | u32[4+F+M0+A0+i] bits 15..0     | // store column interning_idx
-| store.args×A1| key_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 31..16 | // interning_idx
-| store.args×A1| val_idx             |   16 | u32[4+F+M0+A0+M1+i] bits 15..0  | // interning_idx
-
-// F=fragment_count, M0=get_map_count, A0=get_args_count, M1=set_map_count, A1=set_args_count
-
-**valueの解釈:**
-- `fragment_count=0`: null
-- `fragment_count=1, is_placeholder=0`: 静的文字列
-- `fragment_count=1, is_placeholder=1`: 単独`${path}` → `Context.get(path_idx)`の値をそのままコピー（型保持）
-- `fragment_count≥2` または混在: template → 各fragmentを解決しstring結合
-
-
-### interning_idx ([u64])
-
-| Field  | Bits | Range  |
-|--------|------|--------|
-| offset |   32 | 63..32 |
-| padding|   16 | 31..16 |
-| len    |   16 | 15..0  |
-
-**1文字列の最大長はu16(65535バイト以下)を充てる。**
-
-インデックス0は空文字列（virtual rootのkeyword）。
+- len=0: null
+- len=1, is_placeholder=0: 静的文字列
+- len=1, is_placeholder=1: 単独placeholder → `Context.get(word)`の値をそのままコピー（型保持）
+- len≥2: template → 各fragmentを`Context.get()`で解決しstring結合
 
 ## Placeholder Resolution Rules
 
-`${}`内のパスは常に絶対パスとして扱う。
-
-**実行時の解決:**
-- `fragment_count=1, is_placeholder=1`: `Context.get(path_idx)`の値をそのままコピー（string化しない）
-- template: 各fragmentを`Context.get()`で解決しstringとして結合
+`${}`内のパスは常に絶対パスとして扱う。self-callingの再帰検出はContextの`guard_recursion`が担保。
 
 ## Error Types
 
