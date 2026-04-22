@@ -279,11 +279,38 @@ impl<'r> Context<'r> {
         let args_ref: BTreeMap<&str, Tree> = get_args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
             .collect();
-        let value = store.get(key.as_bytes(), &args_ref)
+        let fetched = store.get(key.as_bytes(), &args_ref)
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
         debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> _get hit");
+
+        // map展開: mapあり → 各dst path_idにcache_set → 自分をcache_getで再取得
+        // mapなし → 返り値をそのまま自分の値として扱う
+        let value = if let Some(map) = get_args.get("map") {
+            if let (Tree::Mapping(map_pairs), Tree::Mapping(fetched_pairs)) = (map, &fetched) {
+                for (dst_kw, src_scalar) in map_pairs {
+                    let src_key = if let Tree::Scalar(b) = src_scalar {
+                        from_utf8(b).unwrap_or("")
+                    } else { continue };
+                    let fetched_val = fetched_pairs.iter()
+                        .find(|(k, _)| k.as_slice() == src_key.as_bytes())
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or(Tree::Null);
+                    let dst_path_id = self.index.path_id_of_keyword(leaf_ref.path_id, dst_kw);
+                    if let Some(pid) = dst_path_id {
+                        self.cache_set(pid, fetched_val);
+                    }
+                }
+            }
+            debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> map expanded");
+            match self.cache_get(path_id) {
+                Some(v) => v.clone(),
+                None => return Ok(None),
+            }
+        } else {
+            fetched
+        };
 
         // write-through to _set
         if set_store_id != 0 {

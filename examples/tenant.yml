@@ -86,6 +86,7 @@ connection:
         
     host:
     port:
+    database:
     username:
     password:
     driver:  "postgres"

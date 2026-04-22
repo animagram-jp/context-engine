@@ -8,7 +8,9 @@ extern crate std;
 #[cfg(test)]
 extern crate std;
 
-pub(crate) mod debug_log;
+pub mod debug_log;
+#[doc(hidden)]
+pub use alloc::{vec, vec::Vec, string::String};
 pub mod required;
 pub mod list;
 pub mod tree;

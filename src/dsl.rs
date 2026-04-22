@@ -142,6 +142,7 @@ impl Dsl {
             compiler.paths.data[0] = root;
         }
 
+        compiler.resolve_map_dst()?;
         compiler.finish()
     }
 
@@ -195,40 +196,44 @@ impl Dsl {
 
 #[derive(Clone)]
 struct MetaBlock {
-    store_id:   u8,               // index into store_ids (0 = none)
-    key_value:  Vec<u16>,         // value fragment u16s for key
-    map_entries: Vec<(u16, u16)>, // (dst_word_id, src_word_id)
+    store_id:    u8,
+    defined_at:  u16,              // path_id of the node where this _get/_set was defined
+    key_value:   Vec<u16>,         // value fragment u16s for key
+    map_entries: Vec<(u16, u16)>,  // (dst_word_id, src_word_id)
     arg_entries: Vec<(u16, Vec<u16>)>, // (key_word_id, val fragment u16s)
 }
 
 // ── Compiler ──────────────────────────────────────────────────────────────────
 
 struct Compiler<'s> {
-    store_ids:  &'s [&'s str],
-    paths:      List<u64>,
-    children:   VariableList<u16>,
-    leaves:     VariableList<u16>,
-    values:     VariableList<u16>,
-    words:      VariableList<u8>,
-    map_keys:   VariableList<u16>,
-    map_vals:   VariableList<u16>,
-    args_keys:  VariableList<u16>,
-    args_vals:  VariableList<u16>,
+    store_ids:       &'s [&'s str],
+    paths:           List<u64>,
+    children:        VariableList<u16>,
+    leaves:          VariableList<u16>,
+    values:          VariableList<u16>,
+    words:           VariableList<u8>,
+    map_keys:        VariableList<u16>,
+    map_vals:        VariableList<u16>,
+    args_keys:       VariableList<u16>,
+    args_vals:       VariableList<u16>,
+    // (map_key_id, defined_at): used in 2nd pass to resolve dst word_id → path_id
+    map_dst_pending: Vec<(u16, u16)>,
 }
 
 impl<'s> Compiler<'s> {
     fn new(store_ids: &'s [&'s str]) -> Self {
         Self {
             store_ids,
-            paths:     List::new(1),   // paths[0] placeholder
-            children:  VariableList::new(),
-            leaves:    VariableList::new(),
-            values:    VariableList::new(),
-            words:     VariableList::new(),
-            map_keys:  VariableList::new(),
-            map_vals:  VariableList::new(),
-            args_keys: VariableList::new(),
-            args_vals: VariableList::new(),
+            paths:           List::new(1),   // paths[0] placeholder
+            children:        VariableList::new(),
+            leaves:          VariableList::new(),
+            values:          VariableList::new(),
+            words:           VariableList::new(),
+            map_keys:        VariableList::new(),
+            map_vals:        VariableList::new(),
+            args_keys:       VariableList::new(),
+            args_vals:       VariableList::new(),
+            map_dst_pending: Vec::new(),
         }
     }
 
@@ -279,8 +284,8 @@ impl<'s> Compiler<'s> {
 
         match value {
             Tree::Mapping(pairs) => {
-                let get = self.resolve_meta(pairs, META_GET, inh_get)?;
-                let set = self.resolve_meta(pairs, META_SET, inh_set)?;
+                let get = self.resolve_meta(pairs, META_GET, inh_get, path_id)?;
+                let set = self.resolve_meta(pairs, META_SET, inh_set, path_id)?;
 
                 let field_pairs: Vec<_> = pairs.iter()
                     .filter(|(k, _)| k.first() != Some(&b'_'))
@@ -313,9 +318,10 @@ impl<'s> Compiler<'s> {
 
     fn resolve_meta(
         &mut self,
-        pairs:     &[(Vec<u8>, Tree)],
-        meta_key:  &[u8],
-        inherited: Option<&MetaBlock>,
+        pairs:           &[(Vec<u8>, Tree)],
+        meta_key:        &[u8],
+        inherited:       Option<&MetaBlock>,
+        current_path_id: u16,
     ) -> Result<Option<MetaBlock>, DslError> {
         let local = pairs.iter().find(|(k, _)| k.as_slice() == meta_key);
         match (local, inherited) {
@@ -323,6 +329,7 @@ impl<'s> Compiler<'s> {
             (None, Some(inh)) => Ok(Some(inh.clone())),
             (Some((_, Tree::Mapping(meta_pairs))), inh) => {
                 let mut store_id    = inh.map(|b| b.store_id).unwrap_or(0);
+                let mut defined_at  = inh.map(|b| b.defined_at).unwrap_or(0);
                 let mut key_value: Vec<u16>               = inh.map(|b| b.key_value.clone()).unwrap_or_default();
                 let mut map_entries: Vec<(u16, u16)>      = inh.map(|b| b.map_entries.clone()).unwrap_or_default();
                 let mut arg_entries: Vec<(u16, Vec<u16>)> = inh.map(|b| b.arg_entries.clone()).unwrap_or_default();
@@ -342,6 +349,7 @@ impl<'s> Compiler<'s> {
                                 let src = if let Tree::Scalar(b) = mv { self.intern_word(b)? } else { 0 };
                                 map_entries.push((dst, src));
                             }
+                            defined_at = current_path_id;
                         }
                     } else if k.as_slice() != META_GET
                            && k.as_slice() != META_SET
@@ -355,7 +363,7 @@ impl<'s> Compiler<'s> {
                         }
                     }
                 }
-                Ok(Some(MetaBlock { store_id, key_value, map_entries, arg_entries }))
+                Ok(Some(MetaBlock { store_id, defined_at, key_value, map_entries, arg_entries }))
             }
             _ => Ok(inherited.cloned()),
         }
@@ -426,8 +434,10 @@ impl<'s> Compiler<'s> {
         } else {
             let dsts: Vec<u16> = b.map_entries.iter().map(|&(d, _)| d).collect();
             let srcs: Vec<u16> = b.map_entries.iter().map(|&(_, s)| s).collect();
-            (self.push_map_keys(&dsts)?,
-             self.push_map_vals(&srcs)?)
+            let mk_id = self.push_map_keys(&dsts)?;
+            let mv_id = self.push_map_vals(&srcs)?;
+            self.map_dst_pending.push((mk_id, b.defined_at));
+            (mk_id, mv_id)
         };
 
         let (args_key_id, args_val_id) = if b.arg_entries.is_empty() {
@@ -558,6 +568,57 @@ impl<'s> Compiler<'s> {
             .unwrap_or(0)
     }
 
+    // ── 2nd pass: resolve map dst word_id → path_id ───────────────────────────
+
+    fn resolve_map_dst(&mut self) -> Result<(), DslError> {
+        let pending = core::mem::take(&mut self.map_dst_pending);
+        for (map_key_id, defined_at) in pending {
+            let mk_start = self.map_keys.identity[map_key_id as usize * 2];
+            let mk_end   = self.map_keys.identity[map_key_id as usize * 2 + 1];
+            for i in mk_start..mk_end {
+                let word_id  = self.map_keys.data[i];
+                let kw_start = self.words.identity[word_id as usize * 2];
+                let kw_end   = self.words.identity[word_id as usize * 2 + 1];
+                let keyword  = self.words.data[kw_start..kw_end].to_vec();
+                let path_id  = self.find_path_by_keyword_chain(defined_at, &keyword)?;
+                self.map_keys.data[i] = path_id;
+            }
+        }
+        Ok(())
+    }
+
+    // keyword may be dotted (e.g. b"preference.color_mode"); resolve from parent_id
+    fn find_path_by_keyword_chain(&self, parent_id: u16, keyword: &[u8]) -> Result<u16, DslError> {
+        let mut current = parent_id;
+        for segment in keyword.split(|&b| b == b'.') {
+            current = self.find_child_path(current, segment)
+                .ok_or_else(|| DslError::LimitExceeded(alloc::format!(
+                    "map dst {:?} not found under path_id {}",
+                    core::str::from_utf8(keyword).unwrap_or("?"), parent_id
+                )))?;
+        }
+        Ok(current)
+    }
+
+    fn find_child_path(&self, path_id: u16, keyword: &[u8]) -> Option<u16> {
+        let path = self.paths.data[path_id as usize];
+        if path & PATH_IS_LEAF_MASK != 0 { return None; }
+        let children_id = ((path & PATH_CHILD_ID_MASK) >> PATH_CHILD_ID_SHIFT) as usize;
+        if children_id == 0 { return None; }
+        let ck_start = self.children.identity[children_id * 2];
+        let ck_end   = self.children.identity[children_id * 2 + 1];
+        for &child_id in &self.children.data[ck_start..ck_end] {
+            let child_path = self.paths.data[child_id as usize];
+            let word_id = ((child_path & PATH_KEYWORD_ID_MASK) >> PATH_KEYWORD_ID_SHIFT) as usize;
+            let wk_start = self.words.identity[word_id * 2];
+            let wk_end   = self.words.identity[word_id * 2 + 1];
+            if &self.words.data[wk_start..wk_end] == keyword {
+                return Some(child_id);
+            }
+        }
+        None
+    }
+
     // ── finish ────────────────────────────────────────────────────────────────
 
     fn finish(self) -> Result<(
@@ -643,7 +704,6 @@ fn check_vl_u16_identity_u8(vl: &VariableList<u8>, name: &str) -> Result<(), all
 #[cfg(feature = "precompile")]
 pub fn parse_yaml(src: &[u8]) -> Result<Tree, alloc::string::String> {
     extern crate std;
-    use std::string::ToString;
     use std::format;
 
     let s = std::str::from_utf8(src)

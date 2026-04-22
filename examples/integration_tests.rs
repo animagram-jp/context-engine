@@ -6,9 +6,10 @@ mod implements;
 use implements::MyStores;
 use context_engine::context::Context;
 use context_engine::provided::{Context as ContextTrait, ContextError};
-use context_engine::{Index, Tree};
+use context_engine::{Index, Tree, debug_log};
 use context_engine::list::{List, VariableList};
 use std::sync::Arc;
+use env_logger;
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ fn scalar(s: &str) -> Tree {
 // ── test runner ───────────────────────────────────────────────────────────────
 
 fn main() {
+    env_logger::init();
     let mut passed = 0usize;
     let mut failed = 0usize;
 
@@ -147,6 +149,7 @@ fn main() {
         let mut ctx = make_context(&stores);
         // session.user.name not set, _get will fail
         let result = ctx.get("session.user.name_copy");
+        debug_log!("integration_test", "get returns LoadFailed", &format!("{:?}", result));
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
 

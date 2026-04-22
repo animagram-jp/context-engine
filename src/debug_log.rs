@@ -5,7 +5,7 @@ use alloc::string::{
 use crate::provided::Tree;
 
 #[cfg(feature = "logging")]
-pub(crate) fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
+pub fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
     let mut s = String::from(class);
     s.push_str("::");
     s.push_str(fn_name);
@@ -19,7 +19,7 @@ pub(crate) fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
 }
 
 #[cfg(feature = "logging")]
-pub(crate) fn format_arg(value: &Tree) -> String {
+pub fn format_arg(value: &Tree) -> String {
     match value {
         Tree::Scalar(b) => {
             let s = String::from_utf8_lossy(b);
@@ -54,7 +54,7 @@ pub(crate) fn format_arg(value: &Tree) -> String {
 }
 
 #[cfg(feature = "logging")]
-pub(crate) fn format_str_arg(s: &str) -> String {
+pub fn format_str_arg(s: &str) -> String {
     if s.len() > 50 {
         let mut out = String::from("'");
         out.push_str(&s[..47]);
@@ -73,10 +73,10 @@ macro_rules! debug_log {
     ($class:expr, $fun:expr $(, $arg:expr)*) => {{
         #[cfg(feature = "logging")]
         {
-            let formatted: alloc::vec::Vec<alloc::string::String> = alloc::vec![
+            let formatted: $crate::Vec<$crate::String> = $crate::vec![
                 $( $crate::debug_log::format_str_arg($arg), )*
             ];
-            let refs: alloc::vec::Vec<&str> = formatted.iter().map(|s| s.as_str()).collect();
+            let refs: $crate::Vec<&str> = formatted.iter().map(|s| s.as_str()).collect();
             log::debug!("{}", $crate::debug_log::message($class, $fun, &refs));
         }
     }};

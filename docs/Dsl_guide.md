@@ -53,6 +53,8 @@ user:
 
 `_set` / `_get` inheritance rule: child's fields overwrite matching keys; unspecified fields are inherited as-is. Inheritance is resolved at compile time — runtime traversal carries no parent state.
 
+**例外: `store` を上書きした場合、`map` は継承されない（クリアされる）。** 取得源が変わればmap構造も別になるため。`map` を引き継ぎたい場合は子ノードで明示的に再定義する。
+
 ### 2. Placeholder / Template
 
 **is_template:**
@@ -93,7 +95,7 @@ implementorは `args: &BTreeMap<&str, Tree>` から任意キーを取り出し�
 
 #### _set.key の省略
 
-`_set.key` は省略可能。省略時、ライブラリはそのleafの `path_idx`（compile時確定のu32）を文字列化してstore keyとして使う。
+`_set.key` は省略可能。省略時、ライブラリはそのleafの `path_id`（compile時確定のu32）を文字列化してstore keyとして使う。
 
 ```yaml
 session:
@@ -101,7 +103,7 @@ session:
     _set:
       store: Kvs
       ttl: 3600
-      # key: 省略 → path_idxが自動的にstore keyになる
+      # key: 省略 → path_idが自動的にstore keyになる
     id:
       _get:
         store: Memory
@@ -109,9 +111,9 @@ session:
 ```
 
 **この設計の根拠:**
-- `path_idx`は同じYAMLから生成された全インスタンスで同一（compile時確定）
+- `path_id`は同じYAMLから生成された全インスタンスで同一（compile時確定）
 - qualified_pathを文字列で持たなくてもleaf固有の一意キーとして機能する
-- 中間パス（`session.user`）経由のgetでも各leafが自身の`path_idx`を使うため衝突しない
+- 中間パス（`session.user`）経由のgetでも各leafが自身の`path_id`を使うため衝突しない
 
 `_get.key` は省略不可。
 

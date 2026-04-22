@@ -155,6 +155,18 @@ impl Index {
         debug_log!("Index", "leaf_fragments", &alloc::format!("path_id={}", leaf.path_id), &alloc::format!("-> {} frag(s)", result.len()));
         result
     }
+
+    /// leaf の path_id と同じ親を持つ sibling を keyword で探して path_id を返す。
+    /// map dst の cache_set 先を特定するために使う。
+    pub fn path_id_of_keyword(&self, leaf_path_id: u16, keyword: &[u8]) -> Option<u16> {
+        let path = self.paths.data[leaf_path_id as usize];
+        let parent_id = ((path & PATH_PARENT_ID_MASK) >> PATH_PARENT_ID_SHIFT) as u16;
+        let mut current = parent_id;
+        for segment in keyword.split(|&b| b == b'.') {
+            current = self.find_child(current, segment)?;
+        }
+        Some(current)
+    }
 }
 
 // ── private ───────────────────────────────────────────────────────────────────
@@ -238,15 +250,15 @@ impl Index {
             }
         }
 
-        // map entries: parallel map_keys / map_vals lists
+        // map entries: map_keys holds dst path_ids, map_vals holds src word_ids
         if map_key_id != 0 && map_val_id != 0 {
             if let (Some(dsts), Some(srcs)) = (
                 self.map_keys_slice(map_key_id as usize),
                 self.map_vals_slice(map_val_id as usize),
             ) {
                 let mut map_pairs: Vec<(Vec<u8>, Tree)> = Vec::new();
-                for (&dst_word_id, &src_word_id) in dsts.iter().zip(srcs.iter()) {
-                    let dst = self.word_bytes(dst_word_id as usize).to_vec();
+                for (&dst_path_id, &src_word_id) in dsts.iter().zip(srcs.iter()) {
+                    let dst = self.keyword_of(dst_path_id).to_vec();
                     let src = self.word_bytes(src_word_id as usize).to_vec();
                     map_pairs.push((dst, Tree::Scalar(src)));
                 }
