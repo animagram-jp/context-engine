@@ -4,6 +4,7 @@ use alloc::string::{
 };
 use crate::provided::Tree;
 
+#[cfg(feature = "logging")]
 pub(crate) fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
     let mut s = String::from(class);
     s.push_str("::");
@@ -17,6 +18,7 @@ pub(crate) fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
     s
 }
 
+#[cfg(feature = "logging")]
 pub(crate) fn format_arg(value: &Tree) -> String {
     match value {
         Tree::Scalar(b) => {
@@ -51,6 +53,7 @@ pub(crate) fn format_arg(value: &Tree) -> String {
     }
 }
 
+#[cfg(feature = "logging")]
 pub(crate) fn format_str_arg(s: &str) -> String {
     if s.len() > 50 {
         let mut out = String::from("'");
@@ -79,7 +82,7 @@ macro_rules! debug_log {
     }};
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "logging"))]
 mod tests {
     use super::*;
     use alloc::vec;

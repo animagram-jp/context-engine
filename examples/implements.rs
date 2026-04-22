@@ -7,7 +7,7 @@ fn main() {}
 use context_engine::required::{Store, Stores, SetOutcome};
 use context_engine::provided::Tree;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{vec::Vec};
 use crate::provided::{DslError, Tree};
 use crate::list::{List, VariableList};
 
@@ -16,13 +16,13 @@ pub const PROP_MAP:   &[u8] = b"map";
 
 // ── path field layout (u64) ───────────────────────────────────────────────────
 //
-// | field       | bits  |
-// |-------------|-------|
-// | is_leaf     |     1 | bit 63
-// | keyword_id  |    15 | bits 62..48
-// | parent_id   |    16 | bits 47..32
-// | child/leaf_id |  16 | bits 31..16  is_leaf=0: children id / is_leaf=1: leaves id
-// | value_id    |    16 | bits 15..0
+// | field         | bits  |
+// |---------------|-------|
+// | is_leaf       |     1 | bit 63
+// | keyword_id    |    15 | bits 62..48
+// | parent_id     |    16 | bits 47..32
+// | child/leaf_id |    16 | bits 31..16  is_leaf=0: children id / is_leaf=1: leaves id
+// | value_id      |    16 | bits 15..0
 
 pub const PATH_IS_LEAF_SHIFT:    u64 = 63;
 pub const PATH_KEYWORD_ID_SHIFT: u64 = 48;
@@ -133,8 +133,8 @@ impl Dsl {
             let children_id = compiler.alloc_children_slots(field_pairs.len())?;
 
             for (i, (k, v)) in field_pairs.iter().enumerate() {
-                let child_idx = compiler.paths.data.len() as u16;
-                compiler.set_child(children_id, i, child_idx);
+                let child_id = compiler.paths.data.len() as u16;
+                compiler.set_child(children_id, i, child_id);
                 compiler.walk_field_key(k, v, 0, None, None)?;
             }
 
@@ -235,14 +235,14 @@ impl<'s> Compiler<'s> {
     // ── path push ─────────────────────────────────────────────────────────────
 
     fn push_path(&mut self, entry: u64) -> Result<u16, DslError> {
-        let idx = self.paths.data.len();
-        if idx > MAX_PATH_ID {
+        let id = self.paths.data.len();
+        if id > MAX_PATH_ID {
             return Err(DslError::LimitExceeded(alloc::format!(
-                "path_id {} exceeds max {}", idx, MAX_PATH_ID
+                "path_id {} exceeds max {}", id, MAX_PATH_ID
             )));
         }
         self.paths.data.push(entry);
-        Ok(idx as u16)
+        Ok(id as u16)
     }
 
     // ── children slot helpers ─────────────────────────────────────────────────
@@ -256,11 +256,11 @@ impl<'s> Compiler<'s> {
         }
     }
 
-    fn set_child(&mut self, children_id: usize, slot: usize, path_idx: u16) {
+    fn set_child(&mut self, children_id: usize, slot: usize, path_id: u16) {
         if children_id == 0 { return; }
         let identity_start = children_id * 2;
         let start = self.children.identity[identity_start];
-        self.children.data[start + slot] = path_idx;
+        self.children.data[start + slot] = path_id;
     }
 
     // ── walk ──────────────────────────────────────────────────────────────────
@@ -269,11 +269,11 @@ impl<'s> Compiler<'s> {
         &mut self,
         keyword:    &[u8],
         value:      &Tree,
-        parent_idx: u16,
+        parent_id: u16,
         inh_get:    Option<&MetaBlock>,
         inh_set:    Option<&MetaBlock>,
     ) -> Result<(), DslError> {
-        let path_idx = self.push_path(0u64)?; // placeholder, filled below
+        let path_id = self.push_path(0u64)?; // placeholder, filled below
 
         let keyword_id = self.intern_word(keyword)?;
 
@@ -288,22 +288,22 @@ impl<'s> Compiler<'s> {
                 let child_count = field_pairs.len();
 
                 if child_count == 0 {
-                    self.write_leaf(path_idx, keyword_id, parent_idx, &Tree::Null, get.as_ref(), set.as_ref())?;
+                    self.write_leaf(path_id, keyword_id, parent_id, &Tree::Null, get.as_ref(), set.as_ref())?;
                 } else {
                     let children_id = self.alloc_children_slots(child_count)?;
                     for (i, (k, v)) in field_pairs.iter().enumerate() {
-                        let child_idx = self.paths.data.len() as u16;
-                        self.set_child(children_id, i, child_idx);
-                        self.walk_field_key(k, v, path_idx, get.as_ref(), set.as_ref())?;
+                        let child_id = self.paths.data.len() as u16;
+                        self.set_child(children_id, i, child_id);
+                        self.walk_field_key(k, v, path_id, get.as_ref(), set.as_ref())?;
                     }
-                    self.paths.data[path_idx as usize] =
+                    self.paths.data[path_id as usize] =
                         ((keyword_id as u64) << PATH_KEYWORD_ID_SHIFT)
-                        | ((parent_idx as u64) << PATH_PARENT_ID_SHIFT)
+                        | ((parent_id as u64) << PATH_PARENT_ID_SHIFT)
                         | ((children_id as u64) << PATH_CHILD_ID_SHIFT);
                 }
             }
             _ => {
-                self.write_leaf(path_idx, keyword_id, parent_idx, value, inh_get, inh_set)?;
+                self.write_leaf(path_id, keyword_id, parent_id, value, inh_get, inh_set)?;
             }
         }
         Ok(())
@@ -365,9 +365,9 @@ impl<'s> Compiler<'s> {
 
     fn write_leaf(
         &mut self,
-        path_idx:   u16,
+        path_id:   u16,
         keyword_id: u16,
-        parent_idx: u16,
+        parent_id: u16,
         value:      &Tree,
         get:        Option<&MetaBlock>,
         set:        Option<&MetaBlock>,
@@ -405,10 +405,10 @@ impl<'s> Compiler<'s> {
             _ => return Err(DslError::LimitExceeded("leaf allocation failed".into())),
         };
 
-        self.paths.data[path_idx as usize] =
+        self.paths.data[path_id as usize] =
             PATH_IS_LEAF_MASK
             | ((keyword_id as u64) << PATH_KEYWORD_ID_SHIFT)
-            | ((parent_idx as u64) << PATH_PARENT_ID_SHIFT)
+            | ((parent_id as u64) << PATH_PARENT_ID_SHIFT)
             | ((leaf_id as u64)    << PATH_CHILD_ID_SHIFT)
             | (value_id as u64);
         Ok(())

@@ -6,6 +6,7 @@ use core::str::from_utf8;
 
 use crate::index::Index;
 use crate::provided::{Context as ContextTrait, ContextError, StoreError, LoadError, Tree};
+use crate::debug_log;
 use crate::required::{Stores, SetOutcome};
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -31,30 +32,30 @@ impl<'r> Context<'r> {
         }
     }
 
-    fn cache_get(&self, path_idx: u16) -> Option<&Tree> {
+    fn cache_get(&self, path_id: u16) -> Option<&Tree> {
         self.cache_keys.iter()
-            .position(|&k| k == path_idx)
+            .position(|&k| k == path_id)
             .and_then(|i| self.cache_vals.get(i))
     }
 
-    fn cache_set(&mut self, path_idx: u16, value: Tree) {
-        if let Some(i) = self.cache_keys.iter().position(|&k| k == path_idx) {
+    fn cache_set(&mut self, path_id: u16, value: Tree) {
+        if let Some(i) = self.cache_keys.iter().position(|&k| k == path_id) {
             self.cache_vals[i] = value;
         } else {
-            self.cache_keys.push(path_idx);
+            self.cache_keys.push(path_id);
             self.cache_vals.push(value);
         }
     }
 
-    fn cache_remove(&mut self, path_idx: u16) {
-        if let Some(i) = self.cache_keys.iter().position(|&k| k == path_idx) {
+    fn cache_remove(&mut self, path_id: u16) {
+        if let Some(i) = self.cache_keys.iter().position(|&k| k == path_id) {
             self.cache_keys[i] = u16::MAX;
             self.cache_vals[i] = Tree::Null;
         }
     }
 
-    fn guard_recursion(&self, path_idx: u16) -> Result<(), ContextError> {
-        if self.called_paths.len() >= self.max_recursion || self.called_paths.contains(&path_idx) {
+    fn guard_recursion(&self, path_id: u16) -> Result<(), ContextError> {
+        if self.called_paths.len() >= self.max_recursion || self.called_paths.contains(&path_id) {
             return Err(ContextError::RecursionLimitExceeded);
         }
         Ok(())
@@ -65,6 +66,7 @@ impl<'r> Context<'r> {
 
 impl<'r> ContextTrait for Context<'r> {
     fn get(&mut self, key: &str) -> Result<Option<Tree>, ContextError> {
+        debug_log!("Context", "get", key);
         let leaves = self.index.traverse(key);
         if leaves.is_empty() {
             return Err(ContextError::KeyNotFound(key.to_string()));
@@ -72,20 +74,20 @@ impl<'r> ContextTrait for Context<'r> {
 
         if leaves.len() == 1 {
             let leaf = &leaves[0];
-            self.guard_recursion(leaf.path_idx)?;
-            self.called_paths.insert(leaf.path_idx);
-            let result = self.resolve_leaf(leaf.path_idx, leaf.leaf_id, leaf.value_id);
-            self.called_paths.remove(&leaf.path_idx);
+            self.guard_recursion(leaf.path_id)?;
+            self.called_paths.insert(leaf.path_id);
+            let result = self.resolve_leaf(leaf.path_id, leaf.leaf_id, leaf.value_id);
+            self.called_paths.remove(&leaf.path_id);
             result
         } else {
             let mut pairs: Vec<(Vec<u8>, Tree)> = Vec::new();
             for leaf in leaves.iter() {
-                self.guard_recursion(leaf.path_idx)?;
-                self.called_paths.insert(leaf.path_idx);
-                let value = self.resolve_leaf(leaf.path_idx, leaf.leaf_id, leaf.value_id)?;
-                self.called_paths.remove(&leaf.path_idx);
+                self.guard_recursion(leaf.path_id)?;
+                self.called_paths.insert(leaf.path_id);
+                let value = self.resolve_leaf(leaf.path_id, leaf.leaf_id, leaf.value_id)?;
+                self.called_paths.remove(&leaf.path_id);
                 if let Some(v) = value {
-                    let keyword = self.index.keyword_of(leaf.path_idx).to_vec();
+                    let keyword = self.index.keyword_of(leaf.path_id).to_vec();
                     pairs.push((keyword, v));
                 }
             }
@@ -94,6 +96,7 @@ impl<'r> ContextTrait for Context<'r> {
     }
 
     fn set(&mut self, key: &str, value: Tree) -> Result<bool, ContextError> {
+        debug_log!("Context", "set", key, &crate::debug_log::format_arg(&value));
         let leaves = self.index.traverse(key);
         if leaves.is_empty() {
             return Err(ContextError::KeyNotFound(key.to_string()));
@@ -106,10 +109,10 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(store_id.to_string())
             ))?;
 
-        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
+        let id_str = alloc::string::ToString::to_string(&leaf.path_id);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(&idx_str);
+            .unwrap_or(&id_str);
 
         let mut args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -118,7 +121,7 @@ impl<'r> ContextTrait for Context<'r> {
 
         match store.set(store_key.as_bytes(), &args_ref) {
             Some(SetOutcome::Created(_)) | Some(SetOutcome::Updated) => {
-                self.cache_set(leaf.path_idx, value);
+                self.cache_set(leaf.path_id, value);
                 Ok(true)
             }
             None => Ok(false),
@@ -126,6 +129,7 @@ impl<'r> ContextTrait for Context<'r> {
     }
 
     fn delete(&mut self, key: &str) -> Result<bool, ContextError> {
+        debug_log!("Context", "delete", key);
         let leaves = self.index.traverse(key);
         if leaves.is_empty() {
             return Err(ContextError::KeyNotFound(key.to_string()));
@@ -138,10 +142,10 @@ impl<'r> ContextTrait for Context<'r> {
                 StoreError::ClientNotFound(store_id.to_string())
             ))?;
 
-        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
+        let id_str = alloc::string::ToString::to_string(&leaf.path_id);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(&idx_str);
+            .unwrap_or(&id_str);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -149,19 +153,21 @@ impl<'r> ContextTrait for Context<'r> {
 
         let ok = store.delete(store_key.as_bytes(), &args_ref);
         if ok {
-            self.cache_remove(leaf.path_idx);
+            self.cache_remove(leaf.path_id);
         }
         Ok(ok)
     }
 
     fn exists(&mut self, key: &str) -> Result<bool, ContextError> {
+        debug_log!("Context", "exists", key);
         let leaves = self.index.traverse(key);
         if leaves.is_empty() {
             return Err(ContextError::KeyNotFound(key.to_string()));
         }
         let leaf = &leaves[0];
 
-        if let Some(v) = self.cache_get(leaf.path_idx) {
+        if let Some(v) = self.cache_get(leaf.path_id) {
+            debug_log!("Context", "exists", key, "-> cache hit");
             return Ok(!matches!(v, Tree::Null));
         }
 
@@ -170,10 +176,10 @@ impl<'r> ContextTrait for Context<'r> {
             return Ok(false);
         };
 
-        let idx_str = alloc::string::ToString::to_string(&leaf.path_idx);
+        let id_str = alloc::string::ToString::to_string(&leaf.path_id);
         let store_key = args.get("key")
             .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-            .unwrap_or(&idx_str);
+            .unwrap_or(&id_str);
 
         let args_ref: BTreeMap<&str, Tree> = args.iter()
             .map(|(k, v)| (k.as_str(), v.clone()))
@@ -186,26 +192,28 @@ impl<'r> ContextTrait for Context<'r> {
 // ── private helpers ───────────────────────────────────────────────────────────
 
 impl<'r> Context<'r> {
-    fn resolve_leaf(&mut self, path_idx: u16, leaf_id: u16, value_id: u16) -> Result<Option<Tree>, ContextError> {
-        if let Some(v) = self.cache_get(path_idx) {
+    fn resolve_leaf(&mut self, path_id: u16, leaf_id: u16, value_id: u16) -> Result<Option<Tree>, ContextError> {
+        if let Some(v) = self.cache_get(path_id) {
+            debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> cache hit");
             return Ok(Some(v.clone()));
         }
 
-        let leaf_ref = crate::index::LeafRef { path_idx, leaf_id, value_id };
+        let leaf_ref = crate::index::LeafRef { path_id, leaf_id, value_id };
 
         // _set
         let (set_store_id, set_args) = self.index.set_args(&leaf_ref);
         if set_store_id != 0 {
             if let Some(store) = self.stores.store_for(set_store_id) {
-                let idx_str = alloc::string::ToString::to_string(&path_idx);
+                let id_str = alloc::string::ToString::to_string(&path_id);
                 let store_key = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-                    .unwrap_or(&idx_str);
+                    .unwrap_or(&id_str);
                 let args_ref: BTreeMap<&str, Tree> = set_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 if let Some(value) = store.get(store_key.as_bytes(), &args_ref) {
-                    self.cache_set(path_idx, value.clone());
+                    debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> _set hit");
+                    self.cache_set(path_id, value.clone());
                     return Ok(Some(value));
                 }
             }
@@ -250,7 +258,7 @@ impl<'r> Context<'r> {
                 }
                 Tree::Scalar(buf.into_bytes())
             };
-            self.cache_set(path_idx, value.clone());
+            self.cache_set(path_id, value.clone());
             return Ok(Some(value));
         }
 
@@ -275,23 +283,25 @@ impl<'r> Context<'r> {
             .ok_or_else(|| ContextError::LoadFailed(
                 LoadError::NotFound(key.to_string())
             ))?;
+        debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> _get hit");
 
         // write-through to _set
         if set_store_id != 0 {
             if let Some(set_store) = self.stores.store_for(set_store_id) {
-                let idx_str = alloc::string::ToString::to_string(&path_idx);
+                let id_str = alloc::string::ToString::to_string(&path_id);
                 let sk = set_args.get("key")
                     .and_then(|v| if let Tree::Scalar(b) = v { from_utf8(b.as_slice()).ok() } else { None })
-                    .unwrap_or(&idx_str);
+                    .unwrap_or(&id_str);
                 let mut sargs: BTreeMap<&str, Tree> = set_args.iter()
                     .map(|(k, v)| (k.as_str(), v.clone()))
                     .collect();
                 sargs.insert("value", value.clone());
+                debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> write-through to _set");
                 set_store.set(sk.as_bytes(), &sargs);
             }
         }
 
-        self.cache_set(path_idx, value.clone());
+        self.cache_set(path_id, value.clone());
         Ok(Some(value))
     }
 }
