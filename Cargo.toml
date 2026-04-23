@@ -11,7 +11,7 @@ homepage = "https://github.com/animagram-jp/"
 readme = "README.md"
 keywords = ["context", "namespace", "yaml", "addressing"]
 categories = ["config", "data-structures", "template-engine", "parser-implementations", "web-programming"]
-exclude = ["examples/*"]
+exclude = ["examples/integration_tests.rs", "examples/implements.rs"]
 
 [dev-dependencies]
 env_logger = "0.11"
