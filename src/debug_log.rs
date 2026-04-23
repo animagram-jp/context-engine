@@ -1,7 +1,6 @@
-use alloc::string::{
-    String, 
-    ToString
-};
+#[cfg(feature = "logging")]
+use alloc::string::{String, ToString};
+#[cfg(feature = "logging")]
 use crate::provided::Tree;
 
 #[cfg(feature = "logging")]
