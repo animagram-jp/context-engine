@@ -1,10 +1,4 @@
-use alloc::{
-    collections::BTreeMap,
-    string::String,
-    vec::Vec,
-};
-use core::str::from_utf8;
-
+use alloc::vec::Vec;
 use crate::dsl::{
     PATH_IS_LEAF_MASK,
     PATH_KEYWORD_ID_SHIFT, PATH_KEYWORD_ID_MASK,
@@ -21,8 +15,9 @@ use crate::dsl::{
     LEAF_SET_ARGS_KEY_ID, LEAF_SET_ARGS_VAL_ID,
 };
 use crate::list::{List, VariableList};
-use crate::provided::Tree;
 use crate::debug_log;
+
+const EMPTY_SLICE: &[u16] = &[];
 
 // ── LeafRef ───────────────────────────────────────────────────────────────────
 
@@ -104,17 +99,23 @@ impl Index {
 
     /// Extract `_get` store_id and args for the given leaf.
     /// Returns (0, empty) if no `_get` is configured.
-    pub fn get_args(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>) {
+    /// Extract `_get` meta for the given leaf.
+    /// Returns (store_id, key_frags, map_keys, map_vals, args_keys, args_vals).
+    /// store_id=0 means no `_get` configured; all slices are empty in that case.
+    /// key_frags: VALUE_IS_PLACEHOLDER_MASK-flagged u16 fragments (same encoding as leaf values).
+    /// map_keys: dst path_id列, map_vals: src word_id列.
+    /// args_keys: arg name word_id列, args_vals: arg value values_id列 (each indexes into values).
+    pub fn get_meta(&self, leaf: &LeafRef) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16]) {
         let r = self.decode_meta(leaf, MetaKind::Get);
-        debug_log!("Index", "get_args", &alloc::format!("path_id={}", leaf.path_id), &alloc::format!("-> store_id={}", r.0));
+        debug_log!("Index", "get_meta", &alloc::format!("path_id={}", leaf.path_id), &alloc::format!("-> store_id={}", r.0));
         r
     }
 
-    /// Extract `_set` store_id and args for the given leaf.
-    /// Returns (0, empty) if no `_set` is configured.
-    pub fn set_args(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>) {
+    /// Extract `_set` meta for the given leaf.
+    /// Same layout as `get_meta`.
+    pub fn set_meta(&self, leaf: &LeafRef) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16]) {
         let r = self.decode_meta(leaf, MetaKind::Set);
-        debug_log!("Index", "set_args", &alloc::format!("path_id={}", leaf.path_id), &alloc::format!("-> store_id={}", r.0));
+        debug_log!("Index", "set_meta", &alloc::format!("path_id={}", leaf.path_id), &alloc::format!("-> store_id={}", r.0));
         r
     }
 
@@ -210,11 +211,15 @@ impl Index {
         }
     }
 
-    fn decode_meta(&self, leaf: &LeafRef, kind: MetaKind) -> (u8, BTreeMap<String, Tree>) {
+    fn decode_meta(&self, leaf: &LeafRef, kind: MetaKind) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16]) {
         let leaf_id = leaf.leaf_id as usize;
-        if leaf_id == 0 { return (0, BTreeMap::new()); }
-        let Some(leaf_data) = self.leaves_slice(leaf_id) else { return (0, BTreeMap::new()); };
-        if leaf_data.len() < LEAF_WIDTH { return (0, BTreeMap::new()); }
+        if leaf_id == 0 { return (0, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE); }
+        let Some(leaf_data) = self.leaves_slice(leaf_id) else {
+            return (0, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE);
+        };
+        if leaf_data.len() < LEAF_WIDTH {
+            return (0, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE);
+        }
 
         let (store_id_raw, key_id, map_key_id, map_val_id, args_key_id, args_val_id) = match kind {
             MetaKind::Get => (
@@ -236,70 +241,17 @@ impl Index {
         };
 
         let store_id = store_id_raw as u8;
-        if store_id == 0 { return (0, BTreeMap::new()); }
-
-        let mut args: BTreeMap<String, Tree> = BTreeMap::new();
-
-        // key
-        if key_id != 0 {
-            if let Some(frags) = self.values_slice(key_id as usize) {
-                let key_str = self.resolve_static_frags(frags);
-                if !key_str.is_empty() {
-                    args.insert(String::from("key"), Tree::Scalar(key_str.into_bytes()));
-                }
-            }
+        if store_id == 0 {
+            return (0, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE, EMPTY_SLICE);
         }
 
-        // map entries: map_keys holds dst path_ids, map_vals holds src word_ids
-        if map_key_id != 0 && map_val_id != 0 {
-            if let (Some(dsts), Some(srcs)) = (
-                self.map_keys_slice(map_key_id as usize),
-                self.map_vals_slice(map_val_id as usize),
-            ) {
-                let mut map_pairs: Vec<(Vec<u8>, Tree)> = Vec::new();
-                for (&dst_path_id, &src_word_id) in dsts.iter().zip(srcs.iter()) {
-                    let dst = self.keyword_of(dst_path_id).to_vec();
-                    let src = self.word_bytes(src_word_id as usize).to_vec();
-                    map_pairs.push((dst, Tree::Scalar(src)));
-                }
-                if !map_pairs.is_empty() {
-                    args.insert(String::from("map"), Tree::Mapping(map_pairs));
-                }
-            }
-        }
+        let key_frags  = if key_id != 0 { self.values_slice(key_id as usize).unwrap_or(EMPTY_SLICE) } else { EMPTY_SLICE };
+        let map_keys   = if map_key_id != 0 { self.map_keys_slice(map_key_id as usize).unwrap_or(EMPTY_SLICE) } else { EMPTY_SLICE };
+        let map_vals   = if map_val_id != 0 { self.map_vals_slice(map_val_id as usize).unwrap_or(EMPTY_SLICE) } else { EMPTY_SLICE };
+        let args_keys  = if args_key_id != 0 { self.args_keys_slice(args_key_id as usize).unwrap_or(EMPTY_SLICE) } else { EMPTY_SLICE };
+        let args_vals  = if args_val_id != 0 { self.args_vals_slice(args_val_id as usize).unwrap_or(EMPTY_SLICE) } else { EMPTY_SLICE };
 
-        // scalar args
-        if args_key_id != 0 && args_val_id != 0 {
-            if let (Some(keys), Some(vals)) = (
-                self.args_keys_slice(args_key_id as usize),
-                self.args_vals_slice(args_val_id as usize),
-            ) {
-                for (&key_word_id, &val_values_id) in keys.iter().zip(vals.iter()) {
-                    let k = from_utf8(self.word_bytes(key_word_id as usize)).unwrap_or("");
-                    if k.is_empty() { continue; }
-                    let v = if val_values_id == 0 {
-                        Tree::Null
-                    } else if let Some(frags) = self.values_slice(val_values_id as usize) {
-                        Tree::Scalar(self.resolve_static_frags(frags).into_bytes())
-                    } else {
-                        Tree::Null
-                    };
-                    args.insert(String::from(k), v);
-                }
-            }
-        }
-
-        (store_id, args)
-    }
-
-    /// Resolve a fragment list that is expected to be purely static (no placeholders at index time).
-    fn resolve_static_frags(&self, frags: &[u16]) -> String {
-        let mut buf = String::new();
-        for &f in frags {
-            let word_id = (f & VALUE_WORD_ID_MASK) as usize;
-            buf.push_str(from_utf8(self.word_bytes(word_id)).unwrap_or(""));
-        }
-        buf
+        (store_id, key_frags, map_keys, map_vals, args_keys, args_vals)
     }
 
     // ── slice helpers ─────────────────────────────────────────────────────────
@@ -312,7 +264,7 @@ impl Index {
         self.vl_slice_u16(&self.leaves, id)
     }
 
-    fn values_slice(&self, id: usize) -> Option<&[u16]> {
+    pub fn values_slice(&self, id: usize) -> Option<&[u16]> {
         self.vl_slice_u16(&self.values, id)
     }
 
@@ -339,7 +291,7 @@ impl Index {
         vl.data.get(start..end)
     }
 
-    fn word_bytes(&self, id: usize) -> &[u8] {
+    pub fn word_bytes(&self, id: usize) -> &[u8] {
         let identity_start = id * 2;
         let start = match self.words.identity.get(identity_start) {
             Some(&s) => s,
@@ -360,6 +312,7 @@ mod tests {
     use super::*;
     use alloc::vec;
     use crate::dsl::Dsl;
+    use crate::provided::Tree;
 
     fn scalar(s: &str) -> Tree { Tree::Scalar(s.as_bytes().to_vec()) }
     fn mapping(pairs: Vec<(&str, Tree)>) -> Tree {
@@ -442,10 +395,10 @@ mod tests {
         assert_eq!(index.keyword_of(1), b"user");
     }
 
-    // --- get_args ---
+    // --- get_meta ---
 
     #[test]
-    fn get_args_store_id() {
+    fn get_meta_store_id() {
         let index = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
                 ("_get", mapping(vec![
@@ -458,12 +411,12 @@ mod tests {
             ])),
         ]), &["Memory"]);
         let leaves = index.traverse("session.user.id");
-        let (store_id, _) = index.get_args(&leaves[0]);
+        let (store_id, _, _, _, _, _) = index.get_meta(&leaves[0]);
         assert_eq!(store_id, 1); // "Memory" is store_ids[0] → id=1
     }
 
     #[test]
-    fn get_args_key() {
+    fn get_meta_key_frags() {
         let index = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
                 ("_get", mapping(vec![
@@ -476,21 +429,27 @@ mod tests {
             ])),
         ]), &["Memory"]);
         let leaves = index.traverse("session.user.id");
-        let (_, args) = index.get_args(&leaves[0]);
-        assert_eq!(args.get("key"), Some(&Tree::Scalar(b"session:1".to_vec())));
+        let (_, key_frags, _, _, _, _) = index.get_meta(&leaves[0]);
+        assert_eq!(key_frags.len(), 1);
+        let word_id = (key_frags[0] & crate::dsl::VALUE_WORD_ID_MASK) as usize;
+        assert_eq!(index.word_bytes(word_id), b"session:1");
     }
 
     #[test]
-    fn get_args_no_get_returns_empty() {
+    fn get_meta_no_get_returns_empty() {
         let index = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = index.traverse("user.id");
-        let (store_id, args) = index.get_args(&leaves[0]);
+        let (store_id, key_frags, map_keys, map_vals, args_keys, args_vals) = index.get_meta(&leaves[0]);
         assert_eq!(store_id, 0);
-        assert!(args.is_empty());
+        assert!(key_frags.is_empty());
+        assert!(map_keys.is_empty());
+        assert!(map_vals.is_empty());
+        assert!(args_keys.is_empty());
+        assert!(args_vals.is_empty());
     }
 
     // --- leaf_fragments ---
@@ -540,10 +499,10 @@ mod tests {
         assert_eq!(frags[2], (false, b".suffix" as &[u8]));
     }
 
-    // --- set_args ---
+    // --- set_meta ---
 
     #[test]
-    fn set_args_store_id() {
+    fn set_meta_store_id() {
         let index = make_index_with_stores(&mapping(vec![
             ("session", mapping(vec![
                 ("_set", mapping(vec![
@@ -556,20 +515,24 @@ mod tests {
             ])),
         ]), &["Memory", "Kvs"]);
         let leaves = index.traverse("session.user.id");
-        let (store_id, _) = index.set_args(&leaves[0]);
+        let (store_id, _, _, _, _, _) = index.set_meta(&leaves[0]);
         assert_eq!(store_id, 2); // "Kvs" is store_ids[1] → id=2
     }
 
     #[test]
-    fn set_args_no_set_returns_empty() {
+    fn set_meta_no_set_returns_empty() {
         let index = make_index(&mapping(vec![
             ("user", mapping(vec![
                 ("id", Tree::Null),
             ])),
         ]));
         let leaves = index.traverse("user.id");
-        let (store_id, args) = index.set_args(&leaves[0]);
+        let (store_id, key_frags, map_keys, map_vals, args_keys, args_vals) = index.set_meta(&leaves[0]);
         assert_eq!(store_id, 0);
-        assert!(args.is_empty());
+        assert!(key_frags.is_empty());
+        assert!(map_keys.is_empty());
+        assert!(map_vals.is_empty());
+        assert!(args_keys.is_empty());
+        assert!(args_vals.is_empty());
     }
 }

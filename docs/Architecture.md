@@ -28,8 +28,8 @@
 | Index | `new` | `(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals) -> Index` | compile済みdslからIndexを構築 | index.rs |
 |       | `traverse` | `(&self, path: &str) -> Box<[LeafRef]>` | パス文字列からleaf参照リストを返す | index.rs |
 |       | `keyword_of` | `(&self, path_id: u16) -> &[u8]` | path_idからkeywordバイト列を返す | index.rs |
-|       | `get_args` | `(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>)` | leafの`_get` store_idとargsを返す | index.rs |
-|       | `set_args` | `(&self, leaf: &LeafRef) -> (u8, BTreeMap<String, Tree>)` | leafの`_set` store_idとargsを返す | index.rs |
+|       | `get_meta` | `(&self, leaf: &LeafRef) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16])` | `_get`ブロックのstore_id含む継承済みDslデータを返す | index.rs |
+|       | `set_meta` | `(&self, leaf: &LeafRef) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16])` | `_set`ブロックのstore_id含む継承済みDslデータを返す | index.rs |
 | Context | `new` | `(index: Arc<Index>, stores: &'r dyn Stores) -> Context` | IndexとStoresからContextを構築 | context.rs |
 |         | `get` | `(&mut self, key: &str) -> Result<Option<Tree>, ContextError>` | パス文字列から値(cache→_set→_get)を取得して返す | context.rs |
 |         | `set` | `(&mut self, key: &str, value: Tree) -> Result<bool, ContextError>` | 値から_setに書き込み、cacheも更新 | context.rs |

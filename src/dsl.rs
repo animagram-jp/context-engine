@@ -338,6 +338,8 @@ impl<'s> Compiler<'s> {
                     if k.as_slice() == PROP_STORE {
                         if let Tree::Scalar(b) = v {
                             store_id = self.resolve_store_id(b);
+                            map_entries.clear();
+                            defined_at = 0;
                         }
                     } else if k.as_slice() == PROP_KEY {
                         key_value = self.encode_value(v)?;

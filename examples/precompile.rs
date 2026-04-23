@@ -9,7 +9,7 @@ fn main() {
         .unwrap_or_else(|e| { eprintln!("read error: {e}"); std::process::exit(1); });
     // store_ids: ordered list matching the DSL's store: values
     // index position + 1 = store_id baked into leaf data
-    let store_ids = &["Memory", "Kvs", "TenantDb", "CommonDb", "Env"];
+    let store_ids = &["Memory", "Kvs", "Env", "CommonDb", "TenantDb"];
     context_engine::dsl::Dsl::write(&src, store_ids, &out)
         .unwrap_or_else(|e| { eprintln!("compile error: {e}"); std::process::exit(1); });
     println!("written: {}", out);

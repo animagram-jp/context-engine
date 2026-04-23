@@ -61,57 +61,57 @@ fn main() {
     test!("get gets from Memory when key is preset", {
         let stores = MyStores::new();
         stores.memory_set("request.authorization.user", scalar("42"));
-        let mut ctx = make_context(&stores);
-        let got = ctx.get("session.user.id").unwrap();
+        let mut context = make_context(&stores);
+        let got = context.get("session.user.id").unwrap();
         assert_eq!(got, Some(scalar("42")));
     });
 
     test!("get returns None when Memory has no key", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
+        let mut context = make_context(&stores);
         // _get returns None → LoadFailed(NotFound)
-        let result = ctx.get("session.user.id");
+        let result = context.get("session.user.id");
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
 
     test!("get cache hit on second call", {
         let stores = MyStores::new();
         stores.memory_set("request.authorization.user", scalar("42"));
-        let mut ctx = make_context(&stores);
-        ctx.get("session.user.id").unwrap();
+        let mut context = make_context(&stores);
+        context.get("session.user.id").unwrap();
         // Memory cleared — second get must come from cache
         stores.memory_clear();
-        let got = ctx.get("session.user.id").unwrap();
+        let got = context.get("session.user.id").unwrap();
         assert_eq!(got, Some(scalar("42")));
     });
 
     test!("set writes to Kvs and cache", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        assert!(ctx.set("session.user.id", scalar("99")).unwrap());
-        let got = ctx.get("session.user.id").unwrap();
+        let mut context = make_context(&stores);
+        assert!(context.set("session.user.id", scalar("99")).unwrap());
+        let got = context.get("session.user.id").unwrap();
         assert_eq!(got, Some(scalar("99")));
     });
 
     test!("exists true after set", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        ctx.set("session.user.id", scalar("1")).unwrap();
-        assert!(ctx.exists("session.user.id").unwrap());
+        let mut context = make_context(&stores);
+        context.set("session.user.id", scalar("1")).unwrap();
+        assert!(context.exists("session.user.id").unwrap());
     });
 
     test!("exists false before set", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        assert!(!ctx.exists("session.user.id").unwrap());
+        let mut context = make_context(&stores);
+        assert!(!context.exists("session.user.id").unwrap());
     });
 
     test!("delete removes from Kvs and cache", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        ctx.set("session.user.id", scalar("1")).unwrap();
-        assert!(ctx.delete("session.user.id").unwrap());
-        assert!(!ctx.exists("session.user.id").unwrap());
+        let mut context = make_context(&stores);
+        context.set("session.user.id", scalar("1")).unwrap();
+        assert!(context.delete("session.user.id").unwrap());
+        assert!(!context.exists("session.user.id").unwrap());
     });
 
     // =========================================================================
@@ -124,10 +124,27 @@ fn main() {
     test!("set and get without placeholder resolution", {
         // key contains ${session.user.id} but set bypasses _get
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        assert!(ctx.set("session.user.name", scalar("alice")).unwrap());
-        let got = ctx.get("session.user.name").unwrap();
+        let mut context = make_context(&stores);
+        assert!(context.set("session.user.name", scalar("alice")).unwrap());
+        let got = context.get("session.user.name").unwrap();
         assert_eq!(got, Some(scalar("alice")));
+    });
+
+    test!("get via _get resolves key placeholder and expands map", {
+        let stores = MyStores::new();
+        stores.memory_set("request.authorization.user", scalar("1"));
+        stores.tenant_db_set("users.id.1", Tree::Mapping(std::vec![
+            (b"name".to_vec(),          Tree::Scalar(b"alice".to_vec())),
+            (b"email".to_vec(),         Tree::Scalar(b"alice@example.com".to_vec())),
+            (b"password_hash".to_vec(), Tree::Scalar(b"hash".to_vec())),
+            (b"is_manager".to_vec(),    Tree::Scalar(b"false".to_vec())),
+            (b"color_mode".to_vec(),    Tree::Scalar(b"dark".to_vec())),
+        ]));
+        let mut context = make_context(&stores);
+        let got = context.get("session.user.name").unwrap();
+        assert_eq!(got, Some(scalar("alice")));
+        let got_email = context.get("session.user.email").unwrap();
+        assert_eq!(got_email, Some(scalar("alice@example.com")));
     });
 
     // =========================================================================
@@ -138,17 +155,17 @@ fn main() {
 
     test!("get resolves placeholder to session.user.name value", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        ctx.set("session.user.name", scalar("alice")).unwrap();
-        let got = ctx.get("session.user.name_copy").unwrap();
+        let mut context = make_context(&stores);
+        context.set("session.user.name", scalar("alice")).unwrap();
+        let got = context.get("session.user.name_copy").unwrap();
         assert_eq!(got, Some(scalar("alice")));
     });
 
     test!("get returns LoadFailed when referenced path has no value", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
+        let mut context = make_context(&stores);
         // session.user.name not set, _get will fail
-        let result = ctx.get("session.user.name_copy");
+        let result = context.get("session.user.name_copy");
         debug_log!("integration_test", "get returns LoadFailed", &format!("{:?}", result));
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
@@ -162,16 +179,16 @@ fn main() {
     test!("get gets from Memory", {
         let stores = MyStores::new();
         stores.memory_set("request.authorization.tenant", scalar("10"));
-        let mut ctx = make_context(&stores);
-        let got = ctx.get("session.user.tenant.id").unwrap();
+        let mut context = make_context(&stores);
+        let got = context.get("session.user.tenant.id").unwrap();
         assert_eq!(got, Some(scalar("10")));
     });
 
     test!("set and get", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        assert!(ctx.set("session.user.tenant.id", scalar("10")).unwrap());
-        let got = ctx.get("session.user.tenant.id").unwrap();
+        let mut context = make_context(&stores);
+        assert!(context.set("session.user.tenant.id", scalar("10")).unwrap());
+        let got = context.get("session.user.tenant.id").unwrap();
         assert_eq!(got, Some(scalar("10")));
     });
 
@@ -183,22 +200,22 @@ fn main() {
 
     test!("get driver returns static value postgres", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let got = ctx.get("connection.common_db.driver").unwrap();
+        let mut context = make_context(&stores);
+        let got = context.get("connection.common_db.driver").unwrap();
         assert_eq!(got, Some(scalar("postgres")));
     });
 
     test!("get charset returns static value UTF8", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let got = ctx.get("connection.common_db.charset").unwrap();
+        let mut context = make_context(&stores);
+        let got = context.get("connection.common_db.charset").unwrap();
         assert_eq!(got, Some(scalar("UTF8")));
     });
 
     test!("get host returns None when Env not set", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let result = ctx.get("connection.common_db.host");
+        let mut context = make_context(&stores);
+        let result = context.get("connection.common_db.host");
         assert!(matches!(result, Err(ContextError::LoadFailed(_))));
     });
 
@@ -209,8 +226,8 @@ fn main() {
 
     test!("get driver returns static value postgres", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let got = ctx.get("connection.tenant_db.driver").unwrap();
+        let mut context = make_context(&stores);
+        let got = context.get("connection.tenant_db.driver").unwrap();
         assert_eq!(got, Some(scalar("postgres")));
     });
 
@@ -222,10 +239,10 @@ fn main() {
     test!("get same path twice in sequence does not recurse", {
         let stores = MyStores::new();
         stores.memory_set("request.authorization.user", scalar("1"));
-        let mut ctx = make_context(&stores);
-        ctx.get("session.user.id").unwrap();
+        let mut context = make_context(&stores);
+        context.get("session.user.id").unwrap();
         // second independent call — called_paths should be cleared between calls
-        let got = ctx.get("session.user.id").unwrap();
+        let got = context.get("session.user.id").unwrap();
         assert_eq!(got, Some(scalar("1")));
     });
 
@@ -236,29 +253,29 @@ fn main() {
 
     test!("get nonexistent path", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let result = ctx.get("session.user.nonexistent");
+        let mut context = make_context(&stores);
+        let result = context.get("session.user.nonexistent");
         assert!(matches!(result, Err(ContextError::KeyNotFound(_))));
     });
 
     test!("set nonexistent path", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let result = ctx.set("session.user.nonexistent", scalar("x"));
+        let mut context = make_context(&stores);
+        let result = context.set("session.user.nonexistent", scalar("x"));
         assert!(matches!(result, Err(ContextError::KeyNotFound(_))));
     });
 
     test!("delete nonexistent path", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let result = ctx.delete("session.nonexistent");
+        let mut context = make_context(&stores);
+        let result = context.delete("session.nonexistent");
         assert!(matches!(result, Err(ContextError::KeyNotFound(_))));
     });
 
     test!("exists nonexistent path", {
         let stores = MyStores::new();
-        let mut ctx = make_context(&stores);
-        let result = ctx.exists("session.nonexistent");
+        let mut context = make_context(&stores);
+        let result = context.exists("session.nonexistent");
         assert!(matches!(result, Err(ContextError::KeyNotFound(_))));
     });
 
@@ -267,28 +284,32 @@ fn main() {
     // max_recursion=20: traversing an intermediate path that expands to more
     // than 20 leaves hits the guard in the multi-leaf branch.
     // =========================================================================
-    // std::println!("\n[RecursionLimitExceeded — >20 leaves under one path]");
+    std::println!("\n[RecursionLimitExceeded]");
 
-    // test!("get intermediate path with 21 leaves returns RecursionLimitExceeded", {
-    //     // Build a DSL with 21 leaves under "group", each with a Memory _get.
-    //     let leaf_names = [
-    //         "a","b","c","d","e","f","g","h","i","j",
-    //         "k","l","m","n","o","p","q","r","s","t","u",
-    //     ];
-    //     let mut yaml = std::string::String::from("group:\n  _set:\n    store: Kvs\n    key: g\n");
-    //     for name in &leaf_names {
-    //         yaml.push_str(&std::format!("  {}:\n    _get:\n      store: Memory\n      key: req.{}\n", name, name));
-    //     }
-    //     let src = yaml.as_bytes();
-    //     let tree = context_engine::dsl::parse_yaml(src).expect("parse failed");
-    //     let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
-    //         = context_engine::dsl::Dsl::compile(&tree, &["Memory", "Kvs"]);
-    //     let index = Arc::new(Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals));
-    //     let stores = MyStores::new();
-    //     let mut ctx = Context::new(index, &stores);
-    //     let result = ctx.get("group");
-    //     assert!(matches!(result, Err(ContextError::RecursionLimitExceeded)));
-    // });
+    test!("get with circular dependency returns RecursionLimitExceeded", {
+        // a._get.key = "${b}", b._get.key = "${a}" — circular
+        let tree = Tree::Mapping(std::vec![
+            (b"a".to_vec(), Tree::Mapping(std::vec![
+                (b"_get".to_vec(), Tree::Mapping(std::vec![
+                    (b"store".to_vec(), Tree::Scalar(b"Memory".to_vec())),
+                    (b"key".to_vec(),   Tree::Scalar(b"${b}".to_vec())),
+                ])),
+            ])),
+            (b"b".to_vec(), Tree::Mapping(std::vec![
+                (b"_get".to_vec(), Tree::Mapping(std::vec![
+                    (b"store".to_vec(), Tree::Scalar(b"Memory".to_vec())),
+                    (b"key".to_vec(),   Tree::Scalar(b"${a}".to_vec())),
+                ])),
+            ])),
+        ]);
+        let (paths, ch, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
+            = context_engine::dsl::Dsl::compile(&tree, &["Memory"]).unwrap();
+        let index = Arc::new(Index::new(paths, ch, leaves, values, words, map_keys, map_vals, args_keys, args_vals));
+        let stores = MyStores::new();
+        let mut context = Context::new(index, &stores);
+        let result = context.get("a");
+        assert!(matches!(result, Err(ContextError::RecursionLimitExceeded)));
+    });
 
     // =========================================================================
     // results

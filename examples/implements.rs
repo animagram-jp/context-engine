@@ -197,6 +197,10 @@ impl MyStores {
     pub fn memory_clear(&self) {
         self.memory.data.lock().unwrap().clear();
     }
+
+    pub fn tenant_db_set(&self, key: &str, value: context_engine::Tree) {
+        self.tenant_db.data.lock().unwrap().insert(key.to_string(), value);
+    }
 }
 
 impl Stores for MyStores {
