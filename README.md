@@ -11,15 +11,15 @@ Data labels used by a web system's runtime within a single processing cycle shou
 | Version | Status    | Date      | Description |
 |---------|-----------|-----------|-------------|
 | 0.1     | Released  | 2026-2-12 | -           |
-| 0.1.5   | Current   | 2026-3-21 | improve #43 |
-| 0.1.6   | Scheduled | 2026-4-19 | improve #38 |
+| 0.1.5   | Previous  | 2026-3-21 | improve #43 |
+| 0.1.6   | Current   | 2026-4-23 | improve #57 |
 
 ---
 
 ## Provided Functions
 
 | Mod | Description | fn |
-|-------|------|---------|
+|-----|-------------|----|
 | `Context` | operates context | `new/get/set/delete/exists` |
 
 ---
@@ -141,10 +141,10 @@ Passed unit and integration tests
 
 ```bash
 # unit test
-cargo test --features=logging -- --nocapture
+cargo test
 
 # integration test (includes precompile path verification)
-cargo run --example precompile --features precompile -- examples/tenant.yml src/dsl_compiled.rs && cargo run --example integration_tests --features precompile
+RUST_LOG=debug cargo run --example precompile --features precompile -- examples/tenant.yml src/dsl_compiled.rs && RUST_LOG=debug cargo run --example integration_tests --features precompile
 ```
 
 ---
