@@ -5,14 +5,15 @@
 ## Requirement
 
 - [README.md:3](../README.md#context-engine)
-- システムが認識するべき概念を階層構造の名前空間で表現できたとする。この時、名前空間から導かれる全通りの(部分含む)パスが、ランタイムの単一処理スコープで操作する可能性のある値のキーを網羅している。このキー群の値全てを、DSLにて漏れなく取得方法の定義を宣言する。
+- Assume all concepts a system must recognize can be expressed as a hierarchical namespace. Every possible path (including partial paths) derived from that namespace covers all keys that may be operated on within a single processing scope at runtime. The retrieval method for every such key must be declared exhaustively in the DSL.
+- Store values are assumed to be stable for the duration of a single Context lifetime (one request scope). Concurrent mutation is outside the scope of C-Engine and is the responsibility of the application.
 
 ## Function
 
-- parse: YAMLをパースする
-- compile: dslから、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
-- traversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
-- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンスで行い、リクエストを跨いで保持したい場合は全て_setにて指示する
+- parse: parse YAML into a Tree
+- compile: from the DSL, generate static data structures that reduce n-dimensional sparse set lookup to traversal of fixed-size memory locations
+- traversal: hold those data structures and retrieve memory locations via traversal
+- addressing & operation: maintain a flat map corresponding to the manifest; perform value operations in response to application calls within a request-scope instance; any value to be retained across requests must be directed via `_set`
 
 ## Port
 
@@ -68,8 +69,7 @@
 | Index | `find` | `(&self, path: &str) -> Option<u16>` | '.'区切りパスをルートからたどりpath_idを返す | index.rs |
 |       | `find_child` | `(&self, path_id: u16, keyword: &[u8]) -> Option<u16>` | path_idの子の中からkeywordに一致するpath_idを返す | index.rs |
 |       | `collect_leaves` | `(&self, path_id: u16, out: &mut Vec<LeafRef>)` | path_id以下の全leafをoutに再帰収集 | index.rs |
-|       | `decode_meta` | `(&self, leaf: &LeafRef, kind: MetaKind) -> (u8, BTreeMap<String, Tree>)` | leavesから`_get`または`_set`のstore_idとargsを読み出す | index.rs |
-|       | `resolve_static_frags` | `(&self, frags: &[u16]) -> String` | placeholder非含有のfragment列を文字列に結合する | index.rs |
+|       | `decode_meta` | `(&self, leaf: &LeafRef, kind: MetaKind) -> (u8, &[u16], &[u16], &[u16], &[u16], &[u16])` | leavesから`_get`または`_set`のstore_idとfragment sliceを読み出す | index.rs |
 |       | `word_bytes` | `(&self, id: usize) -> &[u8]` | word_idからwordsのバイト列スライスを返す | index.rs |
 |       | `vl_slice_u16` | `(&self, vl: &VariableList<u16>, id: usize) -> Option<&[u16]>` | VariableList<u16>のidエントリのスライスを返す | index.rs |
 | Tree | `write_value` | `(value: &Tree, buf: &mut Vec<u8>)` | Treeをワイヤフォーマットにシリアライズしbufに追記 | tree.rs |
@@ -79,22 +79,24 @@
 | Context | `cache_get` | `(&self, path_id: u16) -> Option<&Tree>` | インスタンスキャッシュからpath_idの値を返す | context.rs |
 |         | `cache_set` | `(&mut self, path_id: u16, value: Tree)` | インスタンスキャッシュにpath_idの値を書き込む（上書き） | context.rs |
 |         | `cache_remove` | `(&mut self, path_id: u16)` | インスタンスキャッシュのpath_idエントリをNullで無効化 | context.rs |
-|         | `guard_recursion` | `(&self, path_id: u16) -> Result<(), ContextError>` | called_pathsの重複・上限超過を検出しエラーを返す | context.rs |
+|         | `guard_recursion` | `(&self, path_id: u16) -> Result<(), ContextError>` | called_pathsの重複を検出しRecursionLimitExceededを返す | context.rs |
+|         | `resolve_key_frags` | `(&mut self, key_frags: &[u16]) -> Result<Option<String>, ContextError>` | VALUE_IS_PLACEHOLDER_MASKフラグ付きu16列をstore呼び出しキー文字列に解決する | context.rs |
+|         | `resolve_args` | `(&mut self, args_keys: &[u16], args_vals: &[u16]) -> Result<BTreeMap<String, Tree>, ContextError>` | args_keys/args_vals列をStore呼び出し用BTreeMapに変換する | context.rs |
 |         | `resolve_leaf` | `(&mut self, path_id: u16, leaf_id: u16, value_id: u16) -> Result<Option<Tree>, ContextError>` | cache→_set→value fragments→_getの順で値を解決しwrite-throughする | context.rs |
 
 ## Terms
 
-- key:            n層マップDSLの最末端value以外の要素
-- keyword:        keyの名前文字列
-- field_key:      自身と親祖先のkeywordが'_'で始まらないkey
-- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_get, _set, _state)
-- leaf_key:       子にkeyを持たず値を持つkey
-- value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
-- path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
-- qualified_path: DSL内で一意な完全修飾パス
-- placeholder:    key参照記述("${path}")。valueのみに適用。単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
-- template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。is_template=trueとして扱い、解決時にstring化する
-- called_path:    Context.get()等に渡されるパス文字列
+- key:            any non-leaf element in the n-level map DSL
+- keyword:        the name string of a key
+- field_key:      a key whose own keyword and all ancestor keywords do not start with `_`
+- meta_key:       a key whose keyword starts with `_`, and its descendants (`_get`, `_set`, `_state`)
+- leaf_key:       a key that holds a value and has no child keys
+- value:          the value of a leaf_key; defaults to null if omitted in the DSL
+- path:           a dot-separated chain of keywords representing a single field_key
+- qualified_path: a fully-qualified path that is unique within the DSL
+- placeholder:    a path reference (`"${path}"`) applied only to values; when used alone, treated as is_template=false and copies the value as-is (no stringification)
+- template:       a dynamically generated string mixing placeholders with static text; applied only to values; treated as is_template=true and stringified on resolution
+- called_path:    the dot-separated path string passed to `Context.get()` etc.
 
 ## モジュール仕様
 
@@ -122,16 +124,14 @@ Contextインスタンス固有のキャッシュ。Storeとは独立。
 戻り値: `Result<Option<Tree>, ContextError>`
 
 **動作フロー:**
-1. called チェック（再帰・上限検出）
+1. called チェック（循環依存検出）
 2. `Index::traverse(path)` → LeafRef一覧
 3. instance cache をチェック
 4. `_set` store に問い合わせ
 5. miss時、`_get` store で自動ロード → write-through to `_set`
 6. `Ok(Some(value))` / `Ok(None)` / `Err(ContextError)` を返却
 
-## データ構造仕様
-
-### compile済みdsl
+## compile済みdslデータ仕様
 
 `Dsl::compile`が構築し、`Index`が保持する。
 
@@ -225,3 +225,34 @@ paths[0]は常にvirtual root（自己参照）。
 - `RecursionLimitExceeded`
 - `StoreFailed(StoreError)`
 - `LoadFailed(LoadError)`
+
+---
+
+## Original Text (ja)
+
+### Requirement
+
+- [README.md:3](../README.md#context-engine)
+- システムが認識するべき概念を階層構造の名前空間で表現できたとする。この時、名前空間から導かれる全通りの(部分含む)パスが、ランタイムの単一処理スコープで操作する可能性のある値のキーを網羅している。このキー群の値全てを、DSLにて漏れなく取得方法の定義を宣言する。
+- Contextの生存期間（単一リクエスト処理スコープ）中、ストアの値は変化しないことを前提とする。並行書き込みへの対処はC-Engineのスコープ外であり、アプリケーション側の責任とする。
+
+### Function
+
+- parse: YAMLをパースする
+- compile: dslから、n次元疎集合割り出しの最適解である、固定長メモリ位置群のトラバーサルに落とし込むための静的データ群を生成する
+- traversal: 上記データ群を保持し、トラバーサルによってメモリ位置群を取得する
+- addressing & operation: Manifestに対応した1層mapを保持し、アプリケーションからの呼び出しに応じて値の操作を行う。リクエスト処理スコープインスタンスで行い、リクエストを跨いで保持したい場合は全て_setにて指示する
+
+### Terms
+
+- key:            n層マップDSLの最末端value以外の要素
+- keyword:        keyの名前文字列
+- field_key:      自身と親祖先のkeywordが'_'で始まらないkey
+- meta_key:       keywordが'_'始まりのkeyと、その子孫key (_get, _set, _state)
+- leaf_key:       子にkeyを持たず値を持つkey
+- value:          leaf_keyの値。DSL内で省略された場合はnullが充てられる
+- path:           単一のfield_keyを表す、'.'区切りkeywordのチェーン
+- qualified_path: DSL内で一意な完全修飾パス
+- placeholder:    key参照記述("${path}")。valueのみに適用。単独記述時はis_template=falseとして扱い、値をそのままコピーする（string化しない）
+- template:       placeholderと静的な文字列を混合した動的生成文字列。valueのみに適用。is_template=trueとして扱い、解決時にstring化する
+- called_path:    Context.get()等に渡されるパス文字列

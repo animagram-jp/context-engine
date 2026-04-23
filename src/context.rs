@@ -186,9 +186,6 @@ impl<'r> ContextTrait for Context<'r> {
 // ── private helpers ───────────────────────────────────────────────────────────
 
 impl<'r> Context<'r> {
-    /// Resolve key_frags (VALUE_IS_PLACEHOLDER_MASK-flagged u16 slice) to a String.
-    /// Returns None if key_frags is empty (use path_id as fallback).
-    /// Placeholder fragments are resolved via self.get().
     fn resolve_key_frags(&mut self, key_frags: &[u16]) -> Result<Option<String>, ContextError> {
         if key_frags.is_empty() {
             return Ok(None);
@@ -211,8 +208,6 @@ impl<'r> Context<'r> {
         Ok(Some(buf))
     }
 
-    /// Resolve args_keys/args_vals into a BTreeMap<String, Tree> for passing to Store.
-    /// arg values may contain placeholders; each is resolved via self.get().
     fn resolve_args(
         &mut self,
         args_keys: &[u16],
@@ -250,7 +245,6 @@ impl<'r> Context<'r> {
 
         let leaf_ref = crate::index::LeafRef { path_id, leaf_id, value_id };
 
-        // _set cache読み
         let (set_store_id, set_key_frags, _set_map_keys, _set_map_vals, set_args_keys, set_args_vals) = self.index.set_meta(&leaf_ref);
         let set_key_frags: Vec<u16> = set_key_frags.to_vec();
         let set_args_keys: Vec<u16> = set_args_keys.to_vec();
@@ -270,7 +264,6 @@ impl<'r> Context<'r> {
             }
         }
 
-        // value fragments (static scalar / placeholder / template)
         let frags: Vec<(bool, Vec<u8>)> = self.index.leaf_fragments(&leaf_ref)
             .into_iter()
             .map(|(is_ph, b)| (is_ph, b.to_vec()))
@@ -313,7 +306,6 @@ impl<'r> Context<'r> {
             return Ok(Some(value));
         }
 
-        // _get
         let (get_store_id, get_key_frags, get_map_keys, get_map_vals, get_args_keys, get_args_vals) = self.index.get_meta(&leaf_ref);
         if get_store_id == 0 {
             return Ok(None);
@@ -341,8 +333,6 @@ impl<'r> Context<'r> {
             ))?;
         debug_log!("Context", "resolve_leaf", &alloc::format!("path_id={path_id}"), "-> _get hit");
 
-        // map展開: mapあり → 各dst path_idにcache_set → 自分をcache_getで再取得
-        // mapなし → 返り値をそのまま自分の値として扱う
         let value = if !get_map_keys.is_empty() {
             if let Tree::Mapping(fetched_pairs) = &fetched {
                 for (&dst_path_id, &src_word_id) in get_map_keys.iter().zip(get_map_vals.iter()) {
@@ -363,7 +353,6 @@ impl<'r> Context<'r> {
             fetched
         };
 
-        // write-through to _set
         if set_store_id != 0 {
             if let Some(set_store) = self.stores.store_for(set_store_id) {
                 let set_store_key = self.resolve_key_frags(&set_key_frags)?

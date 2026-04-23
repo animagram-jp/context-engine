@@ -97,8 +97,6 @@ impl Index {
         kw
     }
 
-    /// Extract `_get` store_id and args for the given leaf.
-    /// Returns (0, empty) if no `_get` is configured.
     /// Extract `_get` meta for the given leaf.
     /// Returns (store_id, key_frags, map_keys, map_vals, args_keys, args_vals).
     /// store_id=0 means no `_get` configured; all slices are empty in that case.

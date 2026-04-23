@@ -280,9 +280,7 @@ fn main() {
     });
 
     // =========================================================================
-    // recursion limit
-    // max_recursion=20: traversing an intermediate path that expands to more
-    // than 20 leaves hits the guard in the multi-leaf branch.
+    // recursion limit — circular dependency detection via called_paths
     // =========================================================================
     std::println!("\n[RecursionLimitExceeded]");
 

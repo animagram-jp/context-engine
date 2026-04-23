@@ -129,7 +129,7 @@ let user_name = context.get("session.user.name")?;
                                   ▲
                                   │
 ┌─────────────┐        ┌──────────┴──────────────────────┐
-│ StoreImpls  │------->│ StoreRegistry (required port)   │
+│ StoreImpls  │------->│ Stores (required to impl)       │
 └─────────────┘register└─────────────────────────────────┘
 ```
 
