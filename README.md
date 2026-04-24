@@ -78,8 +78,8 @@ session:
 
 | Trait           | Description                              | Example |
 |-----------------|------------------------------------------|---------|
-| `Store`   | `get()` `set()` `delete()`               | [DbClient](./examples/implements.rs) |
-| `StoreRegistry` | maps YAML store names to `Store`s | [MyRegistry](./examples/implements.rs) |
+| `Store`   | `get()` `set()` `delete()`               | [TenantDbClient](./examples/implements.rs) |
+| `Stores` | maps YAML store names to `Store`s | [MyStore](./examples/implements.rs) |
 
 4. Precompile your yaml to a rs file.
 
