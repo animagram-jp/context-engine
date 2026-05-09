@@ -1,8 +1,8 @@
+use core::str::from_utf8;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::str::from_utf8;
 
 use crate::dsl::{VALUE_IS_PLACEHOLDER_MASK, VALUE_WORD_ID_MASK};
 use crate::index::Index;
