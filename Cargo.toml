@@ -4,7 +4,7 @@ version = "0.1.6"
 authors = ["Andyou <andyou@animagram.jp>"]
 description = "Declarative context management for request handlers"
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 
 repository = "https://github.com/animagram-jp/context-engine"
 homepage = "https://github.com/animagram-jp/"
