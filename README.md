@@ -14,6 +14,8 @@ Data labels used by a web system's runtime within a single processing cycle shou
 | 0.1.5   | Previous  | 2026-3-21 | improve #43 |
 | 0.1.6   | Current   | 2026-4-23 | improve #57 |
 
+This project adheres to [Semantic Versioning](https://semver.org/).
+
 ---
 
 ## Provided Functions
