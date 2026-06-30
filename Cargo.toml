@@ -1,13 +1,11 @@
 [package]
 name = "context-engine"
 version = "0.1.6"
-authors = ["Andyou <andyou@animagram.jp>"]
-description = "Declarative context management for request handlers"
 edition = "2024"
+description = "Declarative context management for request handlers"
 license = "Apache-2.0"
 
 repository = "https://github.com/animagram-jp/context-engine"
-homepage = "https://github.com/animagram-jp/"
 readme = "README.md"
 keywords = ["context", "namespace", "yaml", "addressing"]
 categories = ["config", "data-structures", "template-engine", "parser-implementations", "web-programming"]
