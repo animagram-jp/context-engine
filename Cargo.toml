@@ -10,7 +10,7 @@ repository = "https://github.com/animagram-jp/context-engine"
 readme = "README.md"
 keywords = ["context", "namespace", "yaml", "addressing"]
 categories = ["config", "data-structures", "template-engine", "parser-implementations", "web-programming"]
-exclude = ["examples/integration_tests.rs", "examples/implements.rs"]
+exclude = ["examples/integration_tests.rs", "examples/implements.rs", "examples/tenant.yml"]
 
 [dev-dependencies]
 env_logger = "0.11"
