@@ -2,6 +2,7 @@
 name = "context-engine"
 version = "0.1.6"
 edition = "2024"
+rust-version = "1.85"
 description = "Declarative context management for request handlers"
 license = "Apache-2.0"
 
