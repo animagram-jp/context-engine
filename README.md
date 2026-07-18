@@ -1,5 +1,7 @@
 # context-engine
 
+[![Crates.io](https://img.shields.io/crates/v/context-engine.svg)](https://crates.io/crates/context-engine)
+
 Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., `system_context["session.user"]` rather than `users[session[user_id]]`). context-engine processes the data retrieval methods that application developers define as a DSL in YAML files, for each label. This allows server/store differences in `system_context["session.user.preference"]` and multi-tenant differences in `context["session.user.tenant"]` to be resolved appropriately through the methods defined in YAML. This library is a foundational technology for the reconstructed web system architecture (see [Background](#background)).
 
 - [See original text(ja)](#original-text-ja)
