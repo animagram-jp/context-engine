@@ -1,12 +1,9 @@
+use alloc::{vec, vec::Vec};
 use core::{
-    primitive::{
-        usize,
-        bool
-    },
-    result::Result
+    primitive::{bool, usize},
+    result::Result,
 };
-use alloc::vec::Vec;
-use alloc::vec;
+
 use crate::required::SetOutcome;
 
 #[derive(Debug)]
@@ -59,19 +56,12 @@ pub struct List<T> {
 
 impl<T: Copy + Default + PartialEq> List<T> {
     pub fn new(width: usize) -> Self {
-        Self {
-            data: vec![T::default(); width],
-        }
+        Self { data: vec![T::default(); width] }
     }
 }
 
 impl<T: Copy + Default + PartialEq> List<T> {
-
-    pub fn get<'a>(
-        &'a self,
-        identity: &usize,
-        schema: &usize,
-    ) -> Result<&'a [T], ListError> {
+    pub fn get<'a>(&'a self, identity: &usize, schema: &usize) -> Result<&'a [T], ListError> {
         let start = identity * schema;
         let end = start + schema;
         let unit = self.data.get(start..end).ok_or(ListError::OutOfBounds)?;
@@ -110,8 +100,7 @@ impl<T: Copy + Default + PartialEq> List<T> {
                 self.data.extend(core::iter::repeat(T::default()).take(unit));
             }
             let vacant = if reuse_vacant {
-                (1..self.data.len() / unit)
-                    .find(|&i| is_null(&self.data[i * unit..(i + 1) * unit]))
+                (1..self.data.len() / unit).find(|&i| is_null(&self.data[i * unit..(i + 1) * unit]))
             } else {
                 None
             };
@@ -129,11 +118,7 @@ impl<T: Copy + Default + PartialEq> List<T> {
         }
     }
 
-    pub fn delete(
-        &mut self,
-        identity: &usize,
-        schema: &mut usize,
-    ) -> Result<(), ListError> {
+    pub fn delete(&mut self, identity: &usize, schema: &mut usize) -> Result<(), ListError> {
         let unit = *schema;
         let start = identity * unit;
         let end = start + unit;
@@ -177,27 +162,24 @@ impl<T: Copy + Default + PartialEq> List<T> {
 /// ```
 pub struct VariableList<T> {
     pub identity: Vec<usize>,
-    pub data: Vec<T>,
+    pub data:     Vec<T>,
 }
 
 impl<T: Copy + Default + PartialEq> VariableList<T> {
     pub fn new() -> Self {
         Self {
             identity: vec![0, 0], // id=0 sentinel
-            data: Vec::new(),
+            data:     Vec::new(),
         }
     }
 }
 
 impl<T: Copy + Default + PartialEq> VariableList<T> {
-
-    pub fn get<'a>(
-        &'a self,
-        identity: &usize,
-    ) -> Result<&'a [T], ListError> {
+    pub fn get<'a>(&'a self, identity: &usize) -> Result<&'a [T], ListError> {
         let identity_start = identity * 2;
         let identity_end = identity_start + 2;
-        let identity_range = self.identity.get(identity_start..identity_end).ok_or(ListError::OutOfBounds)?;
+        let identity_range =
+            self.identity.get(identity_start..identity_end).ok_or(ListError::OutOfBounds)?;
         if is_null(identity_range) {
             return Err(ListError::NotExist);
         }
@@ -227,8 +209,8 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
                 return Err(ListError::NotExist);
             }
             let old_start = self.identity[identity_start];
-            let old_end   = self.identity[identity_start + 1];
-            let old_len   = old_end - old_start;
+            let old_end = self.identity[identity_start + 1];
+            let old_len = old_end - old_start;
             if value.len() <= old_len {
                 // in-place: value fits within the existing range
                 self.data[old_start..old_start + value.len()].copy_from_slice(value);
@@ -248,7 +230,9 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
                     let identity_start = i * 2;
                     let start = self.identity[identity_start];
                     let end = self.identity[identity_start + 1];
-                    if !is_null(&self.identity[identity_start..identity_start + 2]) && &self.data[start..end] == value {
+                    if !is_null(&self.identity[identity_start..identity_start + 2])
+                        && &self.data[start..end] == value
+                    {
                         return Ok(SetOutcome::Created(i));
                     }
                 }
@@ -258,20 +242,15 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
             self.data.extend_from_slice(value);
             // append [start, end] entry to identity line via List<usize>
             let entry = [start, end];
-            let mut ls: List<usize> = List {
-                data: core::mem::take(&mut self.identity),
-            };
-            let outcome = ls.set(&0, &mut 2usize, &entry, false)
-                .map_err(|_| ListError::OutOfBounds)?;
+            let mut ls: List<usize> = List { data: core::mem::take(&mut self.identity) };
+            let outcome =
+                ls.set(&0, &mut 2usize, &entry, false).map_err(|_| ListError::OutOfBounds)?;
             self.identity = ls.data;
             Ok(outcome)
         }
     }
 
-    pub fn delete(
-        &mut self,
-        identity: &usize,
-    ) -> Result<(), ListError> {
+    pub fn delete(&mut self, identity: &usize) -> Result<(), ListError> {
         if *identity == 0 {
             return Err(ListError::NotExist);
         }
@@ -283,7 +262,6 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
         self.identity[identity_start..identity_end].fill(0);
         Ok(())
     }
-
 
     /// Rebuilds both identity and data from scratch:
     /// - vacant entries are removed from identity (identity shrinks)
@@ -304,10 +282,12 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     /// assert_eq!(remap[&2], 1); // old id=2 -> new id=1
     /// assert_eq!(vl.get(&1).unwrap(), &[4u32, 5, 6]);
     /// ```
-    pub fn compact(&mut self) -> Result<alloc::collections::BTreeMap<usize, usize>, VariableListError> {
-        let mut new_identity    = vec![0, 0]; // id=0 sentinel
+    pub fn compact(
+        &mut self,
+    ) -> Result<alloc::collections::BTreeMap<usize, usize>, VariableListError> {
+        let mut new_identity = vec![0, 0]; // id=0 sentinel
         let mut new_data: Vec<T> = Vec::new();
-        let mut remap        = alloc::collections::BTreeMap::new();
+        let mut remap = alloc::collections::BTreeMap::new();
         let count = self.identity.len() / 2;
         // skip i=0 (sentinel)
         for i in 1..count {
@@ -316,7 +296,7 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
                 continue;
             }
             let start = self.identity[identity_start];
-            let end   = self.identity[identity_start + 1];
+            let end = self.identity[identity_start + 1];
             let slice = self.data.get(start..end).ok_or(VariableListError::Compact)?;
             let new_start = new_data.len();
             new_data.extend_from_slice(slice);
@@ -327,7 +307,7 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
             remap.insert(i, new_id);
         }
         self.identity = new_identity;
-        self.data  = new_data;
+        self.data = new_data;
         Ok(remap)
     }
 }

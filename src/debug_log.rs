@@ -1,5 +1,6 @@
 #[cfg(feature = "logging")]
 use alloc::string::{String, ToString};
+
 #[cfg(feature = "logging")]
 use crate::provided::Tree;
 
@@ -10,7 +11,9 @@ pub fn message(class: &str, fn_name: &str, args: &[&str]) -> String {
     s.push_str(fn_name);
     s.push('(');
     for (i, arg) in args.iter().enumerate() {
-        if i > 0 { s.push_str(", "); }
+        if i > 0 {
+            s.push_str(", ");
+        }
         s.push_str(arg);
     }
     s.push(')');
@@ -83,8 +86,9 @@ macro_rules! debug_log {
 
 #[cfg(all(test, feature = "logging"))]
 mod tests {
-    use super::*;
     use alloc::vec;
+
+    use super::*;
 
     #[test]
     fn message_multiple_args() {
@@ -98,7 +102,10 @@ mod tests {
         assert_eq!(format_arg(&Tree::Null), "null");
         assert_eq!(format_arg(&Tree::Sequence(vec![])), "[]");
         assert_eq!(format_arg(&Tree::Mapping(vec![])), "{}");
-        assert_eq!(format_arg(&Tree::Sequence(vec![Tree::Null, Tree::Null, Tree::Null])), "[3 items]");
+        assert_eq!(
+            format_arg(&Tree::Sequence(vec![Tree::Null, Tree::Null, Tree::Null])),
+            "[3 items]"
+        );
         assert_eq!(format_arg(&Tree::Mapping(vec![(b"a".to_vec(), Tree::Null)])), "{1 fields}");
     }
 

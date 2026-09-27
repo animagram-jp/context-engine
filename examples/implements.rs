@@ -4,10 +4,15 @@ fn main() {}
 // These are minimal stubs showing how to implement Store and Stores
 // for common backing stores under the new unified interface.
 
-use context_engine::required::{Store, Stores, SetOutcome};
-use context_engine::provided::Tree;
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Mutex};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Mutex,
+};
+
+use context_engine::{
+    provided::Tree,
+    required::{SetOutcome, Store, Stores},
+};
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
@@ -30,12 +35,15 @@ impl Store for MemoryClient {
         let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        let outcome =
+            if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
         data.insert(k, value);
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        let Ok(k) = std::str::from_utf8(key) else {
+            return false;
+        };
         self.data.lock().unwrap().remove(k).is_some()
     }
 }
@@ -64,12 +72,15 @@ impl Store for KvsClient {
         let value = args.get("value")?.clone();
         // args["ttl"] ignored in mock
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        let outcome =
+            if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
         data.insert(k, value);
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        let Ok(k) = std::str::from_utf8(key) else {
+            return false;
+        };
         self.data.lock().unwrap().remove(k).is_some()
     }
 }
@@ -86,13 +97,15 @@ impl Store for EnvClient {
             Some(Tree::Mapping(pairs)) => pairs,
             _ => return None,
         };
-        let pairs: Vec<(Vec<u8>, Tree)> = map.iter()
+        let pairs: Vec<(Vec<u8>, Tree)> = map
+            .iter()
             .filter_map(|(dst, src)| {
                 let env_key = match src {
                     Tree::Scalar(b) => std::str::from_utf8(b).ok()?,
                     _ => return None,
                 };
-                let value = std::env::var(env_key).ok()
+                let value = std::env::var(env_key)
+                    .ok()
                     .map(|s| Tree::Scalar(s.into_bytes()))
                     .unwrap_or(Tree::Null);
                 Some((dst.clone(), value))
@@ -100,8 +113,12 @@ impl Store for EnvClient {
             .collect();
         if pairs.is_empty() { None } else { Some(Tree::Mapping(pairs)) }
     }
-    fn set(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> { None }
-    fn delete(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool { false }
+    fn set(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
+        None
+    }
+    fn delete(&self, _key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
+        false
+    }
 }
 
 // ── CommonDb (mock) ───────────────────────────────────────────────────────────
@@ -125,12 +142,15 @@ impl Store for CommonDbClient {
         let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        let outcome =
+            if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
         data.insert(k, value);
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        let Ok(k) = std::str::from_utf8(key) else {
+            return false;
+        };
         self.data.lock().unwrap().remove(k).is_some()
     }
 }
@@ -156,22 +176,23 @@ impl Store for TenantDbClient {
         let k = std::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
-        let outcome = if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
+        let outcome =
+            if data.contains_key(&k) { SetOutcome::Updated } else { SetOutcome::Created(0) };
         data.insert(k, value);
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else { return false; };
+        let Ok(k) = std::str::from_utf8(key) else {
+            return false;
+        };
         self.data.lock().unwrap().remove(k).is_some()
     }
 }
 
 // ── Stores ────────────────────────────────────────────────────────────────────
-//
-// store_ids passed to Dsl::compile: &["Memory", "Kvs", "Env", "CommonDb", "TenantDb"]
-// → store_id: Memory=1, Kvs=2, Env=3, CommonDb=4, TenantDb=5
 
 pub struct MyStores {
+    store_ids: std::vec::Vec<std::string::String>,
     memory:    MemoryClient,
     kvs:       KvsClient,
     env:       EnvClient,
@@ -180,8 +201,9 @@ pub struct MyStores {
 }
 
 impl MyStores {
-    pub fn new() -> Self {
+    pub fn new(store_ids: &[&str]) -> Self {
         Self {
+            store_ids: store_ids.iter().map(|s| s.to_string()).collect(),
             memory:    MemoryClient::new(),
             kvs:       KvsClient::new(),
             env:       EnvClient,
@@ -205,12 +227,13 @@ impl MyStores {
 
 impl Stores for MyStores {
     fn store_for(&self, id: u8) -> Option<&dyn Store> {
-        match id {
-            1 => Some(&self.memory),
-            2 => Some(&self.kvs),
-            3 => Some(&self.env),
-            4 => Some(&self.common_db),
-            5 => Some(&self.tenant_db),
+        let idx = (id as usize).checked_sub(1)?;
+        match self.store_ids.get(idx)?.as_str() {
+            "Memory" => Some(&self.memory),
+            "Kvs" => Some(&self.kvs),
+            "Env" => Some(&self.env),
+            "CommonDb" => Some(&self.common_db),
+            "TenantDb" => Some(&self.tenant_db),
             _ => None,
         }
     }

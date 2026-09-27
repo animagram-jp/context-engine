@@ -1,8 +1,8 @@
-**/tmp/**
-**/target/**
-Cargo.lock
-**/Cargo.lock
-**/dsl_compiled.rs
-**/.npmrc
+/*.md
+!README.md
+!CONTRIBUTING.md
 
-CLAUDE.md
+tmp/
+target/
+Cargo.lock
+dsl_compiled.rs

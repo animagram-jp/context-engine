@@ -1,5 +1,4 @@
-use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 use core::fmt;
 
 /// Request-scoped context handle. Manages state per DSL definition.
@@ -41,10 +40,10 @@ pub enum DslError {
 impl fmt::Display for DslError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DslError::FileNotFound(msg)   => write!(f, "FileNotFound: {}", msg),
-            DslError::AmbiguousFile(msg)  => write!(f, "AmbiguousFile: {}", msg),
-            DslError::ParseError(msg)     => write!(f, "ParseError: {}", msg),
-            DslError::LimitExceeded(msg)  => write!(f, "LimitExceeded: {}", msg),
+            DslError::FileNotFound(msg) => write!(f, "FileNotFound: {}", msg),
+            DslError::AmbiguousFile(msg) => write!(f, "AmbiguousFile: {}", msg),
+            DslError::ParseError(msg) => write!(f, "ParseError: {}", msg),
+            DslError::LimitExceeded(msg) => write!(f, "LimitExceeded: {}", msg),
         }
     }
 }
@@ -66,9 +65,9 @@ impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoadError::ClientNotFound(msg) => write!(f, "ClientNotFound: {}", msg),
-            LoadError::ConfigMissing(msg)  => write!(f, "ConfigMissing: {}", msg),
-            LoadError::NotFound(msg)       => write!(f, "NotFound: {}", msg),
-            LoadError::ParseError(msg)     => write!(f, "ParseError: {}", msg),
+            LoadError::ConfigMissing(msg) => write!(f, "ConfigMissing: {}", msg),
+            LoadError::NotFound(msg) => write!(f, "NotFound: {}", msg),
+            LoadError::ParseError(msg) => write!(f, "ParseError: {}", msg),
         }
     }
 }
@@ -88,7 +87,7 @@ impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StoreError::ClientNotFound(msg) => write!(f, "ClientNotFound: {}", msg),
-            StoreError::ConfigMissing(msg)  => write!(f, "ConfigMissing: {}", msg),
+            StoreError::ConfigMissing(msg) => write!(f, "ConfigMissing: {}", msg),
             StoreError::SerializeError(msg) => write!(f, "SerializeError: {}", msg),
         }
     }
@@ -107,11 +106,11 @@ pub enum ContextError {
 impl fmt::Display for ContextError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContextError::ParseFailed(msg)       => write!(f, "ParseFailed: {}", msg),
-            ContextError::KeyNotFound(msg)       => write!(f, "KeyNotFound: {}", msg),
+            ContextError::ParseFailed(msg) => write!(f, "ParseFailed: {}", msg),
+            ContextError::KeyNotFound(msg) => write!(f, "KeyNotFound: {}", msg),
             ContextError::RecursionLimitExceeded => write!(f, "RecursionLimitExceeded"),
-            ContextError::StoreFailed(e)         => write!(f, "StoreFailed: {}", e),
-            ContextError::LoadFailed(e)          => write!(f, "LoadFailed: {}", e),
+            ContextError::StoreFailed(e) => write!(f, "StoreFailed: {}", e),
+            ContextError::LoadFailed(e) => write!(f, "LoadFailed: {}", e),
         }
     }
 }

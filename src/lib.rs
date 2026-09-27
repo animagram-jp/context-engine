@@ -1,16 +1,13 @@
 #![no_std]
-extern crate core;
 extern crate alloc;
+extern crate core;
 
-#[cfg(feature = "precompile")]
-extern crate std;
-
-#[cfg(test)]
+#[cfg(any(feature = "precompile", test))]
 extern crate std;
 
 pub mod debug_log;
 #[doc(hidden)]
-pub use alloc::{vec, vec::Vec, string::String};
+pub use alloc::{string::String, vec, vec::Vec};
 pub mod required;
 pub mod list;
 pub mod tree;
@@ -19,18 +16,7 @@ pub mod index;
 pub mod context;
 pub mod provided;
 
-pub use required::{
-    Store,
-    Stores,
-    SetOutcome,
-};
-pub use list::{
-    List,
-    VariableList,
-};
 pub use index::Index;
-pub use provided::{
-    Tree,
-    DslError, LoadError, StoreError, ContextError,
-    Context,
-};
+pub use list::{List, VariableList};
+pub use provided::{Context, ContextError, DslError, LoadError, StoreError, Tree};
+pub use required::{SetOutcome, Store, Stores};

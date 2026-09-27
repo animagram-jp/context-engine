@@ -9,10 +9,10 @@ use crate::provided::Tree;
 //   Sequence : 0x02 | count(u32le) | item...
 //   Mapping  : 0x03 | count(u32le) | (key_len(u32le) | key_bytes | item)...
 
-const TAG_NULL:     u8 = 0x00;
-const TAG_SCALAR:   u8 = 0x01;
+const TAG_NULL: u8 = 0x00;
+const TAG_SCALAR: u8 = 0x01;
 const TAG_SEQUENCE: u8 = 0x02;
-const TAG_MAPPING:  u8 = 0x03;
+const TAG_MAPPING: u8 = 0x03;
 
 impl Tree {
     /// Serializes the tree to the wire format.
@@ -121,8 +121,9 @@ fn split_at(bytes: &[u8], n: usize) -> Option<(&[u8], &[u8])> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloc::vec;
+
+    use super::*;
 
     fn rt(v: &Tree) -> Tree {
         Tree::unwire(&v.wire()).unwrap()
@@ -156,7 +157,7 @@ mod tests {
     #[test]
     fn mapping_roundtrip() {
         let v = Tree::Mapping(vec![
-            (b"id".to_vec(),   Tree::Scalar(b"1".to_vec())),
+            (b"id".to_vec(), Tree::Scalar(b"1".to_vec())),
             (b"name".to_vec(), Tree::Scalar(b"alice".to_vec())),
         ]);
         assert_eq!(rt(&v), v);
@@ -164,16 +165,20 @@ mod tests {
 
     #[test]
     fn nested_roundtrip() {
-        let v = Tree::Mapping(vec![
-            (b"user".to_vec(), Tree::Mapping(vec![
-                (b"id".to_vec(),    Tree::Scalar(b"1".to_vec())),
-                (b"tags".to_vec(),  Tree::Sequence(vec![
-                    Tree::Scalar(b"admin".to_vec()),
-                    Tree::Scalar(b"staff".to_vec()),
-                ])),
+        let v = Tree::Mapping(vec![(
+            b"user".to_vec(),
+            Tree::Mapping(vec![
+                (b"id".to_vec(), Tree::Scalar(b"1".to_vec())),
+                (
+                    b"tags".to_vec(),
+                    Tree::Sequence(vec![
+                        Tree::Scalar(b"admin".to_vec()),
+                        Tree::Scalar(b"staff".to_vec()),
+                    ]),
+                ),
                 (b"extra".to_vec(), Tree::Null),
-            ])),
-        ]);
+            ]),
+        )]);
         assert_eq!(rt(&v), v);
     }
 
@@ -186,10 +191,9 @@ mod tests {
     #[test]
     fn mapping_with_null_field_roundtrip() {
         let v = Tree::Mapping(vec![
-            (b"id".to_vec(),         Tree::Scalar(b"1".to_vec())),
+            (b"id".to_vec(), Tree::Scalar(b"1".to_vec())),
             (b"deleted_at".to_vec(), Tree::Null),
         ]);
         assert_eq!(Tree::unwire(&v.wire()).unwrap(), v);
     }
 }
-

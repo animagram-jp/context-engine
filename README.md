@@ -90,6 +90,8 @@ session:
 ```bash
 cargo run --example precompile --features precompile -- examples/mine.yml src/dsl_compiled.rs
 # -- <input.yml: required> <output.rs: optional>
+# store: values are collected from the yaml in order of first appearance;
+# the resulting order (and matching STORE_IDS constant) is printed and baked into the output.
 ```
 
 5. Initialize Context with your registry.
