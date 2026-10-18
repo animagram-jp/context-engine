@@ -5,12 +5,11 @@ edition = "2024"
 rust-version = "1.85"
 description = "Declarative context management for request handlers"
 license = "Apache-2.0"
-
 repository = "https://github.com/animagram-jp/context-engine"
 readme = "README.md"
 keywords = ["context", "namespace", "yaml", "addressing"]
 categories = ["config", "data-structures", "template-engine", "parser-implementations", "web-programming"]
-exclude = ["examples/integration_tests.rs", "examples/implements.rs", "examples/tenant.yml"]
+include = ["/src/**", "/docs/**", "/examples/precompile.rs", "/Cargo.toml", "/README.md", "/LICENSE"]
 
 [dev-dependencies]
 env_logger = "0.11"
