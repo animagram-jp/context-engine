@@ -4,10 +4,10 @@ fn main() {}
 // These are minimal stubs showing how to implement Store and Stores
 // for common backing stores under the new unified interface.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Mutex,
-};
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use std::{collections::HashMap, sync::Mutex};
 
 use context_engine::{
     provided::Tree,
@@ -28,11 +28,11 @@ impl MemoryClient {
 
 impl Store for MemoryClient {
     fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let k = std::str::from_utf8(key).ok()?;
+        let k = core::str::from_utf8(key).ok()?;
         self.data.lock().unwrap().get(k).cloned()
     }
     fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
-        let k = std::str::from_utf8(key).ok()?.to_string();
+        let k = core::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome =
@@ -41,7 +41,7 @@ impl Store for MemoryClient {
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else {
+        let Ok(k) = core::str::from_utf8(key) else {
             return false;
         };
         self.data.lock().unwrap().remove(k).is_some()
@@ -64,11 +64,11 @@ impl KvsClient {
 
 impl Store for KvsClient {
     fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let k = std::str::from_utf8(key).ok()?;
+        let k = core::str::from_utf8(key).ok()?;
         self.data.lock().unwrap().get(k).cloned()
     }
     fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
-        let k = std::str::from_utf8(key).ok()?.to_string();
+        let k = core::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         // args["ttl"] ignored in mock
         let mut data = self.data.lock().unwrap();
@@ -78,7 +78,7 @@ impl Store for KvsClient {
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else {
+        let Ok(k) = core::str::from_utf8(key) else {
             return false;
         };
         self.data.lock().unwrap().remove(k).is_some()
@@ -101,7 +101,7 @@ impl Store for EnvClient {
             .iter()
             .filter_map(|(dst, src)| {
                 let env_key = match src {
-                    Tree::Scalar(b) => std::str::from_utf8(b).ok()?,
+                    Tree::Scalar(b) => core::str::from_utf8(b).ok()?,
                     _ => return None,
                 };
                 let value = std::env::var(env_key)
@@ -135,11 +135,11 @@ impl CommonDbClient {
 
 impl Store for CommonDbClient {
     fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let k = std::str::from_utf8(key).ok()?;
+        let k = core::str::from_utf8(key).ok()?;
         self.data.lock().unwrap().get(k).cloned()
     }
     fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
-        let k = std::str::from_utf8(key).ok()?.to_string();
+        let k = core::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome =
@@ -148,7 +148,7 @@ impl Store for CommonDbClient {
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else {
+        let Ok(k) = core::str::from_utf8(key) else {
             return false;
         };
         self.data.lock().unwrap().remove(k).is_some()
@@ -169,11 +169,11 @@ impl TenantDbClient {
 
 impl Store for TenantDbClient {
     fn get(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> Option<Tree> {
-        let k = std::str::from_utf8(key).ok()?;
+        let k = core::str::from_utf8(key).ok()?;
         self.data.lock().unwrap().get(k).cloned()
     }
     fn set(&self, key: &[u8], args: &BTreeMap<&str, Tree>) -> Option<SetOutcome> {
-        let k = std::str::from_utf8(key).ok()?.to_string();
+        let k = core::str::from_utf8(key).ok()?.to_string();
         let value = args.get("value")?.clone();
         let mut data = self.data.lock().unwrap();
         let outcome =
@@ -182,7 +182,7 @@ impl Store for TenantDbClient {
         Some(outcome)
     }
     fn delete(&self, key: &[u8], _args: &BTreeMap<&str, Tree>) -> bool {
-        let Ok(k) = std::str::from_utf8(key) else {
+        let Ok(k) = core::str::from_utf8(key) else {
             return false;
         };
         self.data.lock().unwrap().remove(k).is_some()
@@ -192,7 +192,7 @@ impl Store for TenantDbClient {
 // ── Stores ────────────────────────────────────────────────────────────────────
 
 pub struct MyStores {
-    store_ids: std::vec::Vec<std::string::String>,
+    store_ids: alloc::vec::Vec<alloc::string::String>,
     memory:    MemoryClient,
     kvs:       KvsClient,
     env:       EnvClient,

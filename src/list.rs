@@ -26,7 +26,7 @@ fn is_null<T: Default + PartialEq>(unit: &[T]) -> bool {
 /// identity:  usize - 1-based integer (0 is the null sentinel)
 /// schema: usize - unit size in T
 /// error:  ListError
-/// value:  [T]
+/// value:  \[T\]
 ///
 /// ```
 /// use context_engine::list::List;
@@ -97,7 +97,7 @@ impl<T: Copy + Default + PartialEq> List<T> {
         } else {
             // Ensure id=0 sentinel exists
             if self.data.is_empty() {
-                self.data.extend(core::iter::repeat(T::default()).take(unit));
+                self.data.extend(core::iter::repeat_n(T::default(), unit));
             }
             let vacant = if reuse_vacant {
                 (1..self.data.len() / unit).find(|&i| is_null(&self.data[i * unit..(i + 1) * unit]))
@@ -134,7 +134,7 @@ impl<T: Copy + Default + PartialEq> List<T> {
 ///
 /// identity:  usize - 1-based integer (0 is the null sentinel). 0 on set appends
 /// error:  ListError
-/// value:  [T]
+/// value:  \[T\]
 ///
 /// ```
 /// use context_engine::list::VariableList;
@@ -267,6 +267,7 @@ impl<T: Copy + Default + PartialEq> VariableList<T> {
     /// - vacant entries are removed from identity (identity shrinks)
     /// - update-leaked bytes in data are reclaimed
     /// - surviving entries are re-assigned sequential id values starting at 1
+    ///
     /// Returns a mapping of old id -> new id for callers that hold external references.
     ///
     /// ```

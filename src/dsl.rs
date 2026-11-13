@@ -164,7 +164,7 @@ impl Dsl {
         out_path: &str,
     ) -> Result<(), alloc::string::String> {
         extern crate std;
-        use std::{
+        use alloc::{
             format,
             string::{String, ToString},
         };
@@ -832,7 +832,7 @@ pub fn parse_yaml(src: &[u8]) -> Result<Tree, alloc::string::String> {
     extern crate std;
     use std::format;
 
-    let s = std::str::from_utf8(src).map_err(|e| format!("UTF-8 error: {e}"))?;
+    let s = core::str::from_utf8(src).map_err(|e| format!("UTF-8 error: {e}"))?;
     let yaml: serde_yaml_ng::Value =
         serde_yaml_ng::from_str(s).map_err(|e| format!("YAML parse error: {e}"))?;
     Ok(yaml_value_to_tree(yaml))
@@ -841,7 +841,7 @@ pub fn parse_yaml(src: &[u8]) -> Result<Tree, alloc::string::String> {
 #[cfg(feature = "precompile")]
 fn yaml_value_to_tree(v: serde_yaml_ng::Value) -> Tree {
     extern crate std;
-    use std::string::ToString;
+    use alloc::string::ToString;
 
     match v {
         serde_yaml_ng::Value::Mapping(m) => Tree::Mapping(
@@ -953,9 +953,9 @@ mod tests {
         Dsl::compile(tree, &[]).unwrap()
     }
 
-    fn compile_with_stores<'a>(
+    fn compile_with_stores(
         tree: &Tree,
-        store_ids: &[&'a str],
+        store_ids: &[&str],
     ) -> (
         List<u64>,
         VariableList<u16>,

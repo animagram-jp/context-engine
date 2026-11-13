@@ -1,9 +1,10 @@
+extern crate alloc;
 extern crate std;
 
 #[path = "implements.rs"]
 mod implements;
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use context_engine::{
     Index, Tree,
@@ -12,7 +13,6 @@ use context_engine::{
     list::{List, VariableList},
     provided::{Context as ContextTrait, ContextError},
 };
-use env_logger;
 use implements::MyStores;
 
 // ── fixture ───────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ fn main() {
     macro_rules! test {
         ($name:expr, $body:block) => {{
             std::print!("  {} ... ", $name);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| $body));
+            let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(|| $body));
             match result {
                 Ok(()) => {
                     std::println!("ok");
@@ -169,7 +169,7 @@ fn main() {
         stores.memory_set("request.authorization.user", scalar("1"));
         stores.tenant_db_set(
             "users.id.1",
-            Tree::Mapping(std::vec![
+            Tree::Mapping(alloc::vec![
                 (b"name".to_vec(), Tree::Scalar(b"alice".to_vec())),
                 (b"email".to_vec(), Tree::Scalar(b"alice@example.com".to_vec())),
                 (b"password_hash".to_vec(), Tree::Scalar(b"hash".to_vec())),
@@ -323,12 +323,12 @@ fn main() {
 
     test!("get with circular dependency returns RecursionLimitExceeded", {
         // a._get.key = "${b}", b._get.key = "${a}" — circular
-        let tree = Tree::Mapping(std::vec![
+        let tree = Tree::Mapping(alloc::vec![
             (
                 b"a".to_vec(),
-                Tree::Mapping(std::vec![(
+                Tree::Mapping(alloc::vec![(
                     b"_get".to_vec(),
-                    Tree::Mapping(std::vec![
+                    Tree::Mapping(alloc::vec![
                         (b"store".to_vec(), Tree::Scalar(b"Memory".to_vec())),
                         (b"key".to_vec(), Tree::Scalar(b"${b}".to_vec())),
                     ])
@@ -336,9 +336,9 @@ fn main() {
             ),
             (
                 b"b".to_vec(),
-                Tree::Mapping(std::vec![(
+                Tree::Mapping(alloc::vec![(
                     b"_get".to_vec(),
-                    Tree::Mapping(std::vec![
+                    Tree::Mapping(alloc::vec![
                         (b"store".to_vec(), Tree::Scalar(b"Memory".to_vec())),
                         (b"key".to_vec(), Tree::Scalar(b"${a}".to_vec())),
                     ])
