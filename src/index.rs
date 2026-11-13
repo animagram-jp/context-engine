@@ -219,9 +219,7 @@ impl Index {
         if children_id == 0 {
             return None;
         }
-        let Some(children) = self.children_slice(children_id) else {
-            return None;
-        };
+        let children = self.children_slice(children_id)?;
         children.iter().copied().find(|&child_id| self.keyword_of(child_id) == keyword)
     }
 
@@ -388,7 +386,7 @@ mod tests {
         Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)
     }
 
-    fn make_index_with_stores<'a>(tree: &Tree, store_ids: &[&'a str]) -> Index {
+    fn make_index_with_stores(tree: &Tree, store_ids: &[&str]) -> Index {
         let (paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals) =
             Dsl::compile(tree, store_ids).unwrap();
         Index::new(paths, children, leaves, values, words, map_keys, map_vals, args_keys, args_vals)

@@ -1,11 +1,13 @@
+extern crate alloc;
+
 use context_engine::{Tree, dsl};
 
-fn collect_store_ids(tree: &Tree, out: &mut std::vec::Vec<std::string::String>) {
+fn collect_store_ids(tree: &Tree, out: &mut alloc::vec::Vec<alloc::string::String>) {
     if let Tree::Mapping(pairs) = tree {
         for (k, v) in pairs {
             if k.as_slice() == dsl::PROP_STORE {
                 if let Tree::Scalar(name) = v {
-                    if let Ok(name) = std::str::from_utf8(name) {
+                    if let Ok(name) = core::str::from_utf8(name) {
                         if !out.iter().any(|s| s == name) {
                             out.push(name.to_string());
                         }
@@ -19,7 +21,7 @@ fn collect_store_ids(tree: &Tree, out: &mut std::vec::Vec<std::string::String>) 
 }
 
 fn main() {
-    let args: std::vec::Vec<std::string::String> = std::env::args().collect();
+    let args: alloc::vec::Vec<alloc::string::String> = std::env::args().collect();
     if args.len() < 2 {
         eprintln!("usage: precompile <input.yml> [output.rs]");
         std::process::exit(1);
@@ -33,10 +35,10 @@ fn main() {
         eprintln!("parse error: {e}");
         std::process::exit(1);
     });
-    let mut store_ids = std::vec::Vec::new();
+    let mut store_ids = alloc::vec::Vec::new();
     collect_store_ids(&tree, &mut store_ids);
-    let store_ids: std::vec::Vec<&str> =
-        store_ids.iter().map(std::string::String::as_str).collect();
+    let store_ids: alloc::vec::Vec<&str> =
+        store_ids.iter().map(alloc::string::String::as_str).collect();
     println!("store_ids: {store_ids:?}");
     context_engine::dsl::Dsl::write(&src, &store_ids, &out).unwrap_or_else(|e| {
         eprintln!("compile error: {e}");
