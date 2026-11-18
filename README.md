@@ -5,6 +5,8 @@
 [![CI](https://github.com/animagram-jp/context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/animagram-jp/context-engine/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/animagram-jp/context-engine/graph/badge.svg)](https://codecov.io/gh/animagram-jp/context-engine)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/animagram-jp/context-engine/badge)](https://scorecard.dev/viewer/?uri=github.com/animagram-jp/context-engine)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16877/badge)](https://www.bestpractices.dev/projects/16877)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/16877/baseline)](https://www.bestpractices.dev/projects/16877)
 
 Data labels used by a web system's runtime within a single processing cycle should have their session-context-dependent variations resolved outside of code (e.g., `system_context["session.user"]` rather than `users[session[user_id]]`). context-engine processes the data retrieval methods that application developers define as a DSL in YAML files, for each label. This allows server/store differences in `system_context["session.user.preference"]` and multi-tenant differences in `context["session.user.tenant"]` to be resolved appropriately through the methods defined in YAML.
 
