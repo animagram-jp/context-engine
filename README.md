@@ -156,10 +156,3 @@ cargo test
 # integration test (includes precompile path verification)
 RUST_LOG=debug cargo run --example precompile --features precompile -- examples/tenant.yml src/dsl_compiled.rs && RUST_LOG=debug cargo run --example integration_tests --features precompile
 ```
-
----
-
-## License
-
-SPDX-License-Identifier: Apache-2.0
-Copyright (c) 2026 Andyou <andyou@animagram.jp>
